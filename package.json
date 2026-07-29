@@ -1,0 +1,19 @@
+{
+  "name": "dune2v",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Dune II browser skirmish — static game + multiplayer-ready server",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node server/index.js",
+    "test": "node --test tests/*.test.js",
+    "pack": "bash tools/pack.sh"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "ws": "^8.18.3"
+  }
+}

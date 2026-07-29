@@ -8,15 +8,45 @@ License: **MIT** (code).
 
 ## Play (dev)
 
-Open multi-file over a static server (recommended) or try `file://`:
+Recommended — Node server (same stack as production, includes `/ws`):
 
 ```bash
 cd /Users/mjog/dev/dune2
-python3 -m http.server 8080
+npm install
+npm start
 # → http://localhost:8080/
+# → ws://localhost:8080/ws
 ```
 
-Or open `index.html` directly in a browser (`file://` works with plain `<script src>` tags).
+Or a plain static server / `file://`:
+
+```bash
+python3 -m http.server 8080
+# open index.html via file:// (multiplayer WS unavailable)
+```
+
+## Deploy (Fly.io)
+
+Production host: **static game + WebSocket** on one Fly app (not Vercel).
+
+```bash
+# once: create app (name must be unique on Fly)
+fly apps create dune2v   # skip if app already exists
+
+fly deploy
+# → https://dune2v.fly.dev/
+# → wss://dune2v.fly.dev/ws
+```
+
+Health check: `GET /health` → `{ "ok": true }`.
+
+Config: [`fly.toml`](./fly.toml) — `min_machines_running = 1`, `auto_stop_machines = off` so multiplayer rooms are not cold-stopped mid-match. Tweak region/size there.
+
+```bash
+fly status
+fly logs
+fly apps open
+```
 
 ### Query flags
 

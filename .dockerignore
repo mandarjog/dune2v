@@ -1,0 +1,12 @@
+.git
+.gitignore
+node_modules
+npm-debug.log
+.DS_Store
+*.md
+!README.md
+!DESIGN.md
+tests
+request.md
+.grok
+**/.DS_Store
