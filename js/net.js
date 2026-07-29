@@ -15,6 +15,7 @@
   }
 
   const NAME_KEY = 'dune2_player_name';
+  const PLAYER_ID_KEY = 'dune2_player_id';
   const NAME_MAX = 20;
 
   function sanitizeName(raw) {
@@ -27,10 +28,18 @@
     return s || 'Commander';
   }
 
+  function genPlayerId() {
+    return (
+      'p_' +
+      Math.random().toString(36).slice(2, 10) +
+      Math.random().toString(36).slice(2, 6)
+    );
+  }
+
   D.Net = {
     ws: null,
     game: null,
-    status: 'idle', // idle | connecting | lobby | playing | error
+    status: 'idle', // idle | connecting | lobby | playing | error | reconnecting
     room: null,
     seat: null, // 'player' | 'enemy'
     role: null, // 'host' | 'guest' (lobby label only; sim is server)
@@ -45,6 +54,9 @@
     _handlers: [],
     _lastStateTick: -1,
     _focusedOnce: false,
+    _intentionalLeave: false,
+    _reconnectAttempts: 0,
+    _reconnectTimer: 0,
 
     loadStoredName() {
       try {
@@ -64,6 +76,22 @@
         /* ignore */
       }
       return D.Net.name;
+    },
+
+    /** Stable id across refreshes so the server can reclaim your seat. */
+    loadPlayerId() {
+      try {
+        let id = localStorage.getItem(PLAYER_ID_KEY);
+        if (!id || id.length < 4) {
+          id = genPlayerId();
+          localStorage.setItem(PLAYER_ID_KEY, id);
+        }
+        D.Net.playerId = id;
+        return id;
+      } catch (e) {
+        if (!D.Net.playerId) D.Net.playerId = genPlayerId();
+        return D.Net.playerId;
+      }
     },
 
     /** Display name for a seat from last roster/start. */
@@ -127,18 +155,21 @@
     init(game) {
       D.Net.game = game;
       D.Net.loadStoredName();
+      D.Net.loadPlayerId();
     },
 
     /** Connect and create a fresh room. */
     host(name) {
       if (name != null) D.Net.saveName(name);
       else D.Net.loadStoredName();
+      D.Net.loadPlayerId();
+      D.Net._intentionalLeave = false;
       D.Net._createOnOpen = true;
       D.Net._wantRoom = null;
       D.Net._connect();
     },
 
-    /** Connect and join/create room code (shareable URL). */
+    /** Connect and join/create room code (shareable URL). Same playerId reclaims seat. */
     join(roomCode, name) {
       const code = String(roomCode || '')
         .trim()
@@ -150,19 +181,28 @@
       }
       if (name != null) D.Net.saveName(name);
       else D.Net.loadStoredName();
+      D.Net.loadPlayerId();
+      D.Net._intentionalLeave = false;
       D.Net._createOnOpen = false;
       D.Net._wantRoom = code;
       D.Net._connect();
     },
 
     leave() {
+      D.Net._intentionalLeave = true;
+      D.Net._clearReconnectTimer();
       if (D.Net.ws && D.Net.ws.readyState === 1) {
         try {
           D.Net.ws.send(JSON.stringify({ type: 'leave' }));
         } catch (e) {
           /* ignore */
         }
-        D.Net.ws.close();
+        try {
+          D.Net.ws.onclose = null;
+          D.Net.ws.close();
+        } catch (e) {
+          /* ignore */
+        }
       }
       D.Net.ws = null;
       D.Net.status = 'idle';
@@ -174,6 +214,9 @@
       D.Net.names = { player: null, enemy: null };
       D.Net._lastStateTick = -1;
       D.Net._focusedOnce = false;
+      D.Net._reconnectAttempts = 0;
+      D.Net._wantRoom = null;
+      D.Net._createOnOpen = false;
       if (D.Net.game) {
         D.Net.game.multiplayer = false;
         D.Net.game.netRole = null;
@@ -182,6 +225,42 @@
         D.Net.game.playerNames = null;
       }
       D.Net._emit('left');
+    },
+
+    _clearReconnectTimer() {
+      if (D.Net._reconnectTimer) {
+        clearTimeout(D.Net._reconnectTimer);
+        D.Net._reconnectTimer = 0;
+      }
+    },
+
+    /** After an unexpected drop mid-match, rejoin same room with same playerId. */
+    _scheduleReconnect() {
+      D.Net._clearReconnectTimer();
+      if (D.Net._intentionalLeave) return;
+      const room = D.Net.room || D.Net._wantRoom;
+      if (!room) return;
+      if (D.Net._reconnectAttempts >= 8) {
+        D.Net.status = 'error';
+        D.Net.lastError = 'Could not reconnect';
+        D.Game.pushMessage(D.Net.game, 'Reconnect failed. Re-open the room link to try again.');
+        D.Net._emit('disconnect');
+        return;
+      }
+      D.Net._reconnectAttempts++;
+      D.Net.status = 'reconnecting';
+      D.Net._wantRoom = room;
+      D.Net._createOnOpen = false;
+      const delay = Math.min(1000 * D.Net._reconnectAttempts, 5000);
+      D.Game.pushMessage(
+        D.Net.game,
+        'Connection lost — reconnecting to room ' + room + '… (' + D.Net._reconnectAttempts + ')'
+      );
+      D.Net._emit('status', { status: 'reconnecting' });
+      D.Net._reconnectTimer = setTimeout(() => {
+        D.Net._reconnectTimer = 0;
+        D.Net._connect();
+      }, delay);
     },
 
     _connect() {
@@ -225,11 +304,12 @@
 
       ws.onopen = () => {
         const name = D.Net.name || D.Net.loadStoredName();
+        const playerId = D.Net.loadPlayerId();
         if (D.Net._createOnOpen) {
           ws.send(
             JSON.stringify({
               type: 'create',
-              playerId: D.Net.playerId,
+              playerId,
               name,
             })
           );
@@ -238,7 +318,7 @@
             JSON.stringify({
               type: 'join',
               room: D.Net._wantRoom,
-              playerId: D.Net.playerId,
+              playerId,
               name,
             })
           );
@@ -260,13 +340,20 @@
       };
 
       ws.onclose = () => {
-        const wasPlaying = D.Net.game && D.Net.game.multiplayer && D.Net.game.phase === 'playing';
         D.Net.ws = null;
-        if (D.Net.status === 'idle') return;
-        D.Net.status = wasPlaying ? 'error' : 'idle';
-        if (wasPlaying) {
+        if (D.Net.status === 'idle' || D.Net._intentionalLeave) return;
+        const inMatch =
+          D.Net.game &&
+          D.Net.game.multiplayer &&
+          (D.Net.game.phase === 'playing' ||
+            D.Net.status === 'playing' ||
+            D.Net.status === 'lobby' ||
+            D.Net.status === 'reconnecting');
+        if (inMatch && (D.Net.room || D.Net._wantRoom)) {
+          D.Net._scheduleReconnect();
+        } else {
+          D.Net.status = 'error';
           D.Net.lastError = 'Disconnected from room';
-          D.Game.pushMessage(D.Net.game, 'Disconnected from multiplayer room.');
           D.Net._emit('disconnect');
         }
       };
@@ -288,11 +375,24 @@
         D.Net.room = msg.room;
         D.Net.seat = msg.seat;
         D.Net.role = msg.role;
-        D.Net.playerId = msg.playerId;
+        if (msg.playerId) {
+          D.Net.playerId = msg.playerId;
+          try {
+            localStorage.setItem(PLAYER_ID_KEY, msg.playerId);
+          } catch (e) {
+            /* ignore */
+          }
+        }
         if (msg.name) D.Net.name = msg.name;
         D.Net.peers = msg.peers || 1;
         D.Net._applyRoster(msg);
-        D.Net.status = 'lobby';
+        D.Net._reconnectAttempts = 0;
+        if (msg.reconnected || msg.started) {
+          D.Net.status = 'playing';
+          D.Net._lastStateTick = -1; // accept full resync
+        } else {
+          D.Net.status = 'lobby';
+        }
         const game = D.Net.game;
         if (game) {
           game.multiplayer = true;
@@ -307,24 +407,50 @@
         } catch (e) {
           /* ignore */
         }
+        if (msg.reconnected) {
+          D.Game.pushMessage(game, 'Reconnected to room ' + D.Net.room + '.');
+        }
         D.Net._emit('joined', msg);
         return;
       }
 
-      if (msg.type === 'peer_joined' || msg.type === 'roster' || msg.type === 'name_ok') {
+      if (
+        msg.type === 'peer_joined' ||
+        msg.type === 'peer_reconnected' ||
+        msg.type === 'roster' ||
+        msg.type === 'name_ok'
+      ) {
         if (msg.name && msg.type === 'name_ok') D.Net.name = msg.name;
         D.Net._applyRoster(msg);
-        D.Net._emit(msg.type === 'peer_joined' ? 'peer_joined' : 'roster', msg);
+        if (msg.type === 'peer_reconnected' && D.Net.game) {
+          D.Game.pushMessage(
+            D.Net.game,
+            (msg.name || 'Opponent') + ' reconnected.'
+          );
+        }
+        D.Net._emit(
+          msg.type === 'peer_joined' || msg.type === 'peer_reconnected'
+            ? msg.type
+            : 'roster',
+          msg
+        );
         return;
       }
 
-      if (msg.type === 'peer_left') {
+      if (msg.type === 'peer_left' || msg.type === 'peer_disconnected') {
         D.Net.peers = msg.peers || 0;
         D.Net._applyRoster(msg);
-        D.Net._emit('peer_left', msg);
+        D.Net._emit(msg.type, msg);
         if (D.Net.game && D.Net.game.phase === 'playing') {
-          const left = msg.name || 'Opponent';
-          D.Game.pushMessage(D.Net.game, left + ' disconnected — match paused on server.');
+          const who = msg.name || 'Opponent';
+          if (msg.type === 'peer_disconnected') {
+            D.Game.pushMessage(
+              D.Net.game,
+              who + ' disconnected — they can rejoin with the same room link.'
+            );
+          } else {
+            D.Game.pushMessage(D.Net.game, who + ' left the room.');
+          }
         }
         return;
       }
@@ -375,15 +501,24 @@
         D.UI.hideLobby && D.UI.hideLobby();
       }
       D.Net._applyRoster(msg);
+      D.Net.status = 'playing';
+      D.Net._reconnectAttempts = 0;
       const meName = D.Net.nameFor(game.localOwner);
       const foeSeat = game.localOwner === 'player' ? 'enemy' : 'player';
       const foeName = D.Net.nameFor(foeSeat);
       const house = game.localOwner === 'enemy' ? 'Harkonnen (red)' : 'Atreides (blue)';
-      D.Game.pushMessage(
-        game,
-        meName + ' vs ' + foeName + ' — you are ' + house + '. Select MCV, press E to deploy.'
-      );
-      D.Net._emit('match_started', { role: D.Net.role });
+      if (msg.reconnected) {
+        D.Game.pushMessage(
+          game,
+          'Back in the match as ' + meName + ' (' + house + ').'
+        );
+      } else {
+        D.Game.pushMessage(
+          game,
+          meName + ' vs ' + foeName + ' — you are ' + house + '. Select MCV, press E to deploy.'
+        );
+      }
+      D.Net._emit('match_started', { role: D.Net.role, reconnected: !!msg.reconnected });
     },
 
     _handleState(msg) {

@@ -47,7 +47,9 @@ Health check: `GET /health` → `{ "ok": true }`.
 3. Friend opens the link → enters **their name** → **Join match** (Harkonnen / red if host is already in).
 4. Match auto-starts when the second player connects. Names show in the lobby and sidebar.
 
-**Server** runs the simulation (real-time, not turn-based). Both browsers only send orders and render snapshots. AI is off in MP. Keep a single Fly machine so both players share the same room process.
+**Server** runs the simulation (real-time, not turn-based) and holds full match state in memory. Both browsers only send orders and render snapshots. AI is off in MP.
+
+**Reconnect:** if you drop mid-match, reopen the same room link within ~15 minutes with the same browser (stable `playerId` in localStorage) to reclaim your seat; the sim keeps running. Intentional **Cancel/Leave** frees the seat. Keep a single Fly machine so both players share the same room process.
 
 Config: [`fly.toml`](./fly.toml) — `min_machines_running = 1`, `auto_stop_machines = off` so multiplayer rooms are not cold-stopped mid-match. Tweak region/size there.
 

@@ -342,7 +342,9 @@
           if (
             ev === 'joined' ||
             ev === 'peer_joined' ||
+            ev === 'peer_reconnected' ||
             ev === 'peer_left' ||
+            ev === 'peer_disconnected' ||
             ev === 'roster' ||
             ev === 'status'
           ) {
@@ -465,12 +467,14 @@
           const info = seats[seat];
           const name = (info && info.name) || (seat === D.Net.seat ? D.Net.name : null);
           const you = seat === D.Net.seat;
+          const online = info && info.connected !== false;
           if (name) {
+            const tag = you ? ' (you)' : online ? '' : ' (offline)';
             rows.push(
               `<div class="seat-row"><span class="seat-house">${house}</span>` +
-                `<span class="seat-name ${css}${you ? ' you' : ''}">${escapeHtml(name)}${
-                  you ? ' (you)' : ''
-                }</span></div>`
+                `<span class="seat-name ${css}${you ? ' you' : ''}${
+                  online ? '' : ' offline'
+                }">${escapeHtml(name)}${tag}</span></div>`
             );
           } else {
             rows.push(

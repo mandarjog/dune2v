@@ -440,6 +440,11 @@ button.game-btn.icon-btn .btn-label .meta.cant-afford {
   color: var(--enemy);
 }
 
+.lobby-roster .seat-name.offline {
+  opacity: 0.55;
+  font-weight: 500;
+}
+
 .mp-matchup {
   font-size: 11px;
   line-height: 1.35;

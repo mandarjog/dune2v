@@ -49,6 +49,20 @@ class RoomSim {
     this.game = null;
   }
 
+  /** Current snapshot for reconnecting clients (null if not running). */
+  snapshot() {
+    if (!this.running || !this.game) return null;
+    return this._serialize();
+  }
+
+  get tick() {
+    return this.game ? this.game.tick : 0;
+  }
+
+  get phase() {
+    return this.game ? this.game.phase : null;
+  }
+
   _tick() {
     if (!this.running || !this.game) return;
     const D = this.D;
