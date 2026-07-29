@@ -23,6 +23,7 @@ SCRIPTS=(
   "$ROOT/js/ui.js"
   "$ROOT/js/loop.js"
   "$ROOT/js/save.js"
+  "$ROOT/js/net.js"
   "$ROOT/maps/skirmish1.js"
   "$ROOT/js/main.js"
 )

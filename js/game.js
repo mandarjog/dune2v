@@ -4,6 +4,23 @@
   const D = (global.Dune2 = global.Dune2 || {});
 
   D.Game = {
+    /** Local controlling seat: 'player' (Atreides) or 'enemy' (Harkonnen). */
+    me(game) {
+      return (game && game.localOwner) || 'player';
+    },
+
+    foe(game) {
+      return D.Game.me(game) === 'player' ? 'enemy' : 'player';
+    },
+
+    /** End-screen phase from the local player's perspective. */
+    localEndPhase(game) {
+      if (game.phase !== 'victory' && game.phase !== 'defeat') return game.phase;
+      if (D.Game.me(game) === 'player') return game.phase;
+      // Guest is seat enemy: host "victory" means Atreides won → guest defeat
+      return game.phase === 'victory' ? 'defeat' : 'victory';
+    },
+
     create() {
       return {
         phase: 'menu',
@@ -41,6 +58,11 @@
         rngSeed: D.config.seed,
         stats: { fps: 0, simMs: 0 },
         _repathsThisTick: 0,
+        // multiplayer
+        localOwner: 'player',
+        multiplayer: false,
+        netRole: null,
+        roomCode: null,
       };
     },
 
@@ -80,6 +102,7 @@
       game.spiceCap.player = D.config.economy.baseSpiceCap;
       game.spiceCap.enemy = D.config.economy.baseSpiceCap;
       game.structureBuilder = { player: null, enemy: null };
+      if (!game.localOwner) game.localOwner = 'player';
 
       game.map = D.Map.createFromDef(mapDef);
       D.Map.initFog(game);
@@ -89,17 +112,28 @@
       D.Entities.createUnit(game, 'mcv', 'player', ps.x + 0.5, ps.y + 0.5);
       D.Entities.createUnit(game, 'mcv', 'enemy', es.x + 0.5, es.y + 0.5);
 
-      // camera on player
+      // camera on local seat spawn
+      const me = D.Game.me(game);
+      const spawn = me === 'enemy' ? es : ps;
       const ts = D.config.TILE_SIZE;
-      game.camera.x = ps.x * ts - 400;
-      game.camera.y = ps.y * ts - 300;
+      game.camera.x = spawn.x * ts - 400;
+      game.camera.y = spawn.y * ts - 300;
 
       D.Economy.tickPower(game);
       D.Map.recomputeFog(game, 'player');
       D.Map.recomputeFog(game, 'enemy');
 
       D.Game.pushMessage(game, 'Deploy your MCV on rock to begin.');
-      D.Game.pushMessage(game, 'Atreides vs Harkonnen — harvest the spice.');
+      if (game.multiplayer) {
+        D.Game.pushMessage(
+          game,
+          me === 'player'
+            ? 'You are Atreides (blue). Destroy the enemy CY/MCV.'
+            : 'You are Harkonnen (red). Destroy the enemy CY/MCV.'
+        );
+      } else {
+        D.Game.pushMessage(game, 'Atreides vs Harkonnen — harvest the spice.');
+      }
     },
 
     isDefeated(game, owner) {
@@ -120,25 +154,44 @@
       if (game.tick < 40) return;
       if (D.Game.isDefeated(game, 'player')) {
         game.phase = 'defeat';
-        D.Game.pushMessage(game, 'Defeat. The spice must flow... elsewhere.');
+        const local = D.Game.localEndPhase(game);
+        D.Game.pushMessage(
+          game,
+          local === 'defeat'
+            ? 'Defeat. The spice must flow... elsewhere.'
+            : 'Victory! Arrakis is yours.'
+        );
       } else if (D.Game.isDefeated(game, 'enemy')) {
         game.phase = 'victory';
-        D.Game.pushMessage(game, 'Victory! Arrakis is yours.');
+        const local = D.Game.localEndPhase(game);
+        D.Game.pushMessage(
+          game,
+          local === 'victory'
+            ? 'Victory! Arrakis is yours.'
+            : 'Defeat. The spice must flow... elsewhere.'
+        );
       }
     },
 
     tick(game, dt) {
       if (game.phase !== 'playing') return;
+      // Guest never runs sim — host is authoritative
+      if (game.multiplayer && game.netRole === 'guest') return;
+
       const t0 = typeof performance !== 'undefined' ? performance.now() : 0;
 
       game.tick++;
       D.Orders.tick(game, dt);
       D.Economy.tick(game, dt);
       D.Combat.tick(game, dt);
-      D.AI.tick(game, dt);
+      if (!game.multiplayer) D.AI.tick(game, dt);
       D.Map.recomputeFog(game, 'player');
       D.Map.recomputeFog(game, 'enemy');
       D.Game.checkWinLoss(game);
+
+      if (game.multiplayer && game.netRole === 'host' && D.Net) {
+        D.Net.sendState(game, false);
+      }
 
       if (typeof performance !== 'undefined') {
         game.stats.simMs = performance.now() - t0;

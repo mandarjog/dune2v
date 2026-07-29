@@ -13,27 +13,49 @@
   let lastClick = { t: 0, id: null };
   const PAN_SPEED = 480; // px/sec
 
+  function me(game) {
+    return D.Game.me(game);
+  }
+  function foe(game) {
+    return D.Game.foe(game);
+  }
+
   function canvasPos(e, el) {
     const r = el.getBoundingClientRect();
     return { x: e.clientX - r.left, y: e.clientY - r.top };
   }
 
   function selectedUnits(game) {
-    return game.units.filter((u) => game.selection.ids.includes(u.id) && u.owner === 'player');
+    const o = me(game);
+    return game.units.filter((u) => game.selection.ids.includes(u.id) && u.owner === o);
   }
 
   function selectedBuildings(game) {
+    const o = me(game);
     return game.buildings.filter(
-      (b) => game.selection.ids.includes(b.id) && b.owner === 'player'
+      (b) => game.selection.ids.includes(b.id) && b.owner === o
     );
   }
 
+  function issueOrder(game, ids, order) {
+    if (D.Net) return D.Net.command(game, { op: 'order', ids, order });
+    D.Orders.issue(game, ids, order);
+    return { ok: true };
+  }
+
+  function issueStop(game, ids) {
+    if (D.Net) return D.Net.command(game, { op: 'stop', ids });
+    D.Orders.stop(game, ids);
+    return { ok: true };
+  }
+
   function pickAt(game, wx, wy) {
+    const o = me(game);
     // units first (topmost by id)
     let bestU = null;
     let bestD = 0.55;
     for (const u of game.units) {
-      if (u.owner !== 'player' && !D.Map.isVisible(game, 'player', Math.floor(u.x), Math.floor(u.y)))
+      if (u.owner !== o && !D.Map.isVisible(game, o, Math.floor(u.x), Math.floor(u.y)))
         continue;
       const d = Math.hypot(u.x - wx, u.y - wy);
       if (d < bestD) {
@@ -46,8 +68,8 @@
     for (const b of game.buildings) {
       if (b.type === 'concrete') continue;
       if (
-        b.owner !== 'player' &&
-        !D.Map.isExplored(game, 'player', Math.floor(b.tileX + b.tileW / 2), Math.floor(b.tileY + b.tileH / 2))
+        b.owner !== o &&
+        !D.Map.isExplored(game, o, Math.floor(b.tileX + b.tileW / 2), Math.floor(b.tileY + b.tileH / 2))
       )
         continue;
       if (
@@ -108,8 +130,6 @@
       if (panKeys.right || keys.ArrowRight || keys.KeyD) game.camera.x += speed;
       if (panKeys.up || keys.ArrowUp || keys.KeyW) game.camera.y -= speed;
       if (panKeys.down || keys.ArrowDown || keys.KeyS) game.camera.y += speed;
-      // edge pan
-      // (optional — skip for MVP cleanliness)
       if (D.Renderer) D.Renderer.clampCamera(game);
     },
 
@@ -119,9 +139,13 @@
       if (e.code === 'ArrowUp' || e.code === 'KeyW') panKeys.up = true;
       if (e.code === 'ArrowDown' || e.code === 'KeyS') panKeys.down = true;
 
-      // don't steal typing from nowhere — no inputs
       if (e.code === 'Escape') {
         game.placement = null;
+        // Multiplayer: no pause (desyncs host clock); cancel placement only
+        if (game.multiplayer) {
+          e.preventDefault();
+          return;
+        }
         if (game.phase === 'playing') {
           game.phase = 'paused';
           if (D.Save) D.Save.write(game);
@@ -136,10 +160,6 @@
 
       if (game.phase !== 'playing') return;
 
-      if (e.code === 'KeyF' && (e.ctrlKey || e.metaKey)) {
-        // ignore browser find
-      }
-
       // F3 debug
       if (e.code === 'F3') {
         e.preventDefault();
@@ -148,14 +168,10 @@
         return;
       }
 
-      // Deploy MCV
-      if (e.code === 'KeyD' && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        // conflict with pan — use only if single MCV selected and KeyD without movement intent
-      }
       if (e.code === 'KeyE') {
         const mcvs = selectedUnits(game).filter((u) => u.type === 'mcv');
         if (mcvs.length) {
-          D.Orders.issue(
+          issueOrder(
             game,
             mcvs.map((u) => u.id),
             { type: 'deploy' }
@@ -165,11 +181,8 @@
         return;
       }
 
-      if (e.code === 'KeyS' && !panKeys.down) {
-        // stop — only if not holding for pan; use dedicated
-      }
       if (e.code === 'KeyX' || e.code === 'Period') {
-        D.Orders.stop(
+        issueStop(
           game,
           selectedUnits(game).map((u) => u.id)
         );
@@ -182,7 +195,7 @@
         for (const u of harvs) {
           const spice = D.Map.findNearestSpice(game.map, u.x, u.y);
           if (spice) {
-            D.Orders.issue(game, [u.id], {
+            issueOrder(game, [u.id], {
               type: 'harvest',
               tileX: spice.tx,
               tileY: spice.ty,
@@ -193,14 +206,11 @@
         return;
       }
 
-      if (e.code === 'Delete' || e.code === 'Backspace') {
-        // cancel structure? not for units
-      }
-
       // Control groups
       const num = e.code.match(/^Digit([1-9])$/);
       if (num) {
         const n = num[1];
+        const o = me(game);
         if (e.ctrlKey || e.metaKey) {
           game.controlGroups[n] = game.selection.ids.slice();
           D.Game.pushMessage(game, 'Group ' + n + ' set');
@@ -208,7 +218,7 @@
         } else {
           const ids = (game.controlGroups[n] || []).filter((id) => {
             const ent = D.Entities.getById(game, id);
-            return ent && ent.hp > 0 && ent.owner === 'player';
+            return ent && ent.hp > 0 && ent.owner === o;
           });
           game.selection.ids = ids;
           if (D.UI) {
@@ -220,19 +230,20 @@
         return;
       }
 
-      // Quicksave
+      // Quicksave (SP only)
       if (e.code === 'F5') {
         e.preventDefault();
+        if (game.multiplayer) return;
         if (D.Save && game.phase === 'playing') {
           if (D.Save.write(game)) D.Game.pushMessage(game, 'Game saved.');
         }
         return;
       }
 
-      // Debug cheats
+      // Debug cheats (SP / host only)
       const params = new URLSearchParams(location.search);
       const debug = params.get('debug') === '1' || D.config.features.debugCheats;
-      if (debug) {
+      if (debug && !game.multiplayer) {
         if (e.code === 'F1') {
           e.preventDefault();
           D.Game.giveCredits(game, 1000);
@@ -251,6 +262,7 @@
     onMouseDown(game, e) {
       if (game.phase !== 'playing') return;
       const pos = canvasPos(e, canvas);
+      const o = me(game);
 
       if (e.button === 0) {
         // placement
@@ -258,17 +270,24 @@
           const world = D.Renderer.screenToWorld(game, pos.x, pos.y);
           const tx = Math.floor(world.x);
           const ty = Math.floor(world.y);
-          const r = D.Economy.beginStructure(
-            game,
-            'player',
-            game.placement.type,
-            tx,
-            ty
-          );
-          if (r.ok) {
+          let r;
+          if (D.Net) {
+            r = D.Net.command(game, {
+              op: 'build',
+              type: game.placement.type,
+              tileX: tx,
+              tileY: ty,
+            });
+          } else {
+            r = D.Economy.beginStructure(game, o, game.placement.type, tx, ty);
+          }
+          if (r && r.ok) {
             if (!e.shiftKey) game.placement = null;
             if (D.UI) D.UI.refresh(game);
-          } else {
+            if (r.deferred) {
+              // Guest: optimistic clear; host state will confirm
+            }
+          } else if (r && !r.deferred) {
             D.Game.pushMessage(game, 'Cannot place: ' + (r.reason || 'invalid'));
           }
           return;
@@ -312,6 +331,7 @@
       const box = game.selection.box;
       dragging = false;
       game.selection.box = null;
+      const o = me(game);
 
       if (!box) return;
       const w = box.x1 - box.x0;
@@ -322,7 +342,7 @@
         // click select
         const world = D.Renderer.screenToWorld(game, pos.x, pos.y);
         const hit = pickAt(game, world.x, world.y);
-        if (hit && hit.entity.owner === 'player') {
+        if (hit && hit.entity.owner === o) {
           const id = hit.entity.id;
           const now = performance.now();
           if (
@@ -333,7 +353,7 @@
             // double-click select-by-type
             const type = hit.entity.type;
             game.selection.ids = game.units
-              .filter((u) => u.owner === 'player' && u.type === type && u.hp > 0)
+              .filter((u) => u.owner === o && u.type === type && u.hp > 0)
               .map((u) => u.id);
           } else if (shift) {
             const i = game.selection.ids.indexOf(id);
@@ -357,7 +377,7 @@
         const ids = game.units
           .filter(
             (u) =>
-              u.owner === 'player' &&
+              u.owner === o &&
               u.hp > 0 &&
               u.x >= minX &&
               u.x <= maxX &&
@@ -382,13 +402,24 @@
       const world = D.Renderer.screenToWorld(game, pos.x, pos.y);
       const units = selectedUnits(game);
       const buildings = selectedBuildings(game);
+      const o = me(game);
+      const enemy = foe(game);
 
       // rally point for selected factory
       if (buildings.length === 1 && !units.length) {
         const b = buildings[0];
         const prod = ['barracks', 'lightFactory', 'heavyFactory'];
         if (prod.includes(b.type)) {
-          D.Orders.setRally(game, b.id, world.x, world.y);
+          if (D.Net) {
+            D.Net.command(game, {
+              op: 'rally',
+              buildingId: b.id,
+              x: world.x,
+              y: world.y,
+            });
+          } else {
+            D.Orders.setRally(game, b.id, world.x, world.y);
+          }
           D.Game.pushMessage(game, 'Rally set');
           return;
         }
@@ -399,8 +430,8 @@
       const hit = pickAt(game, world.x, world.y);
 
       // attack enemy
-      if (hit && hit.entity.owner === 'enemy') {
-        D.Orders.issue(
+      if (hit && hit.entity.owner === enemy) {
+        issueOrder(
           game,
           units.map((u) => u.id),
           { type: 'attack', targetId: hit.entity.id }
@@ -413,14 +444,14 @@
       const ty = Math.floor(world.y);
       const harvs = units.filter((u) => u.type === 'harvester');
       if (harvs.length && D.Map.spiceAt(game.map, tx, ty) > 0) {
-        D.Orders.issue(
+        issueOrder(
           game,
           harvs.map((u) => u.id),
           { type: 'harvest', tileX: tx, tileY: ty }
         );
         const rest = units.filter((u) => u.type !== 'harvester');
         if (rest.length) {
-          D.Orders.issue(
+          issueOrder(
             game,
             rest.map((u) => u.id),
             { type: e.ctrlKey ? 'attack-move' : 'move', x: world.x, y: world.y }
@@ -429,7 +460,7 @@
         return;
       }
 
-      D.Orders.issue(
+      issueOrder(
         game,
         units.map((u) => u.id),
         {

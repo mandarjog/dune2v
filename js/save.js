@@ -161,6 +161,58 @@
       }
     },
 
+    /** Multiplayer snapshot — same as serialize but no camera/selection. */
+    serializeNet(game) {
+      const data = D.Save.serialize(game);
+      if (!data) return null;
+      delete data.camera;
+      delete data.selection;
+      delete data.controlGroups;
+      delete data.messages;
+      return data;
+    },
+
+    /**
+     * Apply host snapshot on guest. Keeps local camera, selection, placement.
+     */
+    applyNetState(game, data, opts) {
+      if (!data || !data.map) return false;
+      const localOwner = (opts && opts.localOwner) || game.localOwner || 'enemy';
+      const keepCam = game.camera ? { x: game.camera.x, y: game.camera.y } : null;
+      const keepSel = game.selection ? game.selection.ids.slice() : [];
+      const keepGroups = game.controlGroups
+        ? JSON.parse(JSON.stringify(game.controlGroups))
+        : null;
+      const keepPlacement = game.placement;
+      const keepHover = game.hoverTile;
+      const hadMap = !!game.map;
+
+      if (!D.Save.loadInto(game, data)) return false;
+
+      game.localOwner = localOwner;
+      game.multiplayer = true;
+      game.netRole = 'guest';
+
+      if (keepCam && hadMap) {
+        game.camera.x = keepCam.x;
+        game.camera.y = keepCam.y;
+      }
+      // Drop dead / foreign selection
+      game.selection.ids = keepSel.filter((id) => {
+        const e = D.Entities.getById(game, id);
+        return e && e.hp > 0 && e.owner === localOwner;
+      });
+      game.selection.box = null;
+      if (keepGroups) game.controlGroups = keepGroups;
+      game.placement = keepPlacement;
+      game.hoverTile = keepHover;
+
+      // Guest always sees their own FOW
+      D.Map.recomputeFog(game, 'player');
+      D.Map.recomputeFog(game, 'enemy');
+      return true;
+    },
+
     /** Apply save into an existing game object. Returns true on success. */
     loadInto(game, data) {
       if (!data || !data.map) return false;

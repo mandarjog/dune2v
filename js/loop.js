@@ -76,9 +76,10 @@
         D.UI.updateDebug(game);
       }
 
-      // Autosave every ~15s while playing
+      // Autosave every ~15s while playing (single-player only)
       if (
         D.Save &&
+        !game.multiplayer &&
         game.phase === 'playing' &&
         game.tick > 0 &&
         game.tick % 300 === 0

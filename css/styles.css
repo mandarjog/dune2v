@@ -333,6 +333,82 @@ button.game-btn.icon-btn .btn-label .meta.cant-afford {
   color: var(--danger);
 }
 
+.modal-wide {
+  max-width: 480px;
+}
+
+.modal button.primary {
+  background: #3a3220;
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.mp-block {
+  border-top: 1px solid var(--panel-border);
+  margin-top: 8px;
+  padding-top: 4px;
+  text-align: left;
+}
+
+.mp-join-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+  justify-content: center;
+}
+
+.mp-join-row input,
+#lobby-link {
+  flex: 1;
+  min-width: 0;
+  background: #12100c;
+  border: 1px solid var(--panel-border);
+  color: var(--text);
+  padding: 8px 10px;
+  font-size: 13px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.04em;
+}
+
+.mp-join-row button {
+  min-width: 72px;
+}
+
+.lobby-code-wrap {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 10px;
+  margin: 8px 0 12px;
+  font-size: 18px;
+}
+
+.lobby-code-wrap .label {
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+#lobby-code {
+  letter-spacing: 0.2em;
+  color: var(--accent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.lobby-link-label {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  text-align: left;
+  margin-bottom: 4px;
+}
+
+#lobby-link {
+  width: 100%;
+  box-sizing: border-box;
+}
+
 #selection-info .title {
   font-weight: 600;
   color: var(--text);

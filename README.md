@@ -40,6 +40,15 @@ fly deploy
 
 Health check: `GET /health` → `{ "ok": true }`.
 
+### Multiplayer (shared room)
+
+1. Open the game on Fly (or `npm start`).
+2. **Host room** → copy the link (`?room=ABC123`).
+3. Friend opens the link → joins as Harkonnen (red); host is Atreides (blue).
+4. Match auto-starts when the second player connects.
+
+Host runs the simulation; guest receives snapshots over WebSocket. AI is off in MP.
+
 Config: [`fly.toml`](./fly.toml) — `min_machines_running = 1`, `auto_stop_machines = off` so multiplayer rooms are not cold-stopped mid-match. Tweak region/size there.
 
 ```bash

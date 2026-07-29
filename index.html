@@ -44,23 +44,62 @@
 
     <!-- Main menu -->
     <div id="menu-modal" class="modal-backdrop">
-      <div class="modal">
+      <div class="modal modal-wide">
         <h2>Dune II</h2>
         <p>
           Unofficial browser skirmish inspired by Westwood’s Dune II.
           Harvest spice, build your base, destroy the enemy Construction Yard.
         </p>
         <p style="font-size: 12px">
-          Atreides (blue) vs Harkonnen (red) · procedural art · offline
+          Atreides (blue) vs Harkonnen (red) · procedural art
         </p>
         <div class="actions">
           <button id="btn-continue" type="button" style="display: none">Continue</button>
-          <button id="btn-start" type="button">New Skirmish</button>
+          <button id="btn-start" type="button">New Skirmish (vs AI)</button>
+        </div>
+        <div class="mp-block">
+          <div class="section-title" style="margin-top: 14px">Multiplayer 1v1</div>
+          <p class="hint" style="margin-bottom: 8px">
+            Host a room, share the link. Second player joins as Harkonnen.
+          </p>
+          <div class="actions">
+            <button id="btn-mp-host" type="button" class="primary">Host room</button>
+          </div>
+          <div class="mp-join-row">
+            <input
+              id="mp-code-input"
+              type="text"
+              maxlength="12"
+              placeholder="Room code"
+              autocomplete="off"
+              spellcheck="false"
+            />
+            <button id="btn-mp-join" type="button">Join</button>
+          </div>
         </div>
         <p class="hint" style="margin-top: 16px">
-          Progress autosaves (also F5 / Esc pause). Refresh → Continue.<br />
-          <code>?debug=1</code> cheats · <code>?ai=0</code> · <code>?fog=0</code>
+          SP autosaves (F5 / Esc pause). MP: share <code>?room=CODE</code>.<br />
+          <code>?debug=1</code> · <code>?ai=0</code> · <code>?fog=0</code>
         </p>
+      </div>
+    </div>
+
+    <!-- Multiplayer lobby -->
+    <div id="lobby-modal" class="modal-backdrop hidden">
+      <div class="modal modal-wide">
+        <h2>Multiplayer lobby</h2>
+        <p id="lobby-status">Connecting…</p>
+        <p id="lobby-seat" class="hint"></p>
+        <div class="lobby-code-wrap">
+          <span class="label">Room</span>
+          <strong id="lobby-code">—</strong>
+        </div>
+        <label class="lobby-link-label" for="lobby-link">Share this link</label>
+        <input id="lobby-link" type="text" readonly />
+        <div class="actions" style="margin-top: 14px">
+          <button id="btn-lobby-copy" type="button" class="primary">Copy link</button>
+          <button id="btn-lobby-cancel" type="button">Cancel</button>
+        </div>
       </div>
     </div>
 
@@ -105,6 +144,7 @@
     <script src="js/ui.js"></script>
     <script src="js/loop.js"></script>
     <script src="js/save.js"></script>
+    <script src="js/net.js"></script>
     <script src="maps/skirmish1.js"></script>
     <script src="js/main.js"></script>
   </body>

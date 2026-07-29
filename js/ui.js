@@ -12,6 +12,14 @@
     return document.getElementById(id);
   }
 
+  function me(game) {
+    return D.Game.me(game);
+  }
+
+  function myColor(game) {
+    return me(game) === 'player' ? D.config.colors.player : D.config.colors.enemy;
+  }
+
   function ownerColor(owner) {
     return owner === 'player' ? D.config.colors.player : D.config.colors.enemy;
   }
@@ -33,7 +41,11 @@
     } else {
       extra = `|m${units.length}:${buildings.length}`;
     }
-    return ids + extra;
+    return ids + extra + '|' + me(game);
+  }
+
+  function houseLabel(owner) {
+    return owner === 'player' ? 'Atreides (blue)' : 'Harkonnen (red)';
   }
 
   D.UI = {
@@ -48,10 +60,15 @@
         selectionInfo: $('selection-info'),
         messages: $('messages'),
         menuModal: $('menu-modal'),
+        lobbyModal: $('lobby-modal'),
         pauseModal: $('pause-modal'),
         endModal: $('end-modal'),
         debug: $('debug-overlay'),
         btnContinue: $('btn-continue'),
+        lobbyStatus: $('lobby-status'),
+        lobbyLink: $('lobby-link'),
+        lobbyCode: $('lobby-code'),
+        lobbySeat: $('lobby-seat'),
       };
 
       // Event delegation — survive DOM rebuilds; never lose clicks mid-frame
@@ -62,8 +79,19 @@
           e.stopPropagation();
           const buildingId = Number(produceBtn.dataset.buildingId);
           const unitType = produceBtn.dataset.produce;
-          const r = D.Economy.enqueueUnit(game, buildingId, unitType);
-          if (!r.ok) {
+          let r;
+          if (D.Net) {
+            r = D.Net.command(game, { op: 'produce', buildingId, unitType });
+          } else {
+            r = D.Economy.enqueueUnit(game, buildingId, unitType);
+          }
+          if (r && r.ok) {
+            const name = D.config.units[unitType]?.name || unitType;
+            D.Game.pushMessage(game, 'Training ' + name);
+            lastSelSig = '';
+            D.UI.refresh(game);
+            if (D.Save && !game.multiplayer) D.Save.write(game);
+          } else if (r && !r.deferred) {
             const msg =
               r.reason === 'credits'
                 ? 'Not enough credits'
@@ -71,14 +99,8 @@
                   ? 'Production queue full'
                   : r.reason === 'building'
                     ? 'Factory not ready'
-                    : 'Cannot train: ' + r.reason;
+                    : 'Cannot train: ' + (r.reason || '?');
             D.Game.pushMessage(game, msg);
-          } else {
-            const name = D.config.units[unitType]?.name || unitType;
-            D.Game.pushMessage(game, 'Training ' + name);
-            lastSelSig = ''; // force panel refresh to show queue
-            D.UI.refresh(game);
-            if (D.Save) D.Save.write(game);
           }
           return;
         }
@@ -86,7 +108,12 @@
         if (cancelBtn) {
           e.preventDefault();
           e.stopPropagation();
-          D.Economy.cancelQueue(game, Number(cancelBtn.dataset.buildingId), 0);
+          const buildingId = Number(cancelBtn.dataset.buildingId);
+          if (D.Net) {
+            D.Net.command(game, { op: 'cancelQueue', buildingId, index: 0 });
+          } else {
+            D.Economy.cancelQueue(game, buildingId, 0);
+          }
           lastSelSig = '';
           D.UI.refresh(game);
           return;
@@ -94,7 +121,12 @@
         const deployBtn = e.target.closest('[data-deploy]');
         if (deployBtn) {
           e.preventDefault();
-          D.Orders.issue(game, [Number(deployBtn.dataset.unitId)], { type: 'deploy' });
+          const id = Number(deployBtn.dataset.unitId);
+          if (D.Net) {
+            D.Net.command(game, { op: 'order', ids: [id], order: { type: 'deploy' } });
+          } else {
+            D.Orders.issue(game, [id], { type: 'deploy' });
+          }
           lastSelSig = '';
           D.UI.refresh(game);
         }
@@ -105,16 +137,23 @@
       sidebar?.addEventListener('mousedown', (e) => e.stopPropagation());
 
       $('btn-start')?.addEventListener('click', () => {
+        if (game.multiplayer && D.Net) D.Net.leave();
+        game.multiplayer = false;
+        game.localOwner = 'player';
+        game.netRole = null;
+        D.config.features.ai = true;
         if (D.Save) D.Save.clear();
         D.Game.startSkirmish(game, D.MAPS.skirmish1);
         lastSelSig = '';
         D.UI.hideMenu();
+        D.UI.hideLobby();
         D.UI.refresh(game);
         D.Renderer.rebuildTerrain(game);
         if (D.Save) D.Save.write(game);
       });
 
       $('btn-continue')?.addEventListener('click', () => {
+        if (game.multiplayer) return;
         const data = D.Save && D.Save.read();
         if (!data || !D.Save.loadInto(game, data)) {
           D.Game.pushMessage(game, 'No valid save found.');
@@ -127,14 +166,67 @@
         D.Game.pushMessage(game, 'Game restored.');
       });
 
+      $('btn-mp-host')?.addEventListener('click', () => {
+        if (!D.Net) return;
+        D.UI.hideMenu();
+        D.UI.showLobby('Creating room…');
+        D.Net.host();
+      });
+
+      $('btn-mp-join')?.addEventListener('click', () => {
+        const input = $('mp-code-input');
+        const code = (input && input.value) || '';
+        if (!D.Net) return;
+        D.UI.hideMenu();
+        D.UI.showLobby('Joining room…');
+        D.Net.join(code);
+      });
+
+      $('btn-lobby-copy')?.addEventListener('click', async () => {
+        const url = D.Net && D.Net.roomUrl();
+        if (!url) return;
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(url);
+            D.Game.pushMessage(game, 'Room link copied.');
+          } else {
+            const el = els.lobbyLink;
+            if (el) {
+              el.focus();
+              el.select();
+              document.execCommand('copy');
+              D.Game.pushMessage(game, 'Room link copied.');
+            }
+          }
+        } catch (err) {
+          D.Game.pushMessage(game, 'Copy failed — select the link manually.');
+        }
+        D.UI.refreshLobby();
+      });
+
+      $('btn-lobby-cancel')?.addEventListener('click', () => {
+        if (D.Net) D.Net.leave();
+        // strip room from URL without reload
+        try {
+          const u = new URL(location.href);
+          u.searchParams.delete('room');
+          history.replaceState(null, '', u.pathname + u.search + u.hash);
+        } catch (e) {
+          /* ignore */
+        }
+        D.UI.hideLobby();
+        D.UI.showMenu();
+      });
+
       $('btn-resume')?.addEventListener('click', () => {
         game.phase = 'playing';
         D.UI.showPause(false);
-        if (D.Save) D.Save.write(game);
+        if (D.Save && !game.multiplayer) D.Save.write(game);
       });
 
       $('btn-restart')?.addEventListener('click', () => {
         D.UI.showPause(false);
+        if (game.multiplayer) return;
         if (D.Save) D.Save.clear();
         D.Game.startSkirmish(game, D.MAPS.skirmish1);
         lastSelSig = '';
@@ -144,6 +236,14 @@
 
       $('btn-end-restart')?.addEventListener('click', () => {
         els.endModal.classList.add('hidden');
+        if (game.multiplayer) {
+          if (D.Net) D.Net.leave();
+          game.multiplayer = false;
+          game.localOwner = 'player';
+          D.config.features.ai = true;
+          D.UI.showMenu();
+          return;
+        }
         if (D.Save) D.Save.clear();
         D.Game.startSkirmish(game, D.MAPS.skirmish1);
         lastSelSig = '';
@@ -154,10 +254,48 @@
       $('btn-end-menu')?.addEventListener('click', () => {
         els.endModal.classList.add('hidden');
         game.phase = 'menu';
+        if (game.multiplayer && D.Net) D.Net.leave();
+        game.multiplayer = false;
+        game.localOwner = 'player';
+        D.config.features.ai = true;
         if (D.Save) D.Save.clear();
         D.UI.updateContinueButton();
         D.UI.showMenu();
       });
+
+      if (D.Net) {
+        D.Net.on((ev, data) => {
+          if (ev === 'joined' || ev === 'peer_joined' || ev === 'peer_left' || ev === 'status') {
+            D.UI.refreshLobby();
+          }
+          if (ev === 'match_started') {
+            D.UI.hideLobby();
+            D.UI.hideMenu();
+            lastSelSig = '';
+            D.UI.refresh(game);
+          }
+          if (ev === 'error') {
+            const err = (data && data.error) || D.Net.lastError || 'error';
+            const map = {
+              room_full: 'That room is full (2 players).',
+              no_host: 'Multiplayer needs the game server (npm start or Fly).',
+              no_ws: 'WebSocket not available in this browser.',
+              connect_failed: 'Could not connect to multiplayer server.',
+              bad_room: 'Invalid room code.',
+            };
+            if (els.lobbyStatus) {
+              els.lobbyStatus.textContent = map[err] || ('Error: ' + err);
+            }
+            // stay on lobby if open, else toast
+            if (!els.lobbyModal || els.lobbyModal.classList.contains('hidden')) {
+              D.Game.pushMessage(game, map[err] || err);
+            }
+          }
+          if (ev === 'disconnect') {
+            D.UI.refreshLobby();
+          }
+        });
+      }
 
       D.UI.buildStructureButtons(game);
       D.UI.updateContinueButton();
@@ -167,7 +305,7 @@
     updateContinueButton() {
       const btn = els.btnContinue || $('btn-continue');
       if (!btn) return;
-      const ok = D.Save && D.Save.has();
+      const ok = D.Save && D.Save.has() && !(boundGame && boundGame.multiplayer);
       btn.style.display = ok ? '' : 'none';
       btn.disabled = !ok;
     },
@@ -181,6 +319,54 @@
       els.menuModal?.classList.add('hidden');
     },
 
+    showLobby(statusText) {
+      if (!els.lobbyModal) return;
+      els.lobbyModal.classList.remove('hidden');
+      if (statusText && els.lobbyStatus) els.lobbyStatus.textContent = statusText;
+      D.UI.refreshLobby();
+    },
+
+    hideLobby() {
+      els.lobbyModal?.classList.add('hidden');
+    },
+
+    refreshLobby() {
+      if (!els.lobbyModal || !D.Net) return;
+      const code = D.Net.room || '—';
+      const url = D.Net.roomUrl() || '';
+      if (els.lobbyCode) els.lobbyCode.textContent = code;
+      if (els.lobbyLink) {
+        els.lobbyLink.value = url;
+      }
+      if (els.lobbySeat) {
+        if (D.Net.seat) {
+          els.lobbySeat.textContent =
+            'You: ' +
+            houseLabel(D.Net.seat) +
+            (D.Net.role === 'host' ? ' · host' : ' · guest');
+        } else {
+          els.lobbySeat.textContent = '';
+        }
+      }
+      if (els.lobbyStatus) {
+        if (D.Net.status === 'connecting') {
+          els.lobbyStatus.textContent = 'Connecting…';
+        } else if (D.Net.status === 'lobby') {
+          const n = D.Net.peers || 1;
+          if (n < 2) {
+            els.lobbyStatus.textContent =
+              'Waiting for opponent… share the link below. Match starts when they join.';
+          } else {
+            els.lobbyStatus.textContent = 'Opponent connected — starting match…';
+          }
+        } else if (D.Net.status === 'playing') {
+          els.lobbyStatus.textContent = 'Match in progress.';
+        } else if (D.Net.lastError) {
+          els.lobbyStatus.textContent = D.Net.lastError;
+        }
+      }
+    },
+
     showPause(show) {
       if (!els.pauseModal) return;
       if (show) els.pauseModal.classList.remove('hidden');
@@ -191,18 +377,19 @@
       if (!els.endModal) return;
       const modal = els.endModal;
       modal.classList.remove('hidden');
-      modal.querySelector('.modal').classList.toggle('victory', game.phase === 'victory');
-      modal.querySelector('.modal').classList.toggle('defeat', game.phase === 'defeat');
+      const local = D.Game.localEndPhase(game);
+      modal.querySelector('.modal').classList.toggle('victory', local === 'victory');
+      modal.querySelector('.modal').classList.toggle('defeat', local === 'defeat');
       const h2 = modal.querySelector('h2');
       const p = modal.querySelector('p');
-      if (game.phase === 'victory') {
+      if (local === 'victory') {
         h2.textContent = 'Victory';
         p.textContent = 'The Emperor acknowledges your control of Arrakis.';
       } else {
         h2.textContent = 'Defeat';
         p.textContent = 'Your base has fallen. The spice must flow… elsewhere.';
       }
-      if (D.Save) D.Save.clear();
+      if (D.Save && !game.multiplayer) D.Save.clear();
     },
 
     buildStructureButtons(game) {
@@ -242,7 +429,7 @@
           'building',
           type,
           40,
-          D.config.colors.player
+          myColor(game)
         );
         icon.className = 'btn-icon';
         icon.setAttribute('aria-hidden', 'true');
@@ -256,12 +443,13 @@
           e.preventDefault();
           e.stopPropagation();
           if (game.phase !== 'playing') return;
-          if (!D.Economy.hasTech(game, 'player', def.requires)) {
+          const o = me(game);
+          if (!D.Economy.hasTech(game, o, def.requires)) {
             D.Game.pushMessage(game, 'Requires ' + (def.requires || 'tech'));
             return;
           }
-          if (game.structureBuilder?.player != null) {
-            const busy = game.buildings.find((b) => b.id === game.structureBuilder.player);
+          if (game.structureBuilder?.[o] != null) {
+            const busy = game.buildings.find((b) => b.id === game.structureBuilder[o]);
             if (busy && busy.buildProgress < 1) {
               D.Game.pushMessage(game, 'Already constructing…');
               return;
@@ -277,11 +465,12 @@
     /** Lightweight HUD update; rebuild selection panel only when needed */
     refresh(game) {
       if (!els.credits) return;
+      const o = me(game);
 
-      const c = Math.floor(game.credits.player);
-      const cap = game.spiceCap.player;
+      const c = Math.floor(game.credits[o] || 0);
+      const cap = game.spiceCap[o] || 0;
       els.credits.textContent = `${c} / ${cap}`;
-      const p = game.power.player;
+      const p = game.power[o] || { prod: 0, need: 0, ratio: 1 };
       els.power.textContent = `${p.prod} / ${p.need}`;
       const ratio = p.need > 0 ? Math.min(1, p.prod / p.need) : 1;
       if (els.powerFill) {
@@ -296,17 +485,17 @@
         for (const btn of grid.querySelectorAll('button')) {
           const type = btn.dataset.type;
           const def = D.config.buildings[type];
-          const tech = D.Economy.hasTech(game, 'player', def.requires);
+          const tech = D.Economy.hasTech(game, o, def.requires);
           const hasCY = game.buildings.some(
             (b) =>
-              b.owner === 'player' &&
+              b.owner === o &&
               b.type === 'constructionYard' &&
               b.buildProgress >= 1
           );
           const busy =
-            game.structureBuilder?.player != null &&
+            game.structureBuilder?.[o] != null &&
             game.buildings.some(
-              (b) => b.id === game.structureBuilder.player && b.buildProgress < 1
+              (b) => b.id === game.structureBuilder[o] && b.buildProgress < 1
             );
           btn.disabled = !tech || !hasCY || busy || game.phase !== 'playing';
           btn.classList.toggle('active', game.placement && game.placement.type === type);
@@ -318,7 +507,6 @@
         lastSelSig = sig;
         D.UI.renderSelection(game);
       } else {
-        // keep produce affordability in sync without rebuild
         D.UI.syncProduceAffordability(game);
         D.UI.syncQueueProgress(game);
       }
@@ -328,16 +516,16 @@
       }
     },
 
-    /** Force selection panel rebuild (e.g. after click select) */
     invalidateSelection() {
       lastSelSig = '';
     },
 
     syncProduceAffordability(game) {
       if (!els.unitMenu) return;
+      const o = me(game);
       for (const btn of els.unitMenu.querySelectorAll('[data-produce]')) {
         const cost = Number(btn.dataset.cost || 0);
-        btn.disabled = game.phase !== 'playing' || !D.Economy.canAfford(game, 'player', cost);
+        btn.disabled = game.phase !== 'playing' || !D.Economy.canAfford(game, o, cost);
       }
     },
 
@@ -369,6 +557,7 @@
       if (!info || !unitMenu) return;
       info.innerHTML = '';
       unitMenu.innerHTML = '';
+      const o = me(game);
 
       const ids = game.selection.ids;
       if (!ids.length) {
@@ -389,7 +578,7 @@
         const text = document.createElement('div');
         text.innerHTML = `
           <div class="title">${def?.name || u.type}</div>
-          <div class="meta">${u.owner} · HP ${Math.ceil(u.hp)}/${u.hpMax}</div>
+          <div class="meta">${u.owner === o ? 'yours' : u.owner} · HP ${Math.ceil(u.hp)}/${u.hpMax}</div>
           <div class="hp-bar"><span style="width:${(u.hp / u.hpMax) * 100}%"></span></div>
           ${u.type === 'harvester' ? `<div class="meta">Cargo ${Math.floor(u.cargo)}/${u.cargoMax}</div>` : ''}
           ${u.type === 'mcv' ? `<div class="hint">Press <b>E</b> to deploy Construction Yard on rock.</div>` : ''}
@@ -398,7 +587,7 @@
         row.appendChild(ic);
         row.appendChild(text);
         info.appendChild(row);
-        if (u.type === 'mcv') {
+        if (u.type === 'mcv' && u.owner === o) {
           const btn = document.createElement('button');
           btn.type = 'button';
           btn.className = 'game-btn primary';
@@ -431,7 +620,7 @@
         row.appendChild(text);
         info.appendChild(row);
 
-        if (b.buildProgress >= 1 && def?.produces && def.produces.length) {
+        if (b.owner === o && b.buildProgress >= 1 && def?.produces && def.produces.length) {
           const title = document.createElement('div');
           title.className = 'section-title';
           title.textContent = 'Produce';
@@ -447,23 +636,18 @@
             btn.dataset.produce = ut;
             btn.dataset.buildingId = String(b.id);
             btn.dataset.cost = String(udef.cost);
-            const icon = D.Sprites.getIconCanvas(
-              'unit',
-              ut,
-              36,
-              D.config.colors.player
-            );
+            const icon = D.Sprites.getIconCanvas('unit', ut, 36, myColor(game));
             icon.className = 'btn-icon';
             const label = document.createElement('span');
             label.className = 'btn-label';
-            const can = D.Economy.canAfford(game, 'player', udef.cost);
+            const can = D.Economy.canAfford(game, o, udef.cost);
             label.innerHTML = `<strong>${udef.name}</strong><span class="meta ${can ? '' : 'cant-afford'}">${udef.cost}¢ · ${udef.buildTime}s${can ? '' : ' — need credits'}</span>`;
             btn.appendChild(icon);
             btn.appendChild(label);
             btn.disabled = game.phase !== 'playing' || !can;
             btn.title = can
               ? `Train ${udef.name} (${udef.cost} credits, ${udef.buildTime}s)`
-              : `Need ${udef.cost} credits (have ${Math.floor(game.credits.player)}, cap ${game.spiceCap.player}). Build silos to raise cap.`;
+              : `Need ${udef.cost} credits (have ${Math.floor(game.credits[o])}, cap ${game.spiceCap[o]}). Build silos to raise cap.`;
             g.appendChild(btn);
           }
           unitMenu.appendChild(g);
@@ -509,13 +693,16 @@
 
     updateDebug(game) {
       if (!els.debug || !els.debug.classList.contains('visible')) return;
+      const o = me(game);
       els.debug.textContent = [
         `fps ${game.stats.fps | 0}  sim ${game.stats.simMs.toFixed(2)}ms`,
-        `tick ${game.tick}  phase ${game.phase}`,
+        `tick ${game.tick}  phase ${game.phase}  me=${o}`,
         `units ${game.units.length}  bld ${game.buildings.length}`,
-        `credits ${game.credits.player | 0}/${game.spiceCap.player}`,
-        `power ${game.power.player.prod}/${game.power.player.need} r=${game.power.player.ratio.toFixed(2)}`,
-        `ai ${game.ai.state}  repaths ${game._repathsThisTick || 0}`,
+        `credits ${game.credits[o] | 0}/${game.spiceCap[o]}`,
+        `power ${game.power[o].prod}/${game.power[o].need} r=${game.power[o].ratio.toFixed(2)}`,
+        game.multiplayer
+          ? `mp ${game.netRole} room ${game.roomCode || D.Net?.room || '?'} peers ${D.Net?.peers || 0}`
+          : `ai ${game.ai.state}  repaths ${game._repathsThisTick || 0}`,
         `cam ${game.camera.x | 0},${game.camera.y | 0}`,
         D.Save && D.Save.has() ? 'save: yes' : 'save: no',
       ].join('\n');

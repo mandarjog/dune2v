@@ -27,13 +27,22 @@
 
     D.Renderer.init(canvas, minimap);
     D.Input.init(game, canvas, minimap);
+    if (D.Net) D.Net.init(game);
     D.UI.init(game);
     D.Loop.start(game);
 
-    // Persist on tab close / refresh
+    // Persist on tab close / refresh (SP only)
     window.addEventListener('beforeunload', () => {
-      if (D.Save && game.phase === 'playing') D.Save.write(game);
+      if (D.Save && !game.multiplayer && game.phase === 'playing') D.Save.write(game);
     });
+
+    // Shareable multiplayer room: ?room=ABC123
+    const room = (params.get('room') || '').trim().toUpperCase();
+    if (room && D.Net) {
+      D.UI.hideMenu();
+      D.UI.showLobby('Joining room ' + room + '…');
+      D.Net.join(room);
+    }
 
     // expose for console debugging
     window.__dune2 = { game, D };

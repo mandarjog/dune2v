@@ -41,6 +41,10 @@
     }
   }
 
+  function me(game) {
+    return D.Game.me(game);
+  }
+
   D.Renderer = {
     init(gameCanvas, minimapCanvas) {
       canvas = gameCanvas;
@@ -178,14 +182,14 @@
       // projectiles — hide enemy shots in shroud
       for (const p of game.projectiles) {
         if (
-          p.owner !== 'player' &&
+          p.owner !== me(game) &&
           D.config.features.fog &&
-          !D.Map.isVisible(game, 'player', Math.floor(p.x), Math.floor(p.y))
+          !D.Map.isVisible(game, me(game), Math.floor(p.x), Math.floor(p.y))
         ) {
           continue;
         }
         const s = D.Renderer.worldToScreen(game, p.x, p.y);
-        ctx.fillStyle = p.owner === 'player' ? '#9cf' : '#f96';
+        ctx.fillStyle = p.owner === me(game) ? '#9cf' : '#f96';
         ctx.beginPath();
         ctx.arc(s.x, s.y, 3, 0, Math.PI * 2);
         ctx.fill();
@@ -199,8 +203,8 @@
           if (
             D.config.features.fog &&
             fx != null &&
-            !D.Map.isVisible(game, 'player', Math.floor(fx), Math.floor(fy)) &&
-            !D.Map.isExplored(game, 'player', Math.floor(fx), Math.floor(fy))
+            !D.Map.isVisible(game, me(game), Math.floor(fx), Math.floor(fy)) &&
+            !D.Map.isExplored(game, me(game), Math.floor(fx), Math.floor(fy))
           ) {
             continue;
           }
@@ -251,25 +255,27 @@
     },
 
     shouldDrawUnit(game, u) {
-      if (u.owner === 'player') return true;
+      const o = me(game);
+      if (u.owner === o) return true;
       if (!D.config.features.fog) return true;
-      return D.Map.isVisible(game, 'player', Math.floor(u.x), Math.floor(u.y));
+      return D.Map.isVisible(game, o, Math.floor(u.x), Math.floor(u.y));
     },
 
     shouldDrawBuilding(game, b) {
-      if (b.owner === 'player') return true;
+      const o = me(game);
+      if (b.owner === o) return true;
       if (!D.config.features.fog) return true;
       // explored buildings remain visible (classic)
       const c = D.Entities.buildingCenter(b);
       return (
-        D.Map.isExplored(game, 'player', Math.floor(c.x), Math.floor(c.y)) ||
-        D.Map.isVisible(game, 'player', Math.floor(c.x), Math.floor(c.y))
+        D.Map.isExplored(game, o, Math.floor(c.x), Math.floor(c.y)) ||
+        D.Map.isVisible(game, o, Math.floor(c.x), Math.floor(c.y))
       );
     },
 
     drawFog(game) {
       const map = game.map;
-      const fog = game.fog.player;
+      const fog = game.fog[me(game)];
       const t = ts();
       const cam = game.camera;
       const x0 = Math.max(0, Math.floor(cam.x / t));
@@ -390,14 +396,14 @@
       const def = D.config.buildings[p.type];
       if (!def) return;
       const t = ts();
-      const ok = D.Map.canPlace(game, p.type, p.tileX, p.tileY, 'player');
+      const ok = D.Map.canPlace(game, p.type, p.tileX, p.tileY, me(game));
       const s = D.Renderer.worldToScreen(game, p.tileX, p.tileY);
       const w = def.tileW * t;
       const h = def.tileH * t;
       ctx.fillStyle = ok ? 'rgba(74,144,217,0.18)' : 'rgba(192,57,43,0.22)';
       ctx.fillRect(s.x, s.y, w, h);
       D.Sprites.drawBuilding(ctx, p.type, s.x, s.y, w, h, {
-        ownerColor: ok ? D.config.colors.player : D.config.colors.enemy,
+        ownerColor: ok ? (me(game) === 'player' ? D.config.colors.player : D.config.colors.enemy) : (me(game) === 'player' ? D.config.colors.enemy : D.config.colors.player),
         alpha: 0.55,
         time: game.tick * D.config.DT_SEC,
         powered: true,
@@ -425,11 +431,11 @@
       for (let ty = 0; ty < map.height; ty++) {
         for (let tx = 0; tx < map.width; tx++) {
           const i = ty * map.width + tx;
-          if (D.config.features.fog && game.fog && !game.fog.player.explored[i]) {
+          if (D.config.features.fog && game.fog && !game.fog[me(game)].explored[i]) {
             mctx.fillStyle = '#000';
           } else {
             mctx.fillStyle = terrainColor(map.tiles[i]);
-            if (D.config.features.fog && game.fog && !game.fog.player.visible[i]) {
+            if (D.config.features.fog && game.fog && !game.fog[me(game)].visible[i]) {
               // dim explored
             }
           }
@@ -443,7 +449,7 @@
         for (let ty = 0; ty < map.height; ty++) {
           for (let tx = 0; tx < map.width; tx++) {
             const i = ty * map.width + tx;
-            if (game.fog.player.explored[i] && !game.fog.player.visible[i]) {
+            if (game.fog[me(game)].explored[i] && !game.fog[me(game)].visible[i]) {
               mctx.fillRect(tx * sx, ty * sy, Math.ceil(sx), Math.ceil(sy));
             }
           }
@@ -453,7 +459,7 @@
       // buildings
       for (const b of game.buildings) {
         if (b.type === 'concrete') continue;
-        if (b.owner !== 'player' && !D.Renderer.shouldDrawBuilding(game, b)) continue;
+        if (b.owner !== me(game) && !D.Renderer.shouldDrawBuilding(game, b)) continue;
         mctx.fillStyle = ownerColor(b.owner);
         mctx.fillRect(b.tileX * sx, b.tileY * sy, Math.max(1, b.tileW * sx), Math.max(1, b.tileH * sy));
       }
@@ -461,14 +467,14 @@
       // units — player always; enemy if visible (or radar)
       const hasRadar = game.buildings.some(
         (b) =>
-          b.owner === 'player' &&
+          b.owner === me(game) &&
           b.type === 'radar' &&
           b.buildProgress >= 1 &&
           b.hp > 0
       );
       for (const u of game.units) {
-        if (u.owner === 'enemy') {
-          const vis = D.Map.isVisible(game, 'player', Math.floor(u.x), Math.floor(u.y));
+        if (u.owner !== me(game)) {
+          const vis = D.Map.isVisible(game, me(game), Math.floor(u.x), Math.floor(u.y));
           if (!vis) continue;
           if (!hasRadar && !vis) continue;
         }
