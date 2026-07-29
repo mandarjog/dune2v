@@ -374,9 +374,27 @@ button.game-btn.icon-btn .btn-label .meta.cant-afford {
   letter-spacing: 0.04em;
 }
 
-#mp-name-input {
+#mp-name-input,
+#join-name-input {
   font-family: "Segoe UI", system-ui, sans-serif;
   letter-spacing: normal;
+}
+
+#join-name-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: #12100c;
+  border: 1px solid var(--panel-border);
+  color: var(--text);
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+#join-room-label {
+  font-size: 15px;
+  color: var(--accent);
+  letter-spacing: 0.12em;
+  margin-bottom: 12px;
 }
 
 .lobby-roster {

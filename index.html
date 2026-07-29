@@ -94,6 +94,30 @@
       </div>
     </div>
 
+    <!-- Join via shared link: pick name before connecting -->
+    <div id="join-modal" class="modal-backdrop hidden">
+      <div class="modal modal-wide">
+        <h2>Join multiplayer</h2>
+        <p id="join-room-label" class="hint">Room —</p>
+        <label class="lobby-link-label" for="join-name-input">Your name</label>
+        <input
+          id="join-name-input"
+          type="text"
+          maxlength="20"
+          placeholder="Commander"
+          autocomplete="nickname"
+          spellcheck="false"
+        />
+        <p class="hint" style="margin-top: 10px; text-align: left">
+          You will join as Harkonnen (red) if the host is already in the room.
+        </p>
+        <div class="actions" style="margin-top: 14px">
+          <button id="btn-join-go" type="button" class="primary">Join match</button>
+          <button id="btn-join-cancel" type="button">Cancel</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Multiplayer lobby -->
     <div id="lobby-modal" class="modal-backdrop hidden">
       <div class="modal modal-wide">

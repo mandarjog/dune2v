@@ -80,20 +80,34 @@
         lobbyRoster: $('lobby-roster'),
         mpNameInput: $('mp-name-input'),
         mpMatchup: $('mp-matchup'),
+        joinModal: $('join-modal'),
+        joinNameInput: $('join-name-input'),
+        joinRoomLabel: $('join-room-label'),
       };
 
-      // Restore saved multiplayer display name
-      if (els.mpNameInput && D.Net) {
-        els.mpNameInput.value = D.Net.loadStoredName();
+      D.UI._pendingJoinRoom = null;
+
+      // Restore saved multiplayer display name into both name fields
+      const savedName = D.Net ? D.Net.loadStoredName() : 'Commander';
+      if (els.mpNameInput) {
+        els.mpNameInput.value = savedName;
         els.mpNameInput.addEventListener('change', () => {
-          D.Net.saveName(els.mpNameInput.value);
+          if (D.Net) D.Net.saveName(els.mpNameInput.value);
         });
         els.mpNameInput.addEventListener('keydown', (e) => {
-          // Don't let Enter bubble into game hotkeys
           if (e.code === 'Enter') {
             e.preventDefault();
-            D.Net.saveName(els.mpNameInput.value);
+            if (D.Net) D.Net.saveName(els.mpNameInput.value);
             els.mpNameInput.blur();
+          }
+        });
+      }
+      if (els.joinNameInput) {
+        els.joinNameInput.value = savedName;
+        els.joinNameInput.addEventListener('keydown', (e) => {
+          if (e.code === 'Enter') {
+            e.preventDefault();
+            $('btn-join-go')?.click();
           }
         });
       }
@@ -203,12 +217,43 @@
 
       $('btn-mp-join')?.addEventListener('click', () => {
         const input = $('mp-code-input');
-        const code = (input && input.value) || '';
+        const code = ((input && input.value) || '').trim().toUpperCase();
         if (!D.Net) return;
+        if (!code) {
+          D.Game.pushMessage(game, 'Enter a room code to join.');
+          return;
+        }
         const name = els.mpNameInput ? els.mpNameInput.value : undefined;
         D.UI.hideMenu();
         D.UI.showLobby('Joining room…');
         D.Net.join(code, name);
+      });
+
+      $('btn-join-go')?.addEventListener('click', () => {
+        if (!D.Net || !D.UI._pendingJoinRoom) return;
+        const nameEl = els.joinNameInput || $('join-name-input');
+        const name = nameEl ? nameEl.value : undefined;
+        // Keep menu name field in sync
+        if (els.mpNameInput && nameEl) els.mpNameInput.value = nameEl.value;
+        D.UI.hideJoinPrompt();
+        D.UI.hideMenu();
+        D.UI.showLobby('Joining room ' + D.UI._pendingJoinRoom + '…');
+        D.Net.join(D.UI._pendingJoinRoom, name);
+        D.UI._pendingJoinRoom = null;
+      });
+
+      $('btn-join-cancel')?.addEventListener('click', () => {
+        D.UI._pendingJoinRoom = null;
+        D.UI.hideJoinPrompt();
+        try {
+          const u = new URL(location.href);
+          u.searchParams.delete('room');
+          u.searchParams.delete('name');
+          history.replaceState(null, '', u.pathname + u.search + u.hash);
+        } catch (e) {
+          /* ignore */
+        }
+        D.UI.showMenu();
       });
 
       $('btn-lobby-copy')?.addEventListener('click', async () => {
@@ -357,6 +402,7 @@
 
     showLobby(statusText) {
       if (!els.lobbyModal) return;
+      D.UI.hideJoinPrompt();
       els.lobbyModal.classList.remove('hidden');
       if (statusText && els.lobbyStatus) els.lobbyStatus.textContent = statusText;
       D.UI.refreshLobby();
@@ -364,6 +410,44 @@
 
     hideLobby() {
       els.lobbyModal?.classList.add('hidden');
+    },
+
+    /**
+     * Shared-link join: ask for a name before connecting.
+     * @param {string} roomCode
+     * @param {string} [prefillName]
+     */
+    showJoinPrompt(roomCode, prefillName) {
+      const code = String(roomCode || '')
+        .trim()
+        .toUpperCase();
+      if (!code) return;
+      D.UI._pendingJoinRoom = code;
+      D.UI.hideMenu();
+      D.UI.hideLobby();
+      const modal = els.joinModal || $('join-modal');
+      const label = els.joinRoomLabel || $('join-room-label');
+      const nameInput = els.joinNameInput || $('join-name-input');
+      if (label) label.textContent = 'Room ' + code;
+      if (nameInput) {
+        const saved = prefillName || (D.Net && D.Net.loadStoredName()) || 'Commander';
+        nameInput.value = saved;
+        // Focus after paint so the joiner can type immediately
+        setTimeout(() => {
+          try {
+            nameInput.focus();
+            nameInput.select();
+          } catch (e) {
+            /* ignore */
+          }
+        }, 0);
+      }
+      modal?.classList.remove('hidden');
+    },
+
+    hideJoinPrompt() {
+      const modal = els.joinModal || $('join-modal');
+      modal?.classList.add('hidden');
     },
 
     refreshLobby() {
