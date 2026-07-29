@@ -1,0 +1,83 @@
+# Dune II — Browser Skirmish
+
+Unofficial single-page HTML clone inspired by *Dune II: The Building of a Dynasty* (Westwood, 1992).
+
+**Not affiliated** with the rights holders. Fan project for education/fun. Procedural art only — no original Westwood assets.
+
+License: **MIT** (code).
+
+## Play (dev)
+
+Open multi-file over a static server (recommended) or try `file://`:
+
+```bash
+cd /Users/mjog/dev/dune2
+python3 -m http.server 8080
+# → http://localhost:8080/
+```
+
+Or open `index.html` directly in a browser (`file://` works with plain `<script src>` tags).
+
+### Query flags
+
+| Flag | Effect |
+|------|--------|
+| `?debug=1` | Cheats: **F1** +credits, **F2** spawn enemy army, **F4** reveal map, F3 overlay |
+| `?ai=0` | Disable enemy AI |
+| `?fog=0` | Disable fog of war |
+
+## Controls
+
+| Input | Action |
+|-------|--------|
+| LMB | Select / box select |
+| Double-click unit | Select all of type |
+| RMB | Move / attack enemy / harvest spice |
+| Ctrl+RMB | Attack-move |
+| **E** | Deploy MCV → Construction Yard |
+| **H** | Harvester → nearest spice |
+| **X** / **.** | Stop |
+| Ctrl+1–9 | Assign control group |
+| 1–9 | Recall group |
+| WASD / arrows | Pan camera |
+| Minimap click | Jump camera |
+| Esc | Pause (also saves) |
+| F3 | Debug overlay |
+| F5 | Quicksave |
+
+### Save / refresh
+
+The game **autosaves** while you play (~15s), on pause, and when the tab closes. After a refresh, use **Continue** on the main menu (not “New Skirmish”).
+
+Credits are capped by spice storage (`1000` base + `1000` per Silo). A Combat Tank is `600¢`, Harvester `800¢`, MCV `2000¢` — build **Silos** before expensive units.
+
+## Release pack (single file)
+
+```bash
+chmod +x tools/pack.sh
+./tools/pack.sh
+# → dist/index.html  (open via file:// offline)
+```
+
+## Architecture
+
+See [DESIGN.md](./DESIGN.md). Vanilla JS + Canvas 2D map + DOM sidebar. Fixed **20 Hz** simulation (`dt = 0.05s`), rAF render.
+
+```
+js/     simulation + presentation modules (Dune2.* namespaces)
+maps/   embedded skirmish map
+css/    sidebar chrome
+tools/  pack.sh → dist/index.html
+tests/  node --test pure-sim tests
+```
+
+## Tests
+
+```bash
+node --test tests/*.test.js
+```
+
+## MVP goal
+
+1v1 skirmish: harvest spice → build base → army → destroy enemy CY (and MCV).  
+Sandworms default **off**. Full campaign / house uniques are post-MVP.

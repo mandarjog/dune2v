@@ -1,0 +1,5982 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Dune II — Browser Skirmish</title>
+<style>
+:root {
+  --bg: #0d0c0a;
+  --panel: #1a1814;
+  --panel-border: #3d3428;
+  --text: #e8dcc8;
+  --muted: #9a8b72;
+  --accent: #c9a227;
+  --player: #4a90d9;
+  --enemy: #c0392b;
+  --danger: #e74c3c;
+  --ok: #27ae60;
+  --sidebar-w: 240px;
+  font-family: "Segoe UI", system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  overflow: hidden;
+  user-select: none;
+}
+
+#app {
+  display: flex;
+  height: 100%;
+  width: 100%;
+}
+
+#game-wrap {
+  flex: 1;
+  position: relative;
+  min-width: 0;
+  background: #000;
+}
+
+#game-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: crosshair;
+}
+
+#sidebar {
+  width: var(--sidebar-w);
+  flex-shrink: 0;
+  background: linear-gradient(180deg, #221e18 0%, #14120e 100%);
+  border-left: 2px solid var(--panel-border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  overflow-y: auto;
+  font-size: 13px;
+}
+
+#sidebar h1 {
+  font-size: 15px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  border-bottom: 1px solid var(--panel-border);
+  padding-bottom: 6px;
+}
+
+.stat-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.stat-row .label {
+  color: var(--muted);
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+}
+
+.stat-row .value {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+#power-bar {
+  height: 10px;
+  background: #2a241c;
+  border: 1px solid var(--panel-border);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: 4px;
+}
+
+#power-fill {
+  height: 100%;
+  width: 100%;
+  background: var(--ok);
+  transition: width 0.1s linear, background 0.2s;
+}
+
+#minimap {
+  width: 100%;
+  aspect-ratio: 1;
+  background: #000;
+  border: 1px solid var(--panel-border);
+  image-rendering: pixelated;
+  cursor: pointer;
+  display: block;
+}
+
+.section-title {
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-top: 4px;
+}
+
+#build-menu,
+#unit-menu,
+#selection-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.btn-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+}
+
+button.game-btn {
+  background: #2c261e;
+  color: var(--text);
+  border: 1px solid var(--panel-border);
+  padding: 6px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  text-align: left;
+  border-radius: 2px;
+}
+
+button.game-btn:hover:not(:disabled) {
+  background: #3a3228;
+  border-color: var(--accent);
+}
+
+button.game-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+button.game-btn.active {
+  border-color: var(--player);
+  box-shadow: inset 0 0 0 1px var(--player);
+}
+
+button.game-btn.primary {
+  background: #3a3020;
+  border-color: var(--accent);
+  text-align: center;
+  font-weight: 600;
+}
+
+button.game-btn.icon-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 6px;
+  text-align: left;
+}
+
+button.game-btn.icon-btn .btn-icon {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 3px;
+  image-rendering: pixelated;
+  background: #12100c;
+}
+
+button.game-btn.icon-btn .btn-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+button.game-btn.icon-btn .btn-label strong {
+  font-size: 11px;
+}
+
+button.game-btn.icon-btn .btn-label .meta {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 400;
+}
+
+button.game-btn.icon-btn .btn-label .meta.cant-afford {
+  color: var(--danger);
+}
+
+#build-menu .btn-grid,
+#unit-menu .btn-grid {
+  grid-template-columns: 1fr;
+}
+
+.sel-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.sel-icon {
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  border-radius: 3px;
+  border: 1px solid var(--panel-border);
+  image-rendering: pixelated;
+}
+
+#messages {
+  flex: 1;
+  min-height: 60px;
+  max-height: 120px;
+  overflow-y: auto;
+  font-size: 11px;
+  color: var(--muted);
+  border-top: 1px solid var(--panel-border);
+  padding-top: 6px;
+}
+
+#messages .msg {
+  margin-bottom: 3px;
+  line-height: 1.3;
+}
+
+#messages .msg.alert {
+  color: var(--accent);
+}
+
+#debug-overlay {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  background: rgba(0, 0, 0, 0.65);
+  color: #8f8;
+  font: 11px/1.4 ui-monospace, monospace;
+  padding: 6px 8px;
+  pointer-events: none;
+  display: none;
+  white-space: pre;
+  border-radius: 3px;
+}
+
+#debug-overlay.visible {
+  display: block;
+}
+
+/* Overlays */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.modal-backdrop.hidden {
+  display: none;
+}
+
+.modal {
+  background: var(--panel);
+  border: 2px solid var(--accent);
+  padding: 28px 36px;
+  max-width: 420px;
+  text-align: center;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+}
+
+.modal h2 {
+  color: var(--accent);
+  margin-bottom: 12px;
+  font-size: 22px;
+  letter-spacing: 0.06em;
+}
+
+.modal p {
+  color: var(--muted);
+  margin-bottom: 20px;
+  line-height: 1.5;
+  font-size: 14px;
+}
+
+.modal .actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.modal button {
+  background: #2c261e;
+  color: var(--text);
+  border: 1px solid var(--accent);
+  padding: 10px 18px;
+  font-size: 13px;
+  cursor: pointer;
+  min-width: 120px;
+}
+
+.modal button:hover {
+  background: #3a3228;
+}
+
+.modal.victory h2 {
+  color: var(--ok);
+}
+.modal.defeat h2 {
+  color: var(--danger);
+}
+
+#selection-info .title {
+  font-weight: 600;
+  color: var(--text);
+}
+
+#selection-info .meta {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.hp-bar {
+  height: 6px;
+  background: #2a241c;
+  border: 1px solid var(--panel-border);
+  margin-top: 4px;
+  overflow: hidden;
+}
+
+.hp-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--ok);
+}
+
+.hint {
+  font-size: 10px;
+  color: var(--muted);
+  line-height: 1.35;
+  margin-top: 4px;
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="game-wrap">
+    <canvas id="game-canvas"></canvas>
+    <div id="debug-overlay"></div>
+  </div>
+  <aside id="sidebar">
+    <h1>Dune II</h1>
+    <div class="stat-row"><span class="label">Credits</span><span class="value" id="stat-credits">0 / 1000</span></div>
+    <div class="stat-row"><span class="label">Power</span><span class="value" id="stat-power">0 / 0</span></div>
+    <div id="power-bar"><div id="power-fill"></div></div>
+    <div class="section-title">Minimap</div>
+    <canvas id="minimap" width="200" height="200"></canvas>
+    <div id="selection-info"><div class="meta">No selection</div></div>
+    <div id="unit-menu"></div>
+    <div id="build-menu"></div>
+    <div class="hint">LMB select · RMB move/attack · E deploy · H harvest · Esc pause · F3 debug</div>
+    <div id="messages"></div>
+  </aside>
+</div>
+<div id="menu-modal" class="modal-backdrop">
+  <div class="modal">
+    <h2>Dune II</h2>
+    <p>Unofficial browser skirmish inspired by Westwood’s Dune II.</p>
+    <div class="actions">
+      <button id="btn-continue" type="button" style="display:none">Continue</button>
+      <button id="btn-start" type="button">New Skirmish</button>
+    </div>
+  </div>
+</div>
+<div id="pause-modal" class="modal-backdrop hidden">
+  <div class="modal">
+    <h2>Paused</h2>
+    <div class="actions">
+      <button id="btn-resume" type="button">Resume</button>
+      <button id="btn-restart" type="button">Restart</button>
+    </div>
+  </div>
+</div>
+<div id="end-modal" class="modal-backdrop hidden">
+  <div class="modal">
+    <h2>Victory</h2>
+    <p></p>
+    <div class="actions">
+      <button id="btn-end-restart" type="button">Play Again</button>
+      <button id="btn-end-menu" type="button">Main Menu</button>
+    </div>
+  </div>
+</div>
+<script>
+/* ---- config.js ---- */
+/* global Dune2 */
+(function (global) {
+  'use strict';
+  const D = (global.Dune2 = global.Dune2 || {});
+
+  D.config = {
+    seed: 42,
+    TILE_SIZE: 32,
+    SIM_HZ: 20,
+    DT_SEC: 0.05,
+    MAP_W: 64,
+    MAP_H: 64,
+
+    features: {
+      fog: true,
+      ai: true,
+      sandworms: false,
+      saveLoad: false,
+      debugCheats: false,
+    },
+
+    build: {
+      proximityTiles: 8,
+      concreteHpBonus: 1.2,
+    },
+
+    path: {
+      maxRepathsPerTick: 8,
+      maxNodes: 512,
+      arrivalDist: 0.15,
+    },
+
+    economy: {
+      startingCredits: 1000, // === baseSpiceCap (design KD #31)
+      baseSpiceCap: 1000,
+      siloBonus: 1000,
+      spiceToCredit: 1,
+      harvestRate: 40,
+      unloadRate: 350,
+      cancelRefund: 0.5,
+    },
+
+    colors: {
+      sand: '#c2a05a',
+      dune: '#a8843c',
+      rock: '#6b6b6b',
+      spice: '#d4780a',
+      spiceHeavy: '#b84e00',
+      cliff: '#2a2a2a',
+      player: '#4a90d9',
+      enemy: '#c0392b',
+      fog: 'rgba(0,0,0,0.72)',
+      shroud: '#000000',
+      selection: '#ffffff',
+      hpOk: '#3ecf4a',
+      hpMid: '#e0c040',
+      hpLow: '#e04040',
+      concrete: '#8a8a8a',
+    },
+
+    terrain: {
+      SAND: 0,
+      DUNE: 1,
+      ROCK: 2,
+      SPICE: 3,
+      SPICE_HEAVY: 4,
+      CLIFF: 5,
+    },
+
+    buildings: {
+      concrete: {
+        name: 'Concrete',
+        cost: 5,
+        power: 0,
+        hp: 20,
+        buildTime: 2,
+        tileW: 1,
+        tileH: 1,
+        sight: 0,
+        requires: 'constructionYard',
+        buildable: true,
+      },
+      constructionYard: {
+        name: 'Construction Yard',
+        cost: 0,
+        power: -10,
+        hp: 400,
+        buildTime: 0,
+        tileW: 2,
+        tileH: 2,
+        sight: 5,
+        requires: null,
+        buildable: false,
+        deployOnly: true,
+      },
+      windtrap: {
+        name: 'Windtrap',
+        cost: 300,
+        power: 100,
+        hp: 200,
+        buildTime: 30,
+        tileW: 2,
+        tileH: 2,
+        sight: 2,
+        requires: 'constructionYard',
+        buildable: true,
+      },
+      refinery: {
+        name: 'Refinery',
+        cost: 400,
+        power: -30,
+        hp: 450,
+        buildTime: 40,
+        tileW: 3,
+        tileH: 2,
+        sight: 3,
+        requires: 'windtrap',
+        buildable: true,
+      },
+      silo: {
+        name: 'Silo',
+        cost: 150,
+        power: -5,
+        hp: 150,
+        buildTime: 20,
+        tileW: 2,
+        tileH: 2,
+        sight: 2,
+        requires: 'refinery',
+        buildable: true,
+      },
+      barracks: {
+        name: 'Barracks',
+        cost: 300,
+        power: -20,
+        hp: 300,
+        buildTime: 35,
+        tileW: 2,
+        tileH: 2,
+        sight: 3,
+        requires: 'windtrap',
+        buildable: true,
+        produces: ['infantry', 'trooper'],
+      },
+      lightFactory: {
+        name: 'Light Factory',
+        cost: 500,
+        power: -30,
+        hp: 350,
+        buildTime: 45,
+        tileW: 2,
+        tileH: 2,
+        sight: 3,
+        requires: 'windtrap',
+        buildable: true,
+        produces: ['trike', 'quad'],
+      },
+      heavyFactory: {
+        name: 'Heavy Factory',
+        cost: 600,
+        power: -40,
+        hp: 400,
+        buildTime: 50,
+        tileW: 3,
+        tileH: 2,
+        sight: 3,
+        requires: 'refinery',
+        buildable: true,
+        produces: ['combatTank', 'harvester', 'mcv'],
+      },
+      gunTurret: {
+        name: 'Gun Turret',
+        cost: 125,
+        power: -20,
+        hp: 200,
+        buildTime: 25,
+        tileW: 1,
+        tileH: 1,
+        sight: 4,
+        requires: 'windtrap',
+        buildable: true,
+        weapon: {
+          kind: 'shell',
+          damage: 14,
+          range: 5.0,
+          cooldown: 1.0,
+          vsI: 0.7,
+          vsV: 1.0,
+          vsB: 0.5,
+          projectile: true,
+        },
+      },
+      wall: {
+        name: 'Wall',
+        cost: 50,
+        power: 0,
+        hp: 80,
+        buildTime: 8,
+        tileW: 1,
+        tileH: 1,
+        sight: 0,
+        requires: 'windtrap',
+        buildable: true,
+      },
+      radar: {
+        name: 'Radar',
+        cost: 400,
+        power: -30,
+        hp: 250,
+        buildTime: 40,
+        tileW: 2,
+        tileH: 2,
+        sight: 5,
+        requires: 'lightFactory',
+        buildable: true,
+      },
+    },
+
+    units: {
+      infantry: {
+        name: 'Infantry',
+        cost: 60,
+        builtAt: 'barracks',
+        hp: 45,
+        speed: 0.7,
+        armor: 0,
+        sight: 3,
+        buildTime: 12,
+        kind: 'infantry',
+        weapon: {
+          kind: 'bullet',
+          damage: 4,
+          range: 2.5,
+          cooldown: 0.8,
+          vsI: 1.0,
+          vsV: 0.4,
+          vsB: 0.25,
+          projectile: false,
+        },
+      },
+      trooper: {
+        name: 'Trooper',
+        cost: 100,
+        builtAt: 'barracks',
+        hp: 55,
+        speed: 0.65,
+        armor: 0,
+        sight: 3,
+        buildTime: 15,
+        kind: 'infantry',
+        weapon: {
+          kind: 'rocket',
+          damage: 8,
+          range: 3.0,
+          cooldown: 1.4,
+          vsI: 0.5,
+          vsV: 1.3,
+          vsB: 0.6,
+          projectile: false,
+        },
+      },
+      trike: {
+        name: 'Trike',
+        cost: 300,
+        builtAt: 'lightFactory',
+        hp: 100,
+        speed: 2.2,
+        armor: 0,
+        sight: 5,
+        buildTime: 25,
+        kind: 'vehicle',
+        weapon: {
+          kind: 'bullet',
+          damage: 6,
+          range: 3.0,
+          cooldown: 0.55,
+          vsI: 1.1,
+          vsV: 0.7,
+          vsB: 0.3,
+          projectile: false,
+        },
+      },
+      quad: {
+        name: 'Quad',
+        cost: 400,
+        builtAt: 'lightFactory',
+        hp: 140,
+        speed: 1.8,
+        armor: 1,
+        sight: 4,
+        buildTime: 30,
+        kind: 'vehicle',
+        weapon: {
+          kind: 'bullet',
+          damage: 9,
+          range: 3.2,
+          cooldown: 0.7,
+          vsI: 0.9,
+          vsV: 1.0,
+          vsB: 0.35,
+          projectile: false,
+        },
+      },
+      combatTank: {
+        name: 'Combat Tank',
+        cost: 600,
+        builtAt: 'heavyFactory',
+        hp: 220,
+        speed: 1.2,
+        armor: 2,
+        sight: 4,
+        buildTime: 40,
+        kind: 'vehicle',
+        weapon: {
+          kind: 'shell',
+          damage: 18,
+          range: 4.0,
+          cooldown: 1.2,
+          vsI: 0.6,
+          vsV: 1.0,
+          vsB: 0.85,
+          projectile: true,
+        },
+      },
+      harvester: {
+        name: 'Harvester',
+        cost: 800,
+        builtAt: 'heavyFactory',
+        hp: 150,
+        speed: 1.0,
+        armor: 0,
+        sight: 3,
+        buildTime: 35,
+        kind: 'vehicle',
+        cargoMax: 700,
+        weapon: null,
+      },
+      mcv: {
+        name: 'MCV',
+        cost: 2000,
+        builtAt: 'heavyFactory',
+        hp: 180,
+        speed: 0.8,
+        armor: 0,
+        sight: 3,
+        buildTime: 60,
+        kind: 'vehicle',
+        weapon: null,
+        canDeploy: true,
+      },
+    },
+
+    ai: {
+      omniscient: false,
+      tickEvery: 10,
+      desirePowerSurplus: 0.2,
+      wavePeriodSec: 90,
+      waveMinCombatUnits: 5,
+      defendRadiusTiles: 12,
+      scoutPeriodSec: 45,
+      creditsStableThreshold: 400,
+      productionWeights: {
+        infantry: 2,
+        trooper: 2,
+        trike: 2,
+        quad: 2,
+        combatTank: 4,
+      },
+      buildOrder: [
+        'windtrap',
+        'refinery',
+        'windtrap',
+        'barracks',
+        'lightFactory',
+        'heavyFactory',
+        'gunTurret',
+        'gunTurret',
+        'silo',
+        'radar',
+        'windtrap',
+      ],
+      placement: {
+        spiralMaxRadius: 12,
+        refineryTowardSpiceRange: 20,
+      },
+    },
+
+    worms: {
+      enabled: false,
+      maxWorms: 2,
+      moveWeight: {
+        infantry: 1,
+        trooper: 1,
+        trike: 3,
+        quad: 3,
+        combatTank: 3,
+        harvester: 4,
+        mcv: 3,
+      },
+      harvestWeightBonus: 2,
+      threshold: 100,
+      decayPerSec: 5,
+      rumbleSec: 2.0,
+      swallowRadiusTiles: 1.25,
+      emergeRadiusTiles: 2,
+      cooldownSec: 90,
+      equalOpportunity: true,
+    },
+
+    projectileSpeed: 8,
+  };
+})(typeof window !== 'undefined' ? window : globalThis);
+
+/* ---- rng.js ---- */
+/* global Dune2 */
+(function (global) {
+  'use strict';
+  const D = (global.Dune2 = global.Dune2 || {});
+
+  let state = 1;
+
+  D.rng = {
+    seed(s) {
+      state = (s >>> 0) || 1;
+    },
+    getState() {
+      return state;
+    },
+    setState(s) {
+      state = s >>> 0;
+    },
+    /** Mulberry32 */
+    next() {
+      state |= 0;
+      state = (state + 0x6d2b79f5) | 0;
+      let t = Math.imul(state ^ (state >>> 15), 1 | state);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    },
+    int(min, max) {
+      return min + Math.floor(D.rng.next() * (max - min + 1));
+    },
+    pick(arr) {
+      if (!arr.length) return undefined;
+      return arr[Math.floor(D.rng.next() * arr.length)];
+    },
+  };
+})(typeof window !== 'undefined' ? window : globalThis);
+
+/* ---- sprites.js ---- */
+/* global Dune2 */
+/**
+ * Procedural geometric sprites for buildings & units.
+ * No external assets — drawn with Canvas 2D paths.
+ * draw*(ctx, x, y, w, h, opts) — top-left box in pixel space.
+ */
+(function (global) {
+  'use strict';
+  const D = (global.Dune2 = global.Dune2 || {});
+
+  const iconCache = new Map();
+
+  function shade(hex, amt) {
+    // amt -1..1
+    const n = hex.replace('#', '');
+    const full = n.length === 3 ? n.split('').map((c) => c + c).join('') : n;
+    const num = parseInt(full, 16);
+    let r = (num >> 16) & 255;
+    let g = (num >> 8) & 255;
+    let b = num & 255;
+    r = Math.max(0, Math.min(255, r + Math.round(255 * amt)));
+    g = Math.max(0, Math.min(255, g + Math.round(255 * amt)));
+    b = Math.max(0, Math.min(255, b + Math.round(255 * amt)));
+    return `rgb(${r},${g},${b})`;
+  }
+
+  function roundRect(ctx, x, y, w, h, r) {
+    const rr = Math.min(r, w / 2, h / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + rr, y);
+    ctx.arcTo(x + w, y, x + w, y + h, rr);
+    ctx.arcTo(x + w, y + h, x, y + h, rr);
+    ctx.arcTo(x, y + h, x, y, rr);
+    ctx.arcTo(x, y, x + w, y, rr);
+    ctx.closePath();
+  }
+
+  function basePad(ctx, x, y, w, h, col, opts) {
+    const pad = opts.pad != null ? opts.pad : 0.06;
+    const px = w * pad;
+    const py = h * pad;
+    // foundation slab
+    ctx.fillStyle = 'rgba(30,28,24,0.85)';
+    ctx.fillRect(x, y, w, h);
+    // main body
+    const bx = x + px;
+    const by = y + py;
+    const bw = w - px * 2;
+    const bh = h - py * 2;
+    const grad = ctx.createLinearGradient(bx, by, bx, by + bh);
+    grad.addColorStop(0, shade(col, 0.18));
+    grad.addColorStop(0.5, col);
+    grad.addColorStop(1, shade(col, -0.28));
+    ctx.fillStyle = grad;
+    roundRect(ctx, bx, by, bw, bh, Math.min(bw, bh) * 0.08);
+    ctx.fill();
+    ctx.strokeStyle = shade(col, -0.45);
+    ctx.lineWidth = Math.max(1, Math.min(w, h) * 0.04);
+    ctx.stroke();
+    // top highlight edge
+    ctx.strokeStyle = 'rgba(255,255,255,0.22)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(bx + 2, by + 2);
+    ctx.lineTo(bx + bw - 2, by + 2);
+    ctx.stroke();
+    return { bx, by, bw, bh, m: Math.min(bw, bh) };
+  }
+
+  function accent(ctx, col) {
+    return shade(col, 0.35);
+  }
+
+  function metal(ctx, x, y, w, h) {
+    const g = ctx.createLinearGradient(x, y, x + w, y + h);
+    g.addColorStop(0, '#9a9a9a');
+    g.addColorStop(0.5, '#6a6a6a');
+    g.addColorStop(1, '#3a3a3a');
+    ctx.fillStyle = g;
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = '#222';
+    ctx.strokeRect(x, y, w, h);
+  }
+
+  function sandTone() {
+    return '#c2a05a';
+  }
+
+  // ─── Buildings ───────────────────────────────────────────
+
+  function drawConcrete(ctx, x, y, w, h) {
+    ctx.fillStyle = '#7a7a7a';
+    ctx.fillRect(x + 1, y + 1, w - 2, h - 2);
+    ctx.strokeStyle = '#555';
+    ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
+    // tile seams
+    ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+    ctx.beginPath();
+    ctx.moveTo(x + w / 2, y + 2);
+    ctx.lineTo(x + w / 2, y + h - 2);
+    ctx.moveTo(x + 2, y + h / 2);
+    ctx.lineTo(x + w - 2, y + h / 2);
+    ctx.stroke();
+  }
+
+  function drawConstructionYard(ctx, x, y, w, h, col) {
+    const b = basePad(ctx, x, y, w, h, col, {});
+    // crane arm
+    ctx.strokeStyle = '#ddd';
+    ctx.lineWidth = Math.max(2, b.m * 0.08);
+    ctx.beginPath();
+    ctx.moveTo(b.bx + b.bw * 0.2, b.by + b.bh * 0.75);
+    ctx.lineTo(b.bx + b.bw * 0.2, b.by + b.bh * 0.15);
+    ctx.lineTo(b.bx + b.bw * 0.75, b.by + b.bh * 0.2);
+    ctx.stroke();
+    // hook
+    ctx.beginPath();
+    ctx.moveTo(b.bx + b.bw * 0.75, b.by + b.bh * 0.2);
+    ctx.lineTo(b.bx + b.bw * 0.75, b.by + b.bh * 0.45);
+    ctx.stroke();
+    ctx.fillStyle = '#f0c040';
+    ctx.fillRect(b.bx + b.bw * 0.7, b.by + b.bh * 0.45, b.bw * 0.1, b.bh * 0.12);
+    // cabin
+    metal(ctx, b.bx + b.bw * 0.35, b.by + b.bh * 0.5, b.bw * 0.35, b.bh * 0.35);
+    ctx.fillStyle = accent(ctx, col);
+    ctx.fillRect(b.bx + b.bw * 0.4, b.by + b.bh * 0.55, b.bw * 0.12, b.bh * 0.1);
+  }
+
+  function drawWindtrap(ctx, x, y, w, h, col, opts) {
+    const b = basePad(ctx, x, y, w, h, col, {});
+    const cx = b.bx + b.bw * 0.5;
+    const cy = b.by + b.bh * 0.48;
+    const r = b.m * 0.32;
+    // tower
+    metal(ctx, cx - b.bw * 0.08, b.by + b.bh * 0.55, b.bw * 0.16, b.bh * 0.35);
+    // rotor hub
+    ctx.fillStyle = '#eee';
+    ctx.beginPath();
+    ctx.arc(cx, cy, r * 0.22, 0, Math.PI * 2);
+    ctx.fill();
+    // blades (animate with time if provided)
+    const ang = opts.time != null ? opts.time * 2.5 : 0;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(ang);
+    ctx.fillStyle = 'rgba(230,230,240,0.92)';
+    for (let i = 0; i < 3; i++) {
+      ctx.rotate((Math.PI * 2) / 3);
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(r * 0.15, -r * 0.15);
+      ctx.lineTo(0, -r);
+      ctx.lineTo(-r * 0.15, -r * 0.15);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+    // glow ring when powered
+    if (opts.powered !== false) {
+      ctx.strokeStyle = 'rgba(120,200,255,0.55)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r * 1.05, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+
+  function drawRefinery(ctx, x, y, w, h, col) {
+    const b = basePad(ctx, x, y, w, h, col, {});
+    // spice tanks
+    for (let i = 0; i < 2; i++) {
+      const tx = b.bx + b.bw * (0.12 + i * 0.28);
+      const ty = b.by + b.bh * 0.2;
+      const tw = b.bw * 0.22;
+      const th = b.bh * 0.55;
+      const g = ctx.createLinearGradient(tx, ty, tx + tw, ty);
+      g.addColorStop(0, '#e09020');
+      g.addColorStop(0.5, '#c06000');
+      g.addColorStop(1, '#8a4000');
+      ctx.fillStyle = g;
+      roundRect(ctx, tx, ty, tw, th, tw * 0.2);
+      ctx.fill();
+      ctx.strokeStyle = '#4a2000';
+      ctx.stroke();
+      // band
+      ctx.fillStyle = 'rgba(0,0,0,0.25)';
+      ctx.fillRect(tx, ty + th * 0.4, tw, th * 0.12);
+    }
+    // dock bay
+    metal(ctx, b.bx + b.bw * 0.62, b.by + b.bh * 0.35, b.bw * 0.3, b.bh * 0.5);
+    ctx.fillStyle = '#222';
+    ctx.fillRect(b.bx + b.bw * 0.68, b.by + b.bh * 0.55, b.bw * 0.18, b.bh * 0.28);
+    // chimney
+    ctx.fillStyle = '#444';
+    ctx.fillRect(b.bx + b.bw * 0.72, b.by + b.bh * 0.1, b.bw * 0.08, b.bh * 0.28);
+  }
+
+  function drawSilo(ctx, x, y, w, h, col) {
+    const b = basePad(ctx, x, y, w, h, col, {});
+    const cx = b.bx + b.bw * 0.5;
+    const top = b.by + b.bh * 0.12;
+    const bot = b.by + b.bh * 0.88;
+    const rad = b.bw * 0.32;
+    // cylinder
+    const g = ctx.createLinearGradient(cx - rad, 0, cx + rad, 0);
+    g.addColorStop(0, '#d4881a');
+    g.addColorStop(0.45, '#f0b040');
+    g.addColorStop(1, '#8a5010');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.moveTo(cx - rad, top + rad * 0.4);
+    ctx.lineTo(cx - rad, bot - rad * 0.2);
+    ctx.quadraticCurveTo(cx - rad, bot, cx, bot);
+    ctx.quadraticCurveTo(cx + rad, bot, cx + rad, bot - rad * 0.2);
+    ctx.lineTo(cx + rad, top + rad * 0.4);
+    ctx.ellipse(cx, top + rad * 0.4, rad, rad * 0.35, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = shade('#e0a030', 0.2);
+    ctx.beginPath();
+    ctx.ellipse(cx, top + rad * 0.4, rad, rad * 0.35, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // house stripe
+    ctx.strokeStyle = col;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(cx - rad * 0.7, (top + bot) / 2);
+    ctx.lineTo(cx + rad * 0.7, (top + bot) / 2);
+    ctx.stroke();
+  }
+
+  function drawBarracks(ctx, x, y, w, h, col) {
+    const b = basePad(ctx, x, y, w, h, col, {});
+    // pitched roof
+    ctx.fillStyle = shade(col, -0.35);
+    ctx.beginPath();
+    ctx.moveTo(b.bx + b.bw * 0.08, b.by + b.bh * 0.42);
+    ctx.lineTo(b.bx + b.bw * 0.5, b.by + b.bh * 0.12);
+    ctx.lineTo(b.bx + b.bw * 0.92, b.by + b.bh * 0.42);
+    ctx.closePath();
+    ctx.fill();
+    // body
+    ctx.fillStyle = shade(col, -0.1);
+    ctx.fillRect(b.bx + b.bw * 0.12, b.by + b.bh * 0.42, b.bw * 0.76, b.bh * 0.45);
+    // door
+    ctx.fillStyle = '#2a2018';
+    ctx.fillRect(b.bx + b.bw * 0.4, b.by + b.bh * 0.55, b.bw * 0.2, b.bh * 0.32);
+    // windows
+    ctx.fillStyle = '#f0e080';
+    ctx.fillRect(b.bx + b.bw * 0.2, b.by + b.bh * 0.55, b.bw * 0.12, b.bh * 0.12);
+    ctx.fillRect(b.bx + b.bw * 0.68, b.by + b.bh * 0.55, b.bw * 0.12, b.bh * 0.12);
+    // flag
+    ctx.strokeStyle = '#ccc';
+    ctx.beginPath();
+    ctx.moveTo(b.bx + b.bw * 0.5, b.by + b.bh * 0.12);
+    ctx.lineTo(b.bx + b.bw * 0.5, b.by + b.bh * 0.02);
+    ctx.stroke();
+    ctx.fillStyle = col;
+    ctx.fillRect(b.bx + b.bw * 0.5, b.by + b.bh * 0.02, b.bw * 0.18, b.bh * 0.08);
+  }
+
+  function drawLightFactory(ctx, x, y, w, h, col) {
+    const b = basePad(ctx, x, y, w, h, col, {});
+    metal(ctx, b.bx + b.bw * 0.1, b.by + b.bh * 0.2, b.bw * 0.8, b.bh * 0.55);
+    // garage door
+    ctx.fillStyle = '#1a1a1a';
+    ctx.fillRect(b.bx + b.bw * 0.22, b.by + b.bh * 0.4, b.bw * 0.56, b.bh * 0.32);
+    ctx.strokeStyle = '#555';
+    for (let i = 1; i < 4; i++) {
+      const yy = b.by + b.bh * 0.4 + (b.bh * 0.32 * i) / 4;
+      ctx.beginPath();
+      ctx.moveTo(b.bx + b.bw * 0.22, yy);
+      ctx.lineTo(b.bx + b.bw * 0.78, yy);
+      ctx.stroke();
+    }
+    // sign: light vehicle
+    ctx.fillStyle = accent(ctx, col);
+    ctx.beginPath();
+    ctx.moveTo(b.bx + b.bw * 0.35, b.by + b.bh * 0.28);
+    ctx.lineTo(b.bx + b.bw * 0.65, b.by + b.bh * 0.28);
+    ctx.lineTo(b.bx + b.bw * 0.58, b.by + b.bh * 0.36);
+    ctx.lineTo(b.bx + b.bw * 0.42, b.by + b.bh * 0.36);
+    ctx.closePath();
+    ctx.fill();
+    // smokestack
+    ctx.fillStyle = '#333';
+    ctx.fillRect(b.bx + b.bw * 0.78, b.by + b.bh * 0.08, b.bw * 0.1, b.bh * 0.2);
+  }
+
+  function drawHeavyFactory(ctx, x, y, w, h, col) {
+    const b = basePad(ctx, x, y, w, h, col, {});
+    metal(ctx, b.bx + b.bw * 0.06, b.by + b.bh * 0.18, b.bw * 0.88, b.bh * 0.6);
+    // big bay
+    ctx.fillStyle = '#111';
+    ctx.fillRect(b.bx + b.bw * 0.15, b.by + b.bh * 0.38, b.bw * 0.7, b.bh * 0.35);
+    // tank silhouette inside
+    ctx.fillStyle = shade(col, 0.1);
+    ctx.beginPath();
+    ctx.moveTo(b.bx + b.bw * 0.28, b.by + b.bh * 0.58);
+    ctx.lineTo(b.bx + b.bw * 0.35, b.by + b.bh * 0.48);
+    ctx.lineTo(b.bx + b.bw * 0.65, b.by + b.bh * 0.48);
+    ctx.lineTo(b.bx + b.bw * 0.72, b.by + b.bh * 0.58);
+    ctx.closePath();
+    ctx.fill();
+    // dual stacks
+    ctx.fillStyle = '#2a2a2a';
+    ctx.fillRect(b.bx + b.bw * 0.2, b.by + b.bh * 0.05, b.bw * 0.1, b.bh * 0.2);
+    ctx.fillRect(b.bx + b.bw * 0.35, b.by + b.bh * 0.08, b.bw * 0.1, b.bh * 0.17);
+    // hazard stripe
+    ctx.fillStyle = '#e0c040';
+    ctx.fillRect(b.bx + b.bw * 0.15, b.by + b.bh * 0.72, b.bw * 0.7, b.bh * 0.06);
+    ctx.fillStyle = '#222';
+    for (let i = 0; i < 6; i++) {
+      ctx.fillRect(
+        b.bx + b.bw * 0.15 + i * b.bw * 0.12,
+        b.by + b.bh * 0.72,
+        b.bw * 0.06,
+        b.bh * 0.06
+      );
+    }
+  }
+
+  function drawGunTurret(ctx, x, y, w, h, col, opts) {
+    const b = basePad(ctx, x, y, w, h, col, { pad: 0.08 });
+    const cx = b.bx + b.bw / 2;
+    const cy = b.by + b.bh / 2;
+    const r = b.m * 0.38;
+    // base ring
+    ctx.fillStyle = shade(col, -0.2);
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#111';
+    ctx.stroke();
+    // dome
+    const g = ctx.createRadialGradient(cx - r * 0.2, cy - r * 0.2, r * 0.1, cx, cy, r * 0.75);
+    g.addColorStop(0, shade(col, 0.25));
+    g.addColorStop(1, shade(col, -0.35));
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r * 0.72, 0, Math.PI * 2);
+    ctx.fill();
+    // barrel
+    const ang = opts.facing != null ? opts.facing : -Math.PI / 2;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(ang);
+    metal(ctx, r * 0.3, -r * 0.12, r * 0.95, r * 0.24);
+    ctx.fillStyle = '#222';
+    ctx.fillRect(r * 1.1, -r * 0.08, r * 0.2, r * 0.16);
+    ctx.restore();
+  }
+
+  function drawWall(ctx, x, y, w, h, col) {
+    const g = ctx.createLinearGradient(x, y, x, y + h);
+    g.addColorStop(0, shade(col, 0.15));
+    g.addColorStop(1, shade(col, -0.35));
+    ctx.fillStyle = g;
+    ctx.fillRect(x + w * 0.08, y + h * 0.08, w * 0.84, h * 0.84);
+    ctx.strokeStyle = '#111';
+    ctx.strokeRect(x + w * 0.08, y + h * 0.08, w * 0.84, h * 0.84);
+    // battlements
+    const n = 3;
+    const bw = (w * 0.84) / n;
+    ctx.fillStyle = shade(col, -0.1);
+    for (let i = 0; i < n; i++) {
+      if (i % 2 === 0) {
+        ctx.fillRect(
+          x + w * 0.08 + i * bw + 1,
+          y + h * 0.02,
+          bw - 2,
+          h * 0.14
+        );
+      }
+    }
+  }
+
+  function drawRadar(ctx, x, y, w, h, col, opts) {
+    const b = basePad(ctx, x, y, w, h, col, {});
+    const cx = b.bx + b.bw * 0.5;
+    const cy = b.by + b.bh * 0.42;
+    const r = b.m * 0.28;
+    // dish base
+    metal(ctx, cx - b.bw * 0.06, cy, b.bw * 0.12, b.bh * 0.45);
+    // dish
+    ctx.save();
+    ctx.translate(cx, cy);
+    const spin = opts.time != null ? opts.time * 1.2 : 0;
+    ctx.rotate(Math.sin(spin) * 0.4);
+    ctx.fillStyle = '#d0d8e0';
+    ctx.beginPath();
+    ctx.ellipse(0, 0, r * 1.3, r * 0.55, -0.4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#445';
+    ctx.stroke();
+    // sweep glow
+    ctx.fillStyle = 'rgba(100,220,140,0.35)';
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.arc(0, 0, r * 1.1, spin, spin + 0.8);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+    // screen blip box
+    ctx.fillStyle = '#0a2010';
+    ctx.fillRect(b.bx + b.bw * 0.15, b.by + b.bh * 0.72, b.bw * 0.7, b.bh * 0.16);
+    ctx.fillStyle = '#3f8';
+    ctx.beginPath();
+    ctx.arc(
+      b.bx + b.bw * (0.3 + 0.4 * (0.5 + 0.5 * Math.sin((opts.time || 0) * 3))),
+      b.by + b.bh * 0.8,
+      2,
+      0,
+      Math.PI * 2
+    );
+    ctx.fill();
+  }
+
+  // ─── Units ───────────────────────────────────────────────
+
+  function drawInfantry(ctx, x, y, w, h, col) {
+    const cx = x + w / 2;
+    const cy = y + h / 2;
+    const s = Math.min(w, h);
+    // body
+    ctx.fillStyle = col;
+    ctx.beginPath();
+    ctx.arc(cx, cy + s * 0.08, s * 0.28, 0, Math.PI * 2);
+    ctx.fill();
+    // head
+    ctx.fillStyle = shade(col, 0.2);
+    ctx.beginPath();
+    ctx.arc(cx, cy - s * 0.22, s * 0.16, 0, Math.PI * 2);
+    ctx.fill();
+    // rifle
+    ctx.strokeStyle = '#222';
+    ctx.lineWidth = Math.max(2, s * 0.08);
+    ctx.beginPath();
+    ctx.moveTo(cx + s * 0.1, cy);
+    ctx.lineTo(cx + s * 0.42, cy - s * 0.05);
+    ctx.stroke();
+  }
+
+  function drawTrooper(ctx, x, y, w, h, col) {
+    drawInfantry(ctx, x, y, w, h, col);
+    const cx = x + w / 2;
+    const cy = y + h / 2;
+    const s = Math.min(w, h);
+    // rocket tube on shoulder
+    ctx.fillStyle = '#333';
+    ctx.fillRect(cx - s * 0.35, cy - s * 0.15, s * 0.2, s * 0.35);
+    ctx.fillStyle = '#555';
+    ctx.fillRect(cx - s * 0.38, cy - s * 0.2, s * 0.26, s * 0.1);
+  }
+
+  function drawTrike(ctx, x, y, w, h, col, opts) {
+    const cx = x + w / 2;
+    const cy = y + h / 2;
+    const s = Math.min(w, h);
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(opts.facing || 0);
+    // body
+    ctx.fillStyle = col;
+    ctx.beginPath();
+    ctx.moveTo(s * 0.4, 0);
+    ctx.lineTo(s * 0.1, -s * 0.28);
+    ctx.lineTo(-s * 0.35, -s * 0.22);
+    ctx.lineTo(-s * 0.35, s * 0.22);
+    ctx.lineTo(s * 0.1, s * 0.28);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = '#111';
+    ctx.stroke();
+    // wheels
+    ctx.fillStyle = '#222';
+    [[-0.2, -0.3], [-0.2, 0.3], [0.2, 0]].forEach(([wx, wy]) => {
+      ctx.beginPath();
+      ctx.arc(s * wx, s * wy, s * 0.1, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.restore();
+  }
+
+  function drawQuad(ctx, x, y, w, h, col, opts) {
+    const cx = x + w / 2;
+    const cy = y + h / 2;
+    const s = Math.min(w, h);
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(opts.facing || 0);
+    ctx.fillStyle = col;
+    roundRect(ctx, -s * 0.4, -s * 0.28, s * 0.8, s * 0.56, s * 0.08);
+    ctx.fill();
+    ctx.strokeStyle = '#111';
+    ctx.stroke();
+    // turret
+    ctx.fillStyle = shade(col, -0.15);
+    ctx.beginPath();
+    ctx.arc(0, 0, s * 0.16, 0, Math.PI * 2);
+    ctx.fill();
+    metal(ctx, s * 0.1, -s * 0.05, s * 0.35, s * 0.1);
+    // 4 wheels
+    ctx.fillStyle = '#1a1a1a';
+    [
+      [-0.28, -0.32],
+      [-0.28, 0.32],
+      [0.22, -0.32],
+      [0.22, 0.32],
+    ].forEach(([wx, wy]) => {
+      ctx.beginPath();
+      ctx.arc(s * wx, s * wy, s * 0.1, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.restore();
+  }
+
+  function drawCombatTank(ctx, x, y, w, h, col, opts) {
+    const cx = x + w / 2;
+    const cy = y + h / 2;
+    const s = Math.min(w, h);
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(opts.facing || 0);
+    // treads
+    ctx.fillStyle = '#2a2a2a';
+    ctx.fillRect(-s * 0.42, -s * 0.34, s * 0.84, s * 0.16);
+    ctx.fillRect(-s * 0.42, s * 0.18, s * 0.84, s * 0.16);
+    // hull
+    ctx.fillStyle = col;
+    roundRect(ctx, -s * 0.38, -s * 0.22, s * 0.76, s * 0.44, s * 0.06);
+    ctx.fill();
+    ctx.strokeStyle = '#111';
+    ctx.stroke();
+    // turret
+    ctx.fillStyle = shade(col, -0.12);
+    ctx.beginPath();
+    ctx.arc(-s * 0.05, 0, s * 0.18, 0, Math.PI * 2);
+    ctx.fill();
+    // cannon
+    metal(ctx, s * 0.05, -s * 0.06, s * 0.48, s * 0.12);
+    ctx.restore();
+  }
+
+  function drawHarvester(ctx, x, y, w, h, col, opts) {
+    const cx = x + w / 2;
+    const cy = y + h / 2;
+    const s = Math.min(w, h);
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(opts.facing || 0);
+    // body
+    ctx.fillStyle = col;
+    roundRect(ctx, -s * 0.45, -s * 0.28, s * 0.9, s * 0.56, s * 0.06);
+    ctx.fill();
+    ctx.strokeStyle = '#111';
+    ctx.stroke();
+    // cabin
+    metal(ctx, s * 0.1, -s * 0.18, s * 0.28, s * 0.36);
+    ctx.fillStyle = accent(ctx, col);
+    ctx.fillRect(s * 0.16, -s * 0.1, s * 0.12, s * 0.1);
+    // spice hopper
+    const cargo = opts.cargoRatio != null ? opts.cargoRatio : 0;
+    ctx.fillStyle = '#3a2a10';
+    ctx.fillRect(-s * 0.38, -s * 0.18, s * 0.4, s * 0.36);
+    ctx.fillStyle = '#e09020';
+    ctx.fillRect(-s * 0.38, -s * 0.18 + s * 0.36 * (1 - cargo), s * 0.4, s * 0.36 * cargo);
+    // scoop
+    ctx.fillStyle = '#555';
+    ctx.fillRect(-s * 0.55, -s * 0.12, s * 0.12, s * 0.24);
+    ctx.restore();
+  }
+
+  function drawMCV(ctx, x, y, w, h, col, opts) {
+    const cx = x + w / 2;
+    const cy = y + h / 2;
+    const s = Math.min(w, h);
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(opts.facing || 0);
+    // trailer
+    ctx.fillStyle = col;
+    roundRect(ctx, -s * 0.48, -s * 0.3, s * 0.7, s * 0.6, s * 0.05);
+    ctx.fill();
+    // cab
+    ctx.fillStyle = shade(col, -0.15);
+    roundRect(ctx, s * 0.15, -s * 0.26, s * 0.32, s * 0.52, s * 0.05);
+    ctx.fill();
+    ctx.fillStyle = '#89c';
+    ctx.fillRect(s * 0.28, -s * 0.14, s * 0.14, s * 0.14);
+    // folded crane
+    ctx.strokeStyle = '#ddd';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(-s * 0.3, -s * 0.1);
+    ctx.lineTo(-s * 0.1, -s * 0.35);
+    ctx.lineTo(s * 0.1, -s * 0.2);
+    ctx.stroke();
+    // wheels
+    ctx.fillStyle = '#222';
+    [-0.3, 0, 0.28].forEach((wx) => {
+      ctx.fillRect(s * wx - s * 0.06, s * 0.28, s * 0.12, s * 0.1);
+    });
+    ctx.restore();
+  }
+
+  const buildingDrawers = {
+    concrete: (ctx, x, y, w, h) => drawConcrete(ctx, x, y, w, h),
+    constructionYard: drawConstructionYard,
+    windtrap: drawWindtrap,
+    refinery: drawRefinery,
+    silo: drawSilo,
+    barracks: drawBarracks,
+    lightFactory: drawLightFactory,
+    heavyFactory: drawHeavyFactory,
+    gunTurret: drawGunTurret,
+    wall: drawWall,
+    radar: drawRadar,
+  };
+
+  const unitDrawers = {
+    infantry: drawInfantry,
+    trooper: drawTrooper,
+    trike: drawTrike,
+    quad: drawQuad,
+    combatTank: drawCombatTank,
+    harvester: drawHarvester,
+    mcv: drawMCV,
+  };
+
+  D.Sprites = {
+    /** Draw building into ctx at pixel rect. opts: { ownerColor, time, powered, facing, alpha } */
+    drawBuilding(ctx, type, x, y, w, h, opts) {
+      opts = opts || {};
+      const col = opts.ownerColor || '#4a90d9';
+      ctx.save();
+      if (opts.alpha != null) ctx.globalAlpha = opts.alpha;
+      const fn = buildingDrawers[type];
+      if (fn) fn(ctx, x, y, w, h, col, opts);
+      else {
+        basePad(ctx, x, y, w, h, col, {});
+      }
+      ctx.restore();
+    },
+
+    /** Draw unit into ctx at pixel rect centered conceptually in box. */
+    drawUnit(ctx, type, x, y, w, h, opts) {
+      opts = opts || {};
+      const col = opts.ownerColor || '#4a90d9';
+      ctx.save();
+      if (opts.alpha != null) ctx.globalAlpha = opts.alpha;
+      const fn = unitDrawers[type];
+      if (fn) fn(ctx, x, y, w, h, col, opts);
+      else {
+        ctx.fillStyle = col;
+        ctx.fillRect(x + w * 0.2, y + h * 0.2, w * 0.6, h * 0.6);
+      }
+      ctx.restore();
+    },
+
+    /**
+     * Cached square icon as a new <img> (or canvas clone) for UI.
+     * Returns a fresh DOM node each call so it can be appended safely.
+     */
+    getIconCanvas(kind, type, size, ownerColor) {
+      const key = `${kind}:${type}:${size}:${ownerColor || ''}`;
+      let dataUrl = iconCache.get(key);
+      if (!dataUrl) {
+        const c = document.createElement('canvas');
+        const dpr = Math.min(2, (typeof window !== 'undefined' && window.devicePixelRatio) || 1);
+        c.width = Math.round(size * dpr);
+        c.height = Math.round(size * dpr);
+        const ictx = c.getContext('2d');
+        ictx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ictx.fillStyle = '#1c1814';
+        ictx.fillRect(0, 0, size, size);
+        ictx.strokeStyle = '#3d3428';
+        ictx.strokeRect(0.5, 0.5, size - 1, size - 1);
+        const pad = size * 0.1;
+        const col = ownerColor || '#4a90d9';
+        if (kind === 'building') {
+          D.Sprites.drawBuilding(ictx, type, pad, pad, size - pad * 2, size - pad * 2, {
+            ownerColor: col,
+            time: 0.8,
+            powered: true,
+          });
+        } else {
+          D.Sprites.drawUnit(ictx, type, pad, pad, size - pad * 2, size - pad * 2, {
+            ownerColor: col,
+            facing: -0.4,
+            cargoRatio: type === 'harvester' ? 0.6 : 0,
+          });
+        }
+        dataUrl = c.toDataURL('image/png');
+        iconCache.set(key, dataUrl);
+      }
+      const img = document.createElement('img');
+      img.src = dataUrl;
+      img.width = size;
+      img.height = size;
+      img.alt = type;
+      img.draggable = false;
+      return img;
+    },
+
+    clearCache() {
+      iconCache.clear();
+    },
+  };
+})(typeof window !== 'undefined' ? window : globalThis);
+
+/* ---- map.js ---- */
+/* global Dune2 */
+(function (global) {
+  'use strict';
+  const D = (global.Dune2 = global.Dune2 || {});
+  const T = () => D.config.terrain;
+
+  function idx(map, tx, ty) {
+    return ty * map.width + tx;
+  }
+
+  function inBounds(map, tx, ty) {
+    return tx >= 0 && ty >= 0 && tx < map.width && ty < map.height;
+  }
+
+  D.Map = {
+    createFromDef(def) {
+      const w = def.width;
+      const h = def.height;
+      const n = w * h;
+      const tiles = new Uint8Array(def.tiles);
+      const spiceAmount = new Float32Array(def.spiceAmount || n);
+      const blocked = new Uint8Array(n); // buildings / cliffs
+      // cliff tiles blocked
+      const cliff = T().CLIFF;
+      for (let i = 0; i < n; i++) {
+        if (tiles[i] === cliff) blocked[i] = 1;
+      }
+      return {
+        width: w,
+        height: h,
+        tiles,
+        spiceAmount,
+        blocked,
+        spawns: def.spawns,
+        wormZones: def.wormZones || [],
+        terrainDirty: true,
+      };
+    },
+
+    tileAt(map, tx, ty) {
+      if (!inBounds(map, tx, ty)) return T().CLIFF;
+      return map.tiles[idx(map, tx, ty)];
+    },
+
+    setTile(map, tx, ty, id) {
+      if (!inBounds(map, tx, ty)) return;
+      map.tiles[idx(map, tx, ty)] = id;
+      map.terrainDirty = true;
+    },
+
+    spiceAt(map, tx, ty) {
+      if (!inBounds(map, tx, ty)) return 0;
+      return map.spiceAmount[idx(map, tx, ty)];
+    },
+
+    setSpice(map, tx, ty, amount) {
+      if (!inBounds(map, tx, ty)) return;
+      const i = idx(map, tx, ty);
+      map.spiceAmount[i] = Math.max(0, amount);
+      if (map.spiceAmount[i] <= 0) {
+        const t = map.tiles[i];
+        if (t === T().SPICE || t === T().SPICE_HEAVY) {
+          map.tiles[i] = T().SAND;
+          map.terrainDirty = true;
+        }
+      }
+    },
+
+    isBuildableTerrain(map, tx, ty) {
+      const t = D.Map.tileAt(map, tx, ty);
+      return t === T().ROCK; // concrete overlays handled separately via buildings
+    },
+
+    isWalkable(map, tx, ty) {
+      if (!inBounds(map, tx, ty)) return false;
+      const i = idx(map, tx, ty);
+      if (map.blocked[i]) return false;
+      return map.tiles[i] !== T().CLIFF;
+    },
+
+    setBlocked(map, tx, ty, blocked) {
+      if (!inBounds(map, tx, ty)) return;
+      map.blocked[idx(map, tx, ty)] = blocked ? 1 : 0;
+    },
+
+    markBuildingBlocked(map, b, blocked) {
+      for (let dy = 0; dy < b.tileH; dy++) {
+        for (let dx = 0; dx < b.tileW; dx++) {
+          D.Map.setBlocked(map, b.tileX + dx, b.tileY + dy, blocked);
+        }
+      }
+    },
+
+    rebuildBlocked(game) {
+      const map = game.map;
+      const n = map.width * map.height;
+      map.blocked.fill(0);
+      const cliff = T().CLIFF;
+      for (let i = 0; i < n; i++) {
+        if (map.tiles[i] === cliff) map.blocked[i] = 1;
+      }
+      for (const b of game.buildings) {
+        if (b.type === 'concrete') continue; // concrete does not block
+        D.Map.markBuildingBlocked(map, b, true);
+      }
+    },
+
+    initFog(game) {
+      const n = game.map.width * game.map.height;
+      game.fog = {
+        player: { explored: new Uint8Array(n), visible: new Uint8Array(n) },
+        enemy: { explored: new Uint8Array(n), visible: new Uint8Array(n) },
+      };
+    },
+
+    stampSight(game, owner, cx, cy, radius) {
+      if (radius <= 0) return;
+      const fog = game.fog[owner];
+      if (!fog) return;
+      const map = game.map;
+      const r = Math.ceil(radius);
+      const r2 = radius * radius;
+      const x0 = Math.floor(cx);
+      const y0 = Math.floor(cy);
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          if (dx * dx + dy * dy > r2) continue;
+          const tx = x0 + dx;
+          const ty = y0 + dy;
+          if (!inBounds(map, tx, ty)) continue;
+          const i = idx(map, tx, ty);
+          fog.visible[i] = 1;
+          fog.explored[i] = 1;
+        }
+      }
+    },
+
+    recomputeFog(game, owner) {
+      if (!D.config.features.fog && owner === 'player') {
+        // still stamp for consistency when fog off — full reveal
+      }
+      const fog = game.fog[owner];
+      if (!fog) return;
+      fog.visible.fill(0);
+
+      if (!D.config.features.fog) {
+        fog.visible.fill(1);
+        fog.explored.fill(1);
+        return;
+      }
+
+      for (const u of game.units) {
+        if (u.owner !== owner || u.hp <= 0) continue;
+        const def = D.config.units[u.type];
+        D.Map.stampSight(game, owner, u.x, u.y, def ? def.sight : 3);
+      }
+      for (const b of game.buildings) {
+        if (b.owner !== owner || b.buildProgress < 1 || b.hp <= 0) continue;
+        const def = D.config.buildings[b.type];
+        // Always keep the footprint itself explored/visible for the owner
+        // (so a lone gun turret is never lost under shroud).
+        for (let dy = 0; dy < b.tileH; dy++) {
+          for (let dx = 0; dx < b.tileW; dx++) {
+            const tx = b.tileX + dx;
+            const ty = b.tileY + dy;
+            if (!inBounds(game.map, tx, ty)) continue;
+            const i = idx(game.map, tx, ty);
+            fog.visible[i] = 1;
+            fog.explored[i] = 1;
+          }
+        }
+        if (!def || def.sight <= 0) continue;
+        const cx = b.tileX + b.tileW / 2;
+        const cy = b.tileY + b.tileH / 2;
+        D.Map.stampSight(game, owner, cx, cy, def.sight);
+      }
+    },
+
+    isVisible(game, owner, tx, ty) {
+      if (!D.config.features.fog) return true;
+      const map = game.map;
+      if (!inBounds(map, tx, ty)) return false;
+      return game.fog[owner].visible[idx(map, tx, ty)] === 1;
+    },
+
+    isExplored(game, owner, tx, ty) {
+      if (!D.config.features.fog) return true;
+      const map = game.map;
+      if (!inBounds(map, tx, ty)) return false;
+      return game.fog[owner].explored[idx(map, tx, ty)] === 1;
+    },
+
+    /** Building footprint entirely on rock (or concrete tiles). */
+    canPlace(game, type, tileX, tileY, owner, opts) {
+      opts = opts || {};
+      const def = D.config.buildings[type];
+      if (!def) return false;
+      const map = game.map;
+      const w = def.tileW;
+      const h = def.tileH;
+
+      for (let dy = 0; dy < h; dy++) {
+        for (let dx = 0; dx < w; dx++) {
+          const tx = tileX + dx;
+          const ty = tileY + dy;
+          if (!inBounds(map, tx, ty)) return false;
+          const t = D.Map.tileAt(map, tx, ty);
+          if (t !== T().ROCK) return false;
+          // occupied by non-concrete building?
+          if (D.Map.isTileOccupiedByBuilding(game, tx, ty, type === 'concrete')) {
+            return false;
+          }
+        }
+      }
+
+      // proximity (first CY exempt)
+      if (!opts.skipProximity) {
+        const hasAny = game.buildings.some(
+          (b) => b.owner === owner && b.buildProgress >= 1 && b.type !== 'concrete'
+        );
+        if (hasAny) {
+          const prox = D.config.build.proximityTiles;
+          const cx = tileX + w / 2;
+          const cy = tileY + h / 2;
+          let ok = false;
+          for (const b of game.buildings) {
+            if (b.owner !== owner || b.buildProgress < 1) continue;
+            if (b.type === 'concrete') continue;
+            const bx = b.tileX + b.tileW / 2;
+            const by = b.tileY + b.tileH / 2;
+            const d = Math.hypot(cx - bx, cy - by);
+            if (d <= prox + Math.max(b.tileW, b.tileH)) {
+              ok = true;
+              break;
+            }
+          }
+          if (!ok) return false;
+        }
+      }
+      return true;
+    },
+
+    isTileOccupiedByBuilding(game, tx, ty, allowConcreteStack) {
+      for (const b of game.buildings) {
+        if (tx < b.tileX || ty < b.tileY) continue;
+        if (tx >= b.tileX + b.tileW || ty >= b.tileY + b.tileH) continue;
+        if (allowConcreteStack && b.type === 'concrete') continue;
+        if (b.type === 'concrete' && allowConcreteStack) continue;
+        // concrete under buildings: allow placing non-concrete on concrete
+        if (b.type === 'concrete') {
+          // another concrete? no
+          return !allowConcreteStack;
+        }
+        return true;
+      }
+      return false;
+    },
+
+    hasConcreteUnder(game, tileX, tileY, tileW, tileH) {
+      for (let dy = 0; dy < tileH; dy++) {
+        for (let dx = 0; dx < tileW; dx++) {
+          const tx = tileX + dx;
+          const ty = tileY + dy;
+          let found = false;
+          for (const b of game.buildings) {
+            if (b.type !== 'concrete' || b.buildProgress < 1) continue;
+            if (b.tileX === tx && b.tileY === ty) {
+              found = true;
+              break;
+            }
+          }
+          if (!found) return false;
+        }
+      }
+      return true;
+    },
+
+    findNearestSpice(map, x, y) {
+      let best = null;
+      let bestD = Infinity;
+      for (let ty = 0; ty < map.height; ty++) {
+        for (let tx = 0; tx < map.width; tx++) {
+          if (map.spiceAmount[idx(map, tx, ty)] > 0) {
+            const d = (tx + 0.5 - x) * (tx + 0.5 - x) + (ty + 0.5 - y) * (ty + 0.5 - y);
+            if (d < bestD) {
+              bestD = d;
+              best = { x: tx + 0.5, y: ty + 0.5, tx, ty };
+            }
+          }
+        }
+      }
+      return best;
+    },
+
+    inBounds,
+    idx,
+  };
+})(typeof window !== 'undefined' ? window : globalThis);
+
+/* ---- pathfinding.js ---- */
+/* global Dune2 */
+(function (global) {
+  'use strict';
+  const D = (global.Dune2 = global.Dune2 || {});
+
+  function key(x, y) {
+    return y * 4096 + x;
+  }
+
+  function heuristic(ax, ay, bx, by) {
+    // Octile
+    const dx = Math.abs(ax - bx);
+    const dy = Math.abs(ay - by);
+    return Math.max(dx, dy) + (Math.SQRT2 - 1) * Math.min(dx, dy);
+  }
+
+  function canStep(map, x, y, nx, ny) {
+    if (!D.Map.isWalkable(map, nx, ny)) return false;
+    const dx = nx - x;
+    const dy = ny - y;
+    if (dx !== 0 && dy !== 0) {
+      // no corner cutting
+      if (!D.Map.isWalkable(map, x + dx, y) || !D.Map.isWalkable(map, x, y + dy)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  const NEIGHBORS = [
+    [1, 0, 1],
+    [-1, 0, 1],
+    [0, 1, 1],
+    [0, -1, 1],
+    [1, 1, Math.SQRT2],
+    [1, -1, Math.SQRT2],
+    [-1, 1, Math.SQRT2],
+    [-1, -1, Math.SQRT2],
+  ];
+
+  /**
+   * A* on tile grid. Start/goal in tile coords (ints).
+   * Returns array of {x,y} tile centers, or null.
+   */
+  D.Path = {
+    find(map, x0, y0, x1, y1) {
+      const sx = Math.floor(x0);
+      const sy = Math.floor(y0);
+      let gx = Math.floor(x1);
+      let gy = Math.floor(y1);
+
+      if (!D.Map.isWalkable(map, sx, sy)) return null;
+
+      // If goal blocked, search nearby walkable
+      if (!D.Map.isWalkable(map, gx, gy)) {
+        let found = false;
+        for (let r = 1; r <= 3 && !found; r++) {
+          for (let dy = -r; dy <= r && !found; dy++) {
+            for (let dx = -r; dx <= r && !found; dx++) {
+              if (D.Map.isWalkable(map, gx + dx, gy + dy)) {
+                gx = gx + dx;
+                gy = gy + dy;
+                found = true;
+              }
+            }
+          }
+        }
+        if (!found) return null;
+      }
+
+      if (sx === gx && sy === gy) {
+        return [{ x: gx + 0.5, y: gy + 0.5 }];
+      }
+
+      const maxNodes = D.config.path.maxNodes;
+      const open = [];
+      const came = new Map();
+      const gScore = new Map();
+      const fScore = new Map();
+      const closed = new Set();
+
+      const sk = key(sx, sy);
+      gScore.set(sk, 0);
+      fScore.set(sk, heuristic(sx, sy, gx, gy));
+      open.push({ x: sx, y: sy, f: fScore.get(sk) });
+
+      let expanded = 0;
+
+      while (open.length && expanded < maxNodes) {
+        // pop lowest f
+        let bi = 0;
+        for (let i = 1; i < open.length; i++) {
+          if (open[i].f < open[bi].f) bi = i;
+        }
+        const cur = open[bi];
+        open[bi] = open[open.length - 1];
+        open.pop();
+        const ck = key(cur.x, cur.y);
+        if (closed.has(ck)) continue;
+        closed.add(ck);
+        expanded++;
+
+        if (cur.x === gx && cur.y === gy) {
+          // reconstruct
+          const path = [];
+          let cx = cur.x;
+          let cy = cur.y;
+          path.push({ x: cx + 0.5, y: cy + 0.5 });
+          let k = key(cx, cy);
+          while (came.has(k)) {
+            const p = came.get(k);
+            cx = p.x;
+            cy = p.y;
+            path.push({ x: cx + 0.5, y: cy + 0.5 });
+            k = key(cx, cy);
+          }
+          path.reverse();
+          // drop first if it's start tile
+          if (path.length > 1) path.shift();
+          return path;
+        }
+
+        for (const [dx, dy, cost] of NEIGHBORS) {
+          const nx = cur.x + dx;
+          const ny = cur.y + dy;
+          if (!canStep(map, cur.x, cur.y, nx, ny)) continue;
+          const nk = key(nx, ny);
+          if (closed.has(nk)) continue;
+          const tentative = (gScore.get(ck) || 0) + cost;
+          if (tentative < (gScore.get(nk) ?? Infinity)) {
+            came.set(nk, { x: cur.x, y: cur.y });
+            gScore.set(nk, tentative);
+            const f = tentative + heuristic(nx, ny, gx, gy);
+            fScore.set(nk, f);
+            open.push({ x: nx, y: ny, f });
+          }
+        }
+      }
+      return null;
+    },
+
+    canStep,
+  };
+})(typeof window !== 'undefined' ? window : globalThis);
+
+/* ---- entities.js ---- */
+/* global Dune2 */
+(function (global) {
+  'use strict';
+  const D = (global.Dune2 = global.Dune2 || {});
+
+  let nextId = 1;
+
+  D.Entities = {
+    resetIds() {
+      nextId = 1;
+    },
+
+    setNextId(n) {
+      nextId = Math.max(1, n | 0);
+    },
+
+    peekNextId() {
+      return nextId;
+    },
+
+    nextId() {
+      return nextId++;
+    },
+
+    createUnit(game, type, owner, x, y) {
+      const def = D.config.units[type];
+      if (!def) throw new Error('Unknown unit ' + type);
+      const u = {
+        id: nextId++,
+        type,
+        owner,
+        x,
+        y,
+        hp: def.hp,
+        hpMax: def.hp,
+        facing: 0,
+        orders: [],
+        order: null,
+        path: [],
+        weapon: def.weapon
+          ? { cooldownLeft: 0 }
+          : null,
+        cargo: 0,
+        cargoMax: def.cargoMax || 0,
+        harvest: type === 'harvester'
+          ? { state: 'idle', tileX: 0, tileY: 0, refineryId: null, unloadLeft: 0, wait: 0 }
+          : null,
+        sight: def.sight,
+        selected: false,
+        repathQueued: false,
+      };
+      game.units.push(u);
+      return u;
+    },
+
+    createBuilding(game, type, owner, tileX, tileY, opts) {
+      opts = opts || {};
+      const def = D.config.buildings[type];
+      if (!def) throw new Error('Unknown building ' + type);
+      let hpMax = def.hp;
+      if (
+        type !== 'concrete' &&
+        D.Map.hasConcreteUnder(game, tileX, tileY, def.tileW, def.tileH)
+      ) {
+        hpMax = Math.floor(def.hp * D.config.build.concreteHpBonus);
+      }
+      const complete = opts.complete !== false && opts.progress == null;
+      const progress = opts.progress != null ? opts.progress : complete ? 1 : 0;
+      const b = {
+        id: nextId++,
+        type,
+        owner,
+        tileX,
+        tileY,
+        tileW: def.tileW,
+        tileH: def.tileH,
+        hp: opts.hp != null ? opts.hp : progress >= 1 ? hpMax : Math.max(1, Math.floor(hpMax * 0.15)),
+        hpMax,
+        powered: true,
+        buildProgress: progress,
+        buildQueue: [],
+        rallyX: tileX + def.tileW / 2,
+        rallyY: tileY + def.tileH + 1.5,
+        dockTileX: null,
+        dockTileY: null,
+        primary: false,
+        sight: def.sight,
+        weapon: def.weapon ? { cooldownLeft: 0 } : null,
+        costPaid: opts.costPaid || 0,
+      };
+
+      if (type === 'refinery') {
+        D.Entities.assignDock(game, b);
+      }
+
+      game.buildings.push(b);
+      if (type !== 'concrete') {
+        D.Map.markBuildingBlocked(game.map, b, true);
+      }
+      return b;
+    },
+
+    assignDock(game, b) {
+      // bottom-center outside footprint
+      const candidates = [];
+      const midX = b.tileX + Math.floor(b.tileW / 2);
+      const below = b.tileY + b.tileH;
+      candidates.push([midX, below], [midX - 1, below], [midX + 1, below]);
+      candidates.push([b.tileX - 1, b.tileY + 1], [b.tileX + b.tileW, b.tileY + 1]);
+      for (const [tx, ty] of candidates) {
+        if (D.Map.isWalkable(game.map, tx, ty) || !game.map.blocked[D.Map.idx(game.map, tx, ty)]) {
+          // may be blocked by self footprint — prefer outside
+          if (
+            tx >= b.tileX &&
+            tx < b.tileX + b.tileW &&
+            ty >= b.tileY &&
+            ty < b.tileY + b.tileH
+          ) {
+            continue;
+          }
+          if (D.Map.inBounds(game.map, tx, ty) && D.Map.tileAt(game.map, tx, ty) !== D.config.terrain.CLIFF) {
+            b.dockTileX = tx;
+            b.dockTileY = ty;
+            return;
+          }
+        }
+      }
+      b.dockTileX = midX;
+      b.dockTileY = below;
+    },
+
+    getById(game, id) {
+      let e = game.units.find((u) => u.id === id);
+      if (e) return e;
+      return game.buildings.find((b) => b.id === id) || null;
+    },
+
+    removeUnit(game, u) {
+      const i = game.units.indexOf(u);
+      if (i >= 0) game.units.splice(i, 1);
+      const si = game.selection.ids.indexOf(u.id);
+      if (si >= 0) game.selection.ids.splice(si, 1);
+    },
+
+    removeBuilding(game, b) {
+      if (b.type !== 'concrete') {
+        D.Map.markBuildingBlocked(game.map, b, false);
+      }
+      const i = game.buildings.indexOf(b);
+      if (i >= 0) game.buildings.splice(i, 1);
+      // free dock waiters etc. handled by harvest FSM
+    },
+
+    unitCenter(u) {
+      return { x: u.x, y: u.y };
+    },
+
+    buildingCenter(b) {
+      return { x: b.tileX + b.tileW / 2, y: b.tileY + b.tileH / 2 };
+    },
+
+    dist(ax, ay, bx, by) {
+      return Math.hypot(ax - bx, ay - by);
+    },
+
+    targetKind(entity) {
+      if (entity.tileW != null) return 'building';
+      const def = D.config.units[entity.type];
+      return def && def.kind === 'infantry' ? 'infantry' : 'vehicle';
+    },
+  };
+})(typeof window !== 'undefined' ? window : globalThis);
+
+/* ---- orders.js ---- */
+/* global Dune2 */
+(function (global) {
+  'use strict';
+  const D = (global.Dune2 = global.Dune2 || {});
+
+  function clearOrder(u) {
+    u.order = null;
+    u.orders = [];
+    u.path = [];
+    u.repathQueued = false;
+  }
+
+  function setOrder(u, order) {
+    u.orders = [order];
+    u.order = order;
+    u.path = [];
+    u.repathQueued = false;
+    if (u.harvest && order.type !== 'harvest') {
+      u.harvest.state = 'idle';
+      u.harvest.refineryId = null;
+    }
+  }
+
+  D.Orders = {
+    issue(game, unitIds, order) {
+      for (const id of unitIds) {
+        const u = game.units.find((x) => x.id === id);
+        if (!u || u.owner !== (order._owner || u.owner)) continue;
+        // only issue to living
+        if (u.hp <= 0) continue;
+
+        if (order.type === 'deploy') {
+          if (u.type !== 'mcv') continue;
+          setOrder(u, { type: 'deploy' });
+          continue;
+        }
+
+        if (order.type === 'harvest') {
+          if (u.type !== 'harvester') continue;
+          setOrder(u, { type: 'harvest', tileX: order.tileX, tileY: order.tileY });
+          u.harvest.state = 'moveToSpice';
+          u.harvest.tileX = order.tileX;
+          u.harvest.tileY = order.tileY;
+          continue;
+        }
+
+        if (order.type === 'stop') {
+          clearOrder(u);
+          if (u.harvest) u.harvest.state = 'idle';
+          continue;
+        }
+
+        setOrder(u, Object.assign({}, order));
+      }
+    },
+
+    stop(game, unitIds) {
+      D.Orders.issue(game, unitIds, { type: 'stop' });
+    },
+
+    setRally(game, buildingId, x, y) {
+      const b = game.buildings.find((x) => x.id === buildingId);
+      if (!b) return;
+      b.rallyX = x;
+      b.rallyY = y;
+    },
+
+    canDeploy(game, unitId) {
+      const u = game.units.find((x) => x.id === unitId);
+      if (!u || u.type !== 'mcv') return false;
+      const def = D.config.buildings.constructionYard;
+      // center 2x2 on MCV tile
+      const tx = Math.floor(u.x) - Math.floor(def.tileW / 2);
+      const ty = Math.floor(u.y) - Math.floor(def.tileH / 2);
+      const hasCY = game.buildings.some(
+        (b) => b.owner === u.owner && b.type === 'constructionYard' && b.buildProgress >= 1
+      );
+      return D.Map.canPlace(game, 'constructionYard', tx, ty, u.owner, {
+        skipProximity: !hasCY,
+      });
+    },
+
+    tryDeploy(game, u) {
+      if (!D.Orders.canDeploy(game, u.id)) return false;
+      const def = D.config.buildings.constructionYard;
+      const tx = Math.floor(u.x) - Math.floor(def.tileW / 2);
+      const ty = Math.floor(u.y) - Math.floor(def.tileH / 2);
+      const hasCY = game.buildings.some(
+        (b) => b.owner === u.owner && b.type === 'constructionYard' && b.buildProgress >= 1
+      );
+      if (!D.Map.canPlace(game, 'constructionYard', tx, ty, u.owner, { skipProximity: !hasCY })) {
+        return false;
+      }
+      D.Entities.createBuilding(game, 'constructionYard', u.owner, tx, ty, {
+        complete: true,
+      });
+      D.Entities.removeUnit(game, u);
+      D.Economy.tickPower(game);
+      if (D.Game && D.Game.pushMessage) {
+        D.Game.pushMessage(game, u.owner === 'player' ? 'Construction Yard deployed.' : null);
+      }
+      return true;
+    },
+
+    /** Movement + order execution per tick */
+    tick(game, dt) {
+      let repaths = 0;
+      const maxRepaths = D.config.path.maxRepathsPerTick;
+
+      for (const u of game.units) {
+        if (u.hp <= 0) continue;
+
+        // Harvester FSM takes over when harvest order active or internal state active
+        if (u.type === 'harvester' && u.harvest && u.order && u.order.type === 'harvest') {
+          D.Orders.tickHarvester(game, u, dt, () => {
+            if (repaths < maxRepaths) {
+              repaths++;
+              return true;
+            }
+            return false;
+          });
+          continue;
+        }
+        if (
+          u.type === 'harvester' &&
+          u.harvest &&
+          u.harvest.state !== 'idle' &&
+          (!u.order || u.order.type === 'harvest')
+        ) {
+          D.Orders.tickHarvester(game, u, dt, () => {
+            if (repaths < maxRepaths) {
+              repaths++;
+              return true;
+            }
+            return false;
+          });
+          continue;
+        }
+
+        const order = u.order;
+        if (!order) continue;
+
+        if (order.type === 'deploy') {
+          D.Orders.tryDeploy(game, u);
+          continue;
+        }
+
+        if (order.type === 'move' || order.type === 'attack-move') {
+          D.Orders.ensurePath(game, u, order.x, order.y, () => repaths++ < maxRepaths);
+          D.Orders.followPath(game, u, dt);
+          if (!u.path.length && u.order && (u.order.type === 'move')) {
+            const d = Math.hypot(u.x - order.x, u.y - order.y);
+            if (d < D.config.path.arrivalDist + 0.2) clearOrder(u);
+          }
+          continue;
+        }
+
+        if (order.type === 'attack') {
+          const target = D.Entities.getById(game, order.targetId);
+          if (!target || target.hp <= 0) {
+            clearOrder(u);
+            continue;
+          }
+          const tc =
+            target.tileW != null
+              ? D.Entities.buildingCenter(target)
+              : { x: target.x, y: target.y };
+          const def = D.config.units[u.type];
+          const range = def && def.weapon ? def.weapon.range : 1;
+          const dist = Math.hypot(u.x - tc.x, u.y - tc.y);
+          if (dist > range) {
+            D.Orders.ensurePath(game, u, tc.x, tc.y, () => repaths++ < maxRepaths);
+            D.Orders.followPath(game, u, dt);
+          } else {
+            u.path = [];
+          }
+          continue;
+        }
+      }
+      game._repathsThisTick = repaths;
+    },
+
+    ensurePath(game, u, tx, ty, allowRepath) {
+      if (u.path && u.path.length) {
+        // if goal far from path end, repath
+        const last = u.path[u.path.length - 1];
+        if (Math.hypot(last.x - tx, last.y - ty) < 1.5) return;
+      }
+      if (allowRepath && !allowRepath()) return;
+      const path = D.Path.find(game.map, u.x, u.y, tx, ty);
+      u.path = path || [];
+    },
+
+    followPath(game, u, dt) {
+      if (!u.path.length) return;
+      const def = D.config.units[u.type];
+      const speed = def ? def.speed : 1;
+      let remaining = speed * dt;
+      while (remaining > 0 && u.path.length) {
+        const wp = u.path[0];
+        const dx = wp.x - u.x;
+        const dy = wp.y - u.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist < 0.05) {
+          u.path.shift();
+          continue;
+        }
+        if (dist <= remaining) {
+          u.x = wp.x;
+          u.y = wp.y;
+          remaining -= dist;
+          u.path.shift();
+        } else {
+          u.x += (dx / dist) * remaining;
+          u.y += (dy / dist) * remaining;
+          remaining = 0;
+        }
+        // facing
+        if (dist > 0.001) {
+          u.facing = (Math.atan2(dy, dx) + Math.PI * 2) % (Math.PI * 2);
+        }
+      }
+    },
+
+    tickHarvester(game, u, dt, allowRepath) {
+      const h = u.harvest;
+      const eco = D.config.economy;
+
+      function pathTo(x, y) {
+        D.Orders.ensurePath(game, u, x, y, allowRepath);
+        D.Orders.followPath(game, u, dt);
+      }
+
+      if (h.state === 'idle') {
+        // auto-seek spice if empty cargo and no order? only if harvest order
+        if (u.order && u.order.type === 'harvest') {
+          h.state = 'moveToSpice';
+        }
+        return;
+      }
+
+      if (h.state === 'moveToSpice') {
+        let tx = h.tileX;
+        let ty = h.tileY;
+        if (D.Map.spiceAt(game.map, tx, ty) <= 0) {
+          const n = D.Map.findNearestSpice(game.map, u.x, u.y);
+          if (!n) {
+            h.state = 'idle';
+            clearOrder(u);
+            return;
+          }
+          h.tileX = n.tx;
+          h.tileY = n.ty;
+          tx = n.tx;
+          ty = n.ty;
+        }
+        const txc = tx + 0.5;
+        const tyc = ty + 0.5;
+        if (Math.hypot(u.x - txc, u.y - tyc) < 0.4) {
+          h.state = 'harvest';
+          u.path = [];
+        } else {
+          pathTo(txc, tyc);
+        }
+        return;
+      }
+
+      if (h.state === 'harvest') {
+        const amt = D.Map.spiceAt(game.map, h.tileX, h.tileY);
+        if (amt <= 0 || u.cargo >= u.cargoMax) {
+          h.state = 'moveToRefinery';
+          h.refineryId = null;
+          return;
+        }
+        const take = Math.min(eco.harvestRate * dt, amt, u.cargoMax - u.cargo);
+        u.cargo += take;
+        D.Map.setSpice(game.map, h.tileX, h.tileY, amt - take);
+        if (u.cargo >= u.cargoMax) {
+          h.state = 'moveToRefinery';
+          h.refineryId = null;
+        }
+        return;
+      }
+
+      if (h.state === 'moveToRefinery' || h.state === 'seekRefinery') {
+        let ref = h.refineryId
+          ? game.buildings.find((b) => b.id === h.refineryId)
+          : null;
+        if (!ref || ref.hp <= 0 || ref.buildProgress < 1 || ref.type !== 'refinery') {
+          ref = D.Orders.findBestRefinery(game, u);
+          h.refineryId = ref ? ref.id : null;
+        }
+        if (!ref) {
+          h.state = 'idle';
+          return;
+        }
+        const dx = (ref.dockTileX ?? ref.tileX) + 0.5;
+        const dy = (ref.dockTileY ?? ref.tileY + ref.tileH) + 0.5;
+        if (Math.hypot(u.x - dx, u.y - dy) < 0.45) {
+          // dock free?
+          const busy = game.units.some(
+            (o) =>
+              o !== u &&
+              o.type === 'harvester' &&
+              o.harvest &&
+              o.harvest.state === 'unload' &&
+              o.harvest.refineryId === ref.id
+          );
+          if (busy) {
+            h.wait = (h.wait || 0) + dt;
+            if (h.wait > 0.5) {
+              h.wait = 0;
+              // stay nearby
+            }
+            return;
+          }
+          h.state = 'unload';
+          h.wait = 0;
+          u.path = [];
+        } else {
+          pathTo(dx, dy);
+        }
+        return;
+      }
+
+      if (h.state === 'unload') {
+        const ref = game.buildings.find((b) => b.id === h.refineryId);
+        if (!ref || ref.hp <= 0) {
+          h.state = 'seekRefinery';
+          return;
+        }
+        const owner = u.owner;
+        const cap = game.spiceCap[owner];
+        const credits = game.credits[owner];
+        if (credits >= cap) {
+          // stall
+          if (u.owner === 'player' && game.tick % 40 === 0) {
+            D.Game.pushMessage(game, 'Silos needed!');
+          }
+          return;
+        }
+        const room = cap - credits;
+        const give = Math.min(eco.unloadRate * dt, u.cargo, room / eco.spiceToCredit);
+        u.cargo -= give;
+        game.credits[owner] = Math.min(cap, credits + give * eco.spiceToCredit);
+        if (u.cargo <= 0.01) {
+          u.cargo = 0;
+          // resume spice
+          const n = D.Map.findNearestSpice(game.map, u.x, u.y);
+          if (n) {
+            h.tileX = n.tx;
+            h.tileY = n.ty;
+            h.state = 'moveToSpice';
+            if (!u.order || u.order.type !== 'harvest') {
+              u.order = { type: 'harvest', tileX: n.tx, tileY: n.ty };
+              u.orders = [u.order];
+            }
+          } else {
+            h.state = 'idle';
+            clearOrder(u);
+          }
+        }
+      }
+    },
+
+    findBestRefinery(game, u) {
+      let best = null;
+      let bestD = Infinity;
+      let primary = null;
+      for (const b of game.buildings) {
+        if (b.owner !== u.owner || b.type !== 'refinery' || b.buildProgress < 1 || b.hp <= 0)
+          continue;
+        if (b.primary) primary = b;
+        const dx = (b.dockTileX ?? b.tileX) + 0.5;
+        const dy = (b.dockTileY ?? b.tileY) + 0.5;
+        const d = Math.hypot(u.x - dx, u.y - dy);
+        if (d < bestD) {
+          bestD = d;
+          best = b;
+        }
+      }
+      if (primary) return primary;
+      return best;
+    },
+  };
+})(typeof window !== 'undefined' ? window : globalThis);
+
+/* ---- economy.js ---- */
+/* global Dune2 */
+(function (global) {
+  'use strict';
+  const D = (global.Dune2 = global.Dune2 || {});
+
+  D.Economy = {
+    canAfford(game, owner, cost) {
+      return game.credits[owner] >= cost;
+    },
+
+    charge(game, owner, cost) {
+      if (!D.Economy.canAfford(game, owner, cost)) return false;
+      game.credits[owner] -= cost;
+      return true;
+    },
+
+    tickPower(game) {
+      for (const owner of ['player', 'enemy']) {
+        let prod = 0;
+        let need = 0;
+        for (const b of game.buildings) {
+          if (b.owner !== owner || b.buildProgress < 1) continue;
+          const def = D.config.buildings[b.type];
+          if (!def) continue;
+          if (def.power > 0) prod += def.power;
+          else need += -def.power;
+        }
+        const ratio = need > 0 ? Math.min(1, prod / need) : 1;
+        game.power[owner] = { prod, need, ratio };
+      }
+    },
+
+    recalcSpiceCap(game) {
+      for (const owner of ['player', 'enemy']) {
+        let cap = D.config.economy.baseSpiceCap;
+        for (const b of game.buildings) {
+          if (b.owner === owner && b.type === 'silo' && b.buildProgress >= 1) {
+            cap += D.config.economy.siloBonus;
+          }
+        }
+        game.spiceCap[owner] = cap;
+        if (game.credits[owner] > cap) game.credits[owner] = cap;
+      }
+    },
+
+    hasTech(game, owner, requires) {
+      if (!requires) return true;
+      return game.buildings.some(
+        (b) => b.owner === owner && b.type === requires && b.buildProgress >= 1
+      );
+    },
+
+    canBuildType(game, owner, type) {
+      const def = D.config.buildings[type];
+      if (!def || !def.buildable) return false;
+      if (!D.Economy.hasTech(game, owner, def.requires)) return false;
+      return D.Economy.canAfford(game, owner, def.cost);
+    },
+
+    beginStructure(game, owner, type, tileX, tileY) {
+      const def = D.config.buildings[type];
+      if (!def || !def.buildable) return { ok: false, reason: 'invalid' };
+      if (!D.Economy.hasTech(game, owner, def.requires)) {
+        return { ok: false, reason: 'tech' };
+      }
+      // One structure at a time per owner (design KD #32)
+      if (game.structureBuilder && game.structureBuilder[owner] != null) {
+        const busy = game.buildings.find((b) => b.id === game.structureBuilder[owner]);
+        if (busy && busy.buildProgress < 1) {
+          return { ok: false, reason: 'busy' };
+        }
+        game.structureBuilder[owner] = null;
+      }
+      // Need a completed CY to start new structures (MCV deploy is separate)
+      const hasCY = game.buildings.some(
+        (b) =>
+          b.owner === owner &&
+          b.type === 'constructionYard' &&
+          b.buildProgress >= 1 &&
+          b.hp > 0
+      );
+      if (!hasCY) return { ok: false, reason: 'no-cy' };
+      const skipProx = false;
+      if (!D.Map.canPlace(game, type, tileX, tileY, owner, { skipProximity: skipProx })) {
+        return { ok: false, reason: 'placement' };
+      }
+      if (!D.Economy.charge(game, owner, def.cost)) {
+        return { ok: false, reason: 'credits' };
+      }
+      const b = D.Entities.createBuilding(game, type, owner, tileX, tileY, {
+        progress: 0,
+        costPaid: def.cost,
+      });
+      if (game.structureBuilder) game.structureBuilder[owner] = b.id;
+      return { ok: true, building: b };
+    },
+
+    enqueueUnit(game, buildingId, unitType) {
+      const b = game.buildings.find((x) => x.id === buildingId);
+      if (!b || b.buildProgress < 1) return { ok: false, reason: 'building' };
+      const udef = D.config.units[unitType];
+      if (!udef || udef.builtAt !== b.type) return { ok: false, reason: 'type' };
+      if (b.buildQueue.length >= 5) return { ok: false, reason: 'queue' };
+      if (!D.Economy.charge(game, b.owner, udef.cost)) {
+        return { ok: false, reason: 'credits' };
+      }
+      b.buildQueue.push({
+        type: unitType,
+        progress: 0,
+        costPaid: udef.cost,
+      });
+      return { ok: true };
+    },
+
+    cancelQueue(game, buildingId, index) {
+      const b = game.buildings.find((x) => x.id === buildingId);
+      if (!b || index < 0 || index >= b.buildQueue.length) return;
+      const item = b.buildQueue.splice(index, 1)[0];
+      const refund = Math.floor(item.costPaid * D.config.economy.cancelRefund);
+      game.credits[b.owner] = Math.min(
+        game.spiceCap[b.owner],
+        game.credits[b.owner] + refund
+      );
+    },
+
+    tick(game, dt) {
+      D.Economy.tickPower(game);
+
+      // structure build progress
+      for (const b of game.buildings) {
+        if (b.buildProgress >= 1) continue;
+        const def = D.config.buildings[b.type];
+        if (!def || !def.buildTime) {
+          b.buildProgress = 1;
+          continue;
+        }
+        const power = game.power[b.owner];
+        // Bootstrap grace: no windtraps yet → full speed (otherwise first WT is 4× slow)
+        const hasPowerPlant = game.buildings.some(
+          (x) =>
+            x.owner === b.owner &&
+            x.type === 'windtrap' &&
+            x.buildProgress >= 1
+        );
+        const mult = !hasPowerPlant
+          ? 1
+          : power.prod < power.need
+            ? Math.max(power.ratio, 0.25)
+            : 1;
+        b.buildProgress += (dt * mult) / def.buildTime;
+        if (b.buildProgress >= 1) {
+          b.buildProgress = 1;
+          b.hp = b.hpMax;
+          if (game.structureBuilder && game.structureBuilder[b.owner] === b.id) {
+            game.structureBuilder[b.owner] = null;
+          }
+          D.Economy.onStructureComplete(game, b);
+        }
+      }
+
+      // unit queues
+      for (const b of game.buildings) {
+        if (b.buildProgress < 1 || !b.buildQueue.length) continue;
+        const item = b.buildQueue[0];
+        const udef = D.config.units[item.type];
+        if (!udef) {
+          b.buildQueue.shift();
+          continue;
+        }
+        const power = game.power[b.owner];
+        const mult =
+          power.prod < power.need ? Math.max(power.ratio, 0.25) : 1;
+        item.progress += (dt * mult) / udef.buildTime;
+        if (item.progress >= 1) {
+          b.buildQueue.shift();
+          D.Economy.spawnUnit(game, b, item.type);
+        }
+      }
+    },
+
+    onStructureComplete(game, b) {
+      D.Economy.tickPower(game);
+      D.Economy.recalcSpiceCap(game);
+      if (b.type === 'concrete' && game.map) {
+        game.map.terrainDirty = true;
+      }
+      // Teleport units sitting on new blocking footprint
+      if (b.type !== 'concrete') {
+        D.Economy.teleportUnitsOffFootprint(game, b);
+      }
+      if (b.type === 'refinery') {
+        D.Entities.assignDock(game, b);
+        // free harvester
+        const spawn = D.Economy.spawnPoint(game, b);
+        const h = D.Entities.createUnit(game, 'harvester', b.owner, spawn.x, spawn.y);
+        // auto harvest nearest spice
+        const spice = D.Map.findNearestSpice(game.map, h.x, h.y);
+        if (spice) {
+          D.Orders.issue(game, [h.id], {
+            type: 'harvest',
+            tileX: spice.tx,
+            tileY: spice.ty,
+          });
+        }
+        if (b.owner === 'player') {
+          D.Game.pushMessage(game, 'Refinery online. Harvester ready.');
+        }
+      }
+      if (b.owner === 'player') {
+        const def = D.config.buildings[b.type];
+        D.Game.pushMessage(game, (def ? def.name : b.type) + ' complete.');
+      }
+    },
+
+    spawnPoint(game, b) {
+      // toward rally, outside footprint
+      const rx = b.rallyX;
+      const ry = b.rallyY;
+      const candidates = [];
+      for (let r = 0; r <= 2; r++) {
+        for (let dy = -r; dy <= r; dy++) {
+          for (let dx = -r; dx <= r; dx++) {
+            const tx = Math.floor(rx) + dx;
+            const ty = Math.floor(ry) + dy;
+            if (D.Map.isWalkable(game.map, tx, ty)) {
+              candidates.push({ x: tx + 0.5, y: ty + 0.5 });
+            }
+          }
+        }
+      }
+      // also edges of building
+      for (let dx = 0; dx < b.tileW; dx++) {
+        const tx = b.tileX + dx;
+        const ty = b.tileY + b.tileH;
+        if (D.Map.isWalkable(game.map, tx, ty)) {
+          candidates.push({ x: tx + 0.5, y: ty + 0.5 });
+        }
+      }
+      if (candidates.length) return candidates[0];
+      return { x: b.tileX + b.tileW / 2, y: b.tileY + b.tileH + 1.5 };
+    },
+
+    spawnUnit(game, b, type) {
+      const spawn = D.Economy.spawnPoint(game, b);
+      const u = D.Entities.createUnit(game, type, b.owner, spawn.x, spawn.y);
+      if (b.rallyX != null) {
+        D.Orders.issue(game, [u.id], { type: 'move', x: b.rallyX, y: b.rallyY });
+      }
+      return u;
+    },
+
+    teleportUnitsOffFootprint(game, b) {
+      for (const u of game.units) {
+        if (u.hp <= 0) continue;
+        const tx = Math.floor(u.x);
+        const ty = Math.floor(u.y);
+        if (
+          tx >= b.tileX &&
+          tx < b.tileX + b.tileW &&
+          ty >= b.tileY &&
+          ty < b.tileY + b.tileH
+        ) {
+          const dest = D.Economy.findEscapeTile(game, b.tileX + b.tileW / 2, b.tileY + b.tileH / 2);
+          if (dest) {
+            u.x = dest.x;
+            u.y = dest.y;
+            u.path = [];
+          }
+        }
+      }
+    },
+
+    findEscapeTile(game, cx, cy) {
+      for (let r = 1; r <= 3; r++) {
+        for (let dy = -r; dy <= r; dy++) {
+          for (let dx = -r; dx <= r; dx++) {
+            const tx = Math.floor(cx) + dx;
+            const ty = Math.floor(cy) + dy;
+            if (D.Map.isWalkable(game.map, tx, ty)) {
+              return { x: tx + 0.5, y: ty + 0.5 };
+            }
+          }
+        }
+      }
+      return null;
+    },
+  };
+})(typeof window !== 'undefined' ? window : globalThis);
+
+/* ---- combat.js ---- */
+/* global Dune2 */
+(function (global) {
+  'use strict';
+  const D = (global.Dune2 = global.Dune2 || {});
+
+  function multFor(weapon, kind) {
+    if (kind === 'infantry') return weapon.vsI;
+    if (kind === 'vehicle') return weapon.vsV;
+    return weapon.vsB;
+  }
+
+  function applyDamage(game, target, weapon, attackerOwner) {
+    const kind = D.Entities.targetKind(target);
+    const armor = target.tileW != null ? 0 : (D.config.units[target.type]?.armor || 0);
+    const mult = multFor(weapon, kind);
+    const dmg = Math.max(1, Math.floor(weapon.damage * mult) - armor);
+    target.hp -= dmg;
+    if (target.hp <= 0) {
+      target.hp = 0;
+      D.Combat.kill(game, target, attackerOwner);
+    }
+    // AI memory: building damaged
+    if (target.tileW != null && target.owner === 'enemy' && attackerOwner === 'player') {
+      game.ai.memory.lastAttackedBuilding = {
+        x: target.tileX + target.tileW / 2,
+        y: target.tileY + target.tileH / 2,
+        t: game.tick,
+      };
+    }
+    if (target.tileW != null && target.owner === 'player' && attackerOwner === 'enemy') {
+      game.ai.memory.playerAttackedAt = {
+        x: target.tileX + target.tileW / 2,
+        y: target.tileY + target.tileH / 2,
+        t: game.tick,
+      };
+    }
+  }
+
+  function fireHitscan(game, attacker, target, weapon) {
+    applyDamage(game, target, weapon, attacker.owner);
+    game.fx = game.fx || [];
+    const tc =
+      target.tileW != null
+        ? D.Entities.buildingCenter(target)
+        : { x: target.x, y: target.y };
+    const from =
+      attacker.tileW != null
+        ? D.Entities.buildingCenter(attacker)
+        : { x: attacker.x, y: attacker.y };
+    game.fx.push({
+      type: 'tracer',
+      x0: from.x,
+      y0: from.y,
+      x1: tc.x,
+      y1: tc.y,
+      life: 0.08,
+      color: attacker.owner === 'player' ? '#9cf' : '#f96',
+    });
+  }
+
+  function fireProjectile(game, attacker, target, weapon) {
+    const from =
+      attacker.tileW != null
+        ? D.Entities.buildingCenter(attacker)
+        : { x: attacker.x, y: attacker.y };
+    const tc =
+      target.tileW != null
+        ? D.Entities.buildingCenter(target)
+        : { x: target.x, y: target.y };
+    game.projectiles.push({
+      id: D.Entities.nextId(),
+      x: from.x,
+      y: from.y,
+      tx: tc.x,
+      ty: tc.y,
+      targetId: target.id,
+      speed: D.config.projectileSpeed,
+      weapon,
+      owner: attacker.owner,
+      life: 3,
+    });
+  }
+
+  D.Combat = {
+    resolveTarget(game, u) {
+      if (u.order && u.order.type === 'attack') {
+        const t = D.Entities.getById(game, u.order.targetId);
+        if (t && t.hp > 0) return t;
+      }
+      if (u.order && u.order.type === 'attack-move') {
+        return D.Combat.findHostileInSight(game, u);
+      }
+      return null;
+    },
+
+    findHostileInSight(game, u) {
+      const def = D.config.units[u.type];
+      const sight = def ? def.sight : 3;
+      let best = null;
+      let bestD = sight + 0.01;
+      for (const o of game.units) {
+        if (o.owner === u.owner || o.hp <= 0) continue;
+        if (!D.Combat.canSee(game, u.owner, o.x, o.y)) continue;
+        const d = Math.hypot(u.x - o.x, u.y - o.y);
+        if (d < bestD) {
+          bestD = d;
+          best = o;
+        }
+      }
+      for (const b of game.buildings) {
+        if (b.owner === u.owner || b.hp <= 0 || b.type === 'concrete') continue;
+        const c = D.Entities.buildingCenter(b);
+        if (!D.Combat.canSee(game, u.owner, c.x, c.y)) continue;
+        const d = Math.hypot(u.x - c.x, u.y - c.y);
+        if (d < bestD) {
+          bestD = d;
+          best = b;
+        }
+      }
+      return best;
+    },
+
+    canSee(game, owner, x, y) {
+      if (!D.config.features.fog) return true;
+      return D.Map.isVisible(game, owner, Math.floor(x), Math.floor(y));
+    },
+
+    kill(game, target, killerOwner) {
+      if (target.tileW != null) {
+        const name = D.config.buildings[target.type]?.name || target.type;
+        if (target.owner === 'player' || killerOwner === 'player') {
+          D.Game.pushMessage(game, name + ' destroyed.');
+        }
+        // explosion fx
+        const c = D.Entities.buildingCenter(target);
+        game.fx = game.fx || [];
+        game.fx.push({ type: 'explode', x: c.x, y: c.y, life: 0.4, r: 0.8 });
+        D.Entities.removeBuilding(game, target);
+        D.Economy.tickPower(game);
+        D.Economy.recalcSpiceCap(game);
+      } else {
+        game.fx = game.fx || [];
+        game.fx.push({ type: 'explode', x: target.x, y: target.y, life: 0.25, r: 0.4 });
+        D.Entities.removeUnit(game, target);
+      }
+    },
+
+    tick(game, dt) {
+      // units fire
+      for (const u of game.units) {
+        if (u.hp <= 0 || !u.weapon) continue;
+        const def = D.config.units[u.type];
+        if (!def || !def.weapon) continue;
+        u.weapon.cooldownLeft = Math.max(0, u.weapon.cooldownLeft - dt);
+
+        let target = D.Combat.resolveTarget(game, u);
+        // auto-acquire only if attack-move or idle? design: only on attack orders
+        if (!target && u.order && u.order.type === 'attack-move') {
+          target = D.Combat.findHostileInSight(game, u);
+        }
+
+        if (!target) continue;
+        const tc =
+          target.tileW != null
+            ? D.Entities.buildingCenter(target)
+            : { x: target.x, y: target.y };
+        // FOW fire gate: must currently see target tile
+        if (!D.Combat.canSee(game, u.owner, tc.x, tc.y)) continue;
+        const dist = Math.hypot(u.x - tc.x, u.y - tc.y);
+        if (dist <= def.weapon.range) {
+          u.path = []; // stop at range
+          if (u.weapon.cooldownLeft === 0) {
+            if (def.weapon.projectile) fireProjectile(game, u, target, def.weapon);
+            else fireHitscan(game, u, target, def.weapon);
+            u.weapon.cooldownLeft = def.weapon.cooldown;
+          }
+        }
+      }
+
+      // turrets
+      for (const b of game.buildings) {
+        if (b.buildProgress < 1 || !b.weapon || b.hp <= 0) continue;
+        const def = D.config.buildings[b.type];
+        if (!def || !def.weapon) continue;
+        const power = game.power[b.owner];
+        if (power.ratio < 0.5) continue; // offline
+        b.weapon.cooldownLeft = Math.max(0, b.weapon.cooldownLeft - dt);
+        const c = D.Entities.buildingCenter(b);
+        // find target in range
+        let best = null;
+        let bestD = def.weapon.range + 0.01;
+        for (const o of game.units) {
+          if (o.owner === b.owner || o.hp <= 0) continue;
+          if (!D.Combat.canSee(game, b.owner, o.x, o.y)) continue;
+          const d = Math.hypot(c.x - o.x, c.y - o.y);
+          if (d < bestD) {
+            bestD = d;
+            best = o;
+          }
+        }
+        if (best) {
+          const tc = { x: best.x, y: best.y };
+          b._aimFacing = Math.atan2(tc.y - c.y, tc.x - c.x);
+          if (b.weapon.cooldownLeft === 0) {
+            if (def.weapon.projectile) fireProjectile(game, b, best, def.weapon);
+            else fireHitscan(game, b, best, def.weapon);
+            b.weapon.cooldownLeft = def.weapon.cooldown;
+          }
+        }
+      }
+
+      // projectiles
+      for (let i = game.projectiles.length - 1; i >= 0; i--) {
+        const p = game.projectiles[i];
+        p.life -= dt;
+        const target = D.Entities.getById(game, p.targetId);
+        if (target && target.hp > 0) {
+          const tc =
+            target.tileW != null
+              ? D.Entities.buildingCenter(target)
+              : { x: target.x, y: target.y };
+          p.tx = tc.x;
+          p.ty = tc.y;
+        }
+        const dx = p.tx - p.x;
+        const dy = p.ty - p.y;
+        const dist = Math.hypot(dx, dy);
+        const step = p.speed * dt;
+        if (dist <= step || p.life <= 0) {
+          if (target && target.hp > 0) {
+            applyDamage(game, target, p.weapon, p.owner);
+          }
+          game.fx = game.fx || [];
+          game.fx.push({ type: 'explode', x: p.tx, y: p.ty, life: 0.15, r: 0.25 });
+          game.projectiles.splice(i, 1);
+        } else {
+          p.x += (dx / dist) * step;
+          p.y += (dy / dist) * step;
+        }
+      }
+
+      // fx
+      if (game.fx) {
+        for (let i = game.fx.length - 1; i >= 0; i--) {
+          game.fx[i].life -= dt;
+          if (game.fx[i].life <= 0) game.fx.splice(i, 1);
+        }
+      }
+    },
+  };
+})(typeof window !== 'undefined' ? window : globalThis);
+
+/* ---- ai.js ---- */
+/* global Dune2 */
+(function (global) {
+  'use strict';
+  const D = (global.Dune2 = global.Dune2 || {});
+
+  const OWNER = 'enemy';
+
+  function countBuildings(game, type) {
+    return game.buildings.filter(
+      (b) => b.owner === OWNER && b.type === type && b.buildProgress >= 1
+    ).length;
+  }
+
+  function countQueuedOrBuilt(game, type) {
+    let n = countBuildings(game, type);
+    n += game.buildings.filter(
+      (b) => b.owner === OWNER && b.type === type && b.buildProgress < 1
+    ).length;
+    return n;
+  }
+
+  function combatUnits(game) {
+    return game.units.filter((u) => {
+      if (u.owner !== OWNER || u.hp <= 0) return false;
+      if (u.type === 'harvester' || u.type === 'mcv') return false;
+      const def = D.config.units[u.type];
+      return def && def.weapon;
+    });
+  }
+
+  function findCY(game, owner) {
+    return game.buildings.find(
+      (b) => b.owner === owner && b.type === 'constructionYard' && b.buildProgress >= 1
+    );
+  }
+
+  function spiralPlace(game, type, originX, originY) {
+    const maxR = D.config.ai.placement.spiralMaxRadius;
+    const def = D.config.buildings[type];
+    // try preferred offset for refinery toward spice
+    if (type === 'refinery') {
+      const spice = D.Map.findNearestSpice(game.map, originX, originY);
+      if (spice) {
+        const dirX = spice.x - originX;
+        const dirY = spice.y - originY;
+        const len = Math.hypot(dirX, dirY) || 1;
+        for (let dist = 3; dist <= D.config.ai.placement.refineryTowardSpiceRange; dist++) {
+          const tx = Math.floor(originX + (dirX / len) * dist) - Math.floor(def.tileW / 2);
+          const ty = Math.floor(originY + (dirY / len) * dist) - Math.floor(def.tileH / 2);
+          if (D.Map.canPlace(game, type, tx, ty, OWNER)) return { tx, ty };
+        }
+      }
+    }
+    for (let r = 0; r <= maxR; r++) {
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          if (Math.max(Math.abs(dx), Math.abs(dy)) !== r && r > 0) continue;
+          const tx = Math.floor(originX) + dx;
+          const ty = Math.floor(originY) + dy;
+          if (D.Map.canPlace(game, type, tx, ty, OWNER)) return { tx, ty };
+        }
+      }
+    }
+    return null;
+  }
+
+  function updateMemory(game) {
+    // last seen player CY / units
+    for (const b of game.buildings) {
+      if (b.owner !== 'player' || b.hp <= 0) continue;
+      const c = D.Entities.buildingCenter(b);
+      if (D.Map.isVisible(game, OWNER, Math.floor(c.x), Math.floor(c.y))) {
+        if (b.type === 'constructionYard') {
+          game.ai.memory.enemyCY = { x: c.x, y: c.y, t: game.tick };
+        }
+        game.ai.memory.lastEnemyBuilding = { x: c.x, y: c.y, t: game.tick };
+      }
+    }
+    for (const u of game.units) {
+      if (u.owner !== 'player' || u.hp <= 0) continue;
+      if (D.Map.isVisible(game, OWNER, Math.floor(u.x), Math.floor(u.y))) {
+        game.ai.memory.lastEnemyUnit = { x: u.x, y: u.y, t: game.tick };
+      }
+    }
+  }
+
+  function tryBuild(game, type) {
+    const def = D.config.buildings[type];
+    if (!def) return false;
+    if (!D.Economy.hasTech(game, OWNER, def.requires)) return false;
+    if (!D.Economy.canAfford(game, OWNER, def.cost)) return false;
+    // already building this?
+    if (game.buildings.some((b) => b.owner === OWNER && b.type === type && b.buildProgress < 1)) {
+      return false;
+    }
+    const cy = findCY(game, OWNER);
+    if (!cy && type !== 'constructionYard') return false;
+    const ox = cy ? cy.tileX + cy.tileW / 2 : 55;
+    const oy = cy ? cy.tileY + cy.tileH / 2 : 8;
+    const spot = spiralPlace(game, type, ox, oy);
+    if (!spot) return false;
+    const r = D.Economy.beginStructure(game, OWNER, type, spot.tx, spot.ty);
+    return r.ok;
+  }
+
+  function ensurePower(game) {
+    const p = game.power[OWNER];
+    if (p.need === 0) return;
+    const surplus = (p.prod - p.need) / Math.max(1, p.need);
+    if (surplus < D.config.ai.desirePowerSurplus) {
+      tryBuild(game, 'windtrap');
+    }
+  }
+
+  function followBuildOrder(game) {
+    const order = D.config.ai.buildOrder;
+    const counts = {};
+    for (const t of order) {
+      counts[t] = (counts[t] || 0) + 1;
+      if (countQueuedOrBuilt(game, t) < counts[t]) {
+        if (tryBuild(game, t)) return true;
+        return false;
+      }
+    }
+    return false;
+  }
+
+  function produce(game) {
+    if (game.credits[OWNER] < D.config.ai.creditsStableThreshold) return;
+    const p = game.power[OWNER];
+    if (p.ratio < 0.6) return;
+
+    const weights = D.config.ai.productionWeights;
+    const picks = [];
+    for (const [type, w] of Object.entries(weights)) {
+      for (let i = 0; i < w; i++) picks.push(type);
+    }
+    const type = D.rng.pick(picks);
+    if (!type) return;
+    const udef = D.config.units[type];
+    const factory = game.buildings.find(
+      (b) =>
+        b.owner === OWNER &&
+        b.type === udef.builtAt &&
+        b.buildProgress >= 1 &&
+        b.buildQueue.length < 3
+    );
+    if (!factory) return;
+    D.Economy.enqueueUnit(game, factory.id, type);
+  }
+
+  function manageHarvesters(game) {
+    const refs = countBuildings(game, 'refinery');
+    const harvs = game.units.filter((u) => u.owner === OWNER && u.type === 'harvester').length;
+    if (harvs < refs) {
+      const hf = game.buildings.find(
+        (b) => b.owner === OWNER && b.type === 'heavyFactory' && b.buildProgress >= 1
+      );
+      if (hf && hf.buildQueue.length < 2) {
+        D.Economy.enqueueUnit(game, hf.id, 'harvester');
+      }
+    }
+    // idle harvesters → spice
+    for (const u of game.units) {
+      if (u.owner !== OWNER || u.type !== 'harvester') continue;
+      if (u.harvest && u.harvest.state === 'idle' && (!u.order || u.order.type === 'stop')) {
+        const spice = D.Map.findNearestSpice(game.map, u.x, u.y);
+        if (spice) {
+          D.Orders.issue(game, [u.id], {
+            type: 'harvest',
+            tileX: spice.tx,
+            tileY: spice.ty,
+          });
+        }
+      }
+    }
+  }
+
+  function scout(game) {
+    const cfg = D.config.ai;
+    const period = cfg.scoutPeriodSec / D.config.DT_SEC;
+    if (game.tick - (game.ai.lastScoutTick || 0) < period) return;
+    game.ai.lastScoutTick = game.tick;
+    const trike = game.units.find(
+      (u) => u.owner === OWNER && u.type === 'trike' && u.hp > 0 && (!u.order || u.order.type === 'move')
+    );
+    const unit =
+      trike ||
+      game.units.find(
+        (u) =>
+          u.owner === OWNER &&
+          u.hp > 0 &&
+          u.type !== 'harvester' &&
+          u.type !== 'mcv' &&
+          D.config.units[u.type]?.weapon
+      );
+    if (!unit) return;
+    // frontier unexplored
+    const map = game.map;
+    const candidates = [];
+    for (let i = 0; i < 40; i++) {
+      const tx = D.rng.int(0, map.width - 1);
+      const ty = D.rng.int(0, map.height - 1);
+      if (!D.Map.isExplored(game, OWNER, tx, ty)) {
+        candidates.push({ x: tx + 0.5, y: ty + 0.5 });
+      }
+    }
+    const dest =
+      candidates[0] ||
+      (game.ai.memory.lastEnemyBuilding
+        ? { x: game.ai.memory.lastEnemyBuilding.x, y: game.ai.memory.lastEnemyBuilding.y }
+        : { x: 8, y: 52 });
+    D.Orders.issue(game, [unit.id], { type: 'move', x: dest.x, y: dest.y });
+  }
+
+  function attackWave(game) {
+    const cfg = D.config.ai;
+    const period = cfg.wavePeriodSec / D.config.DT_SEC;
+    if (game.tick - (game.ai.waveAt || 0) < period) return;
+    const army = combatUnits(game);
+    if (army.length < cfg.waveMinCombatUnits) return;
+    game.ai.waveAt = game.tick;
+    game.ai.state = 'Attack';
+
+    let tx = 8;
+    let ty = 52;
+    if (game.ai.memory.enemyCY) {
+      tx = game.ai.memory.enemyCY.x;
+      ty = game.ai.memory.enemyCY.y;
+    } else if (game.ai.memory.lastEnemyBuilding) {
+      tx = game.ai.memory.lastEnemyBuilding.x;
+      ty = game.ai.memory.lastEnemyBuilding.y;
+    } else if (game.ai.memory.lastEnemyUnit) {
+      tx = game.ai.memory.lastEnemyUnit.x;
+      ty = game.ai.memory.lastEnemyUnit.y;
+    }
+
+    const ids = army.map((u) => u.id);
+    D.Orders.issue(game, ids, { type: 'attack-move', x: tx, y: ty });
+  }
+
+  function defend(game) {
+    const mem = game.ai.memory.playerAttackedAt;
+    if (!mem) return;
+    if (game.tick - mem.t > (8 / D.config.DT_SEC)) return;
+    game.ai.state = 'Defend';
+    const army = combatUnits(game).filter((u) => {
+      const cy = findCY(game, OWNER);
+      if (!cy) return true;
+      const c = D.Entities.buildingCenter(cy);
+      return Math.hypot(u.x - c.x, u.y - c.y) < D.config.ai.defendRadiusTiles;
+    });
+    if (!army.length) return;
+    D.Orders.issue(
+      game,
+      army.map((u) => u.id),
+      { type: 'attack-move', x: mem.x, y: mem.y }
+    );
+  }
+
+  function bootstrapMCV(game) {
+    const mcv = game.units.find((u) => u.owner === OWNER && u.type === 'mcv');
+    if (!mcv) return;
+    if (findCY(game, OWNER)) return;
+    // move to rock if needed then deploy
+    if (D.Orders.canDeploy(game, mcv.id)) {
+      D.Orders.issue(game, [mcv.id], { type: 'deploy' });
+    } else {
+      // find rock near spawn
+      const map = game.map;
+      for (let r = 0; r < 15; r++) {
+        for (let dy = -r; dy <= r; dy++) {
+          for (let dx = -r; dx <= r; dx++) {
+            const tx = Math.floor(mcv.x) + dx;
+            const ty = Math.floor(mcv.y) + dy;
+            if (D.Map.tileAt(map, tx, ty) === D.config.terrain.ROCK) {
+              D.Orders.issue(game, [mcv.id], { type: 'move', x: tx + 0.5, y: ty + 0.5 });
+              // try deploy next ticks
+              return;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  D.AI = {
+    tick(game, dt) {
+      if (!D.config.features.ai) return;
+      if (game.phase !== 'playing') return;
+      if (game.tick % D.config.ai.tickEvery !== 0) return;
+
+      updateMemory(game);
+      bootstrapMCV(game);
+
+      if (!findCY(game, OWNER)) {
+        game.ai.state = 'Bootstrap';
+        return;
+      }
+
+      ensurePower(game);
+      manageHarvesters(game);
+
+      const hasRef = countBuildings(game, 'refinery') > 0;
+      const hasWT = countBuildings(game, 'windtrap') > 0;
+      if (!hasWT || !hasRef) {
+        game.ai.state = 'Bootstrap';
+        followBuildOrder(game);
+        return;
+      }
+
+      game.ai.state = game.ai.state === 'Attack' ? 'Military' : game.ai.state || 'Eco';
+      followBuildOrder(game);
+      produce(game);
+      scout(game);
+      defend(game);
+      attackWave(game);
+
+      if (combatUnits(game).length >= D.config.ai.waveMinCombatUnits) {
+        if (game.ai.state !== 'Defend') game.ai.state = 'Military';
+      } else {
+        game.ai.state = 'Tech';
+      }
+    },
+  };
+})(typeof window !== 'undefined' ? window : globalThis);
+
+/* ---- game.js ---- */
+/* global Dune2 */
+(function (global) {
+  'use strict';
+  const D = (global.Dune2 = global.Dune2 || {});
+
+  D.Game = {
+    create() {
+      return {
+        phase: 'menu',
+        tick: 0,
+        credits: { player: 0, enemy: 0 },
+        spiceCap: { player: 1000, enemy: 1000 },
+        structureBuilder: { player: null, enemy: null },
+        power: {
+          player: { prod: 0, need: 0, ratio: 1 },
+          enemy: { prod: 0, need: 0, ratio: 1 },
+        },
+        map: null,
+        units: [],
+        buildings: [],
+        projectiles: [],
+        worms: [],
+        fx: [],
+        selection: { ids: [], box: null },
+        controlGroups: { 1: [], 2: [], 3: [], 4: [], 5: [], 6: [], 7: [], 8: [], 9: [] },
+        camera: { x: 0, y: 0 },
+        fog: null,
+        players: {
+          player: { house: 'atreides', color: D.config.colors.player },
+          enemy: { house: 'harkonnen', color: D.config.colors.enemy },
+        },
+        ai: {
+          state: 'Bootstrap',
+          waveAt: 0,
+          lastScoutTick: 0,
+          memory: {},
+        },
+        messages: [],
+        placement: null,
+        hoverTile: null,
+        rngSeed: D.config.seed,
+        stats: { fps: 0, simMs: 0 },
+        _repathsThisTick: 0,
+      };
+    },
+
+    pushMessage(game, text) {
+      if (!text) return;
+      game.messages.unshift({ text, t: game.tick });
+      if (game.messages.length > 30) game.messages.length = 30;
+      if (typeof document !== 'undefined') {
+        const el = document.getElementById('messages');
+        if (el) {
+          const div = document.createElement('div');
+          div.className = 'msg alert';
+          div.textContent = text;
+          el.insertBefore(div, el.firstChild);
+          while (el.children.length > 20) el.removeChild(el.lastChild);
+        }
+      }
+    },
+
+    startSkirmish(game, mapDef) {
+      D.Entities.resetIds();
+      D.rng.seed(D.config.seed);
+      game.phase = 'playing';
+      game.tick = 0;
+      game.units = [];
+      game.buildings = [];
+      game.projectiles = [];
+      game.fx = [];
+      game.worms = [];
+      game.selection = { ids: [], box: null };
+      game.controlGroups = { 1: [], 2: [], 3: [], 4: [], 5: [], 6: [], 7: [], 8: [], 9: [] };
+      game.placement = null;
+      game.messages = [];
+      game.ai = { state: 'Bootstrap', waveAt: 0, lastScoutTick: 0, memory: {} };
+      game.credits.player = D.config.economy.startingCredits;
+      game.credits.enemy = D.config.economy.startingCredits;
+      game.spiceCap.player = D.config.economy.baseSpiceCap;
+      game.spiceCap.enemy = D.config.economy.baseSpiceCap;
+      game.structureBuilder = { player: null, enemy: null };
+
+      game.map = D.Map.createFromDef(mapDef);
+      D.Map.initFog(game);
+
+      const ps = mapDef.spawns.player;
+      const es = mapDef.spawns.enemy;
+      D.Entities.createUnit(game, 'mcv', 'player', ps.x + 0.5, ps.y + 0.5);
+      D.Entities.createUnit(game, 'mcv', 'enemy', es.x + 0.5, es.y + 0.5);
+
+      // camera on player
+      const ts = D.config.TILE_SIZE;
+      game.camera.x = ps.x * ts - 400;
+      game.camera.y = ps.y * ts - 300;
+
+      D.Economy.tickPower(game);
+      D.Map.recomputeFog(game, 'player');
+      D.Map.recomputeFog(game, 'enemy');
+
+      D.Game.pushMessage(game, 'Deploy your MCV on rock to begin.');
+      D.Game.pushMessage(game, 'Atreides vs Harkonnen — harvest the spice.');
+    },
+
+    isDefeated(game, owner) {
+      const hasCY = game.buildings.some(
+        (b) =>
+          b.owner === owner &&
+          b.type === 'constructionYard' &&
+          b.buildProgress >= 1 &&
+          b.hp > 0
+      );
+      const hasMCV = game.units.some((u) => u.owner === owner && u.type === 'mcv' && u.hp > 0);
+      return !hasCY && !hasMCV;
+    },
+
+    checkWinLoss(game) {
+      if (game.phase !== 'playing') return;
+      // Grace period first few seconds
+      if (game.tick < 40) return;
+      if (D.Game.isDefeated(game, 'player')) {
+        game.phase = 'defeat';
+        D.Game.pushMessage(game, 'Defeat. The spice must flow... elsewhere.');
+      } else if (D.Game.isDefeated(game, 'enemy')) {
+        game.phase = 'victory';
+        D.Game.pushMessage(game, 'Victory! Arrakis is yours.');
+      }
+    },
+
+    tick(game, dt) {
+      if (game.phase !== 'playing') return;
+      const t0 = typeof performance !== 'undefined' ? performance.now() : 0;
+
+      game.tick++;
+      D.Orders.tick(game, dt);
+      D.Economy.tick(game, dt);
+      D.Combat.tick(game, dt);
+      D.AI.tick(game, dt);
+      D.Map.recomputeFog(game, 'player');
+      D.Map.recomputeFog(game, 'enemy');
+      D.Game.checkWinLoss(game);
+
+      if (typeof performance !== 'undefined') {
+        game.stats.simMs = performance.now() - t0;
+      }
+    },
+
+    /** Debug helpers */
+    giveCredits(game, amount) {
+      game.credits.player = Math.min(
+        game.spiceCap.player,
+        game.credits.player + amount
+      );
+      D.Game.pushMessage(game, '+' + amount + ' credits');
+    },
+
+    spawnEnemyArmy(game) {
+      const cy = game.buildings.find(
+        (b) => b.owner === 'player' && b.type === 'constructionYard'
+      );
+      const px = cy ? cy.tileX + 8 : 20;
+      const py = cy ? cy.tileY - 4 : 40;
+      const types = ['infantry', 'infantry', 'trooper', 'trike', 'quad', 'combatTank'];
+      for (let i = 0; i < types.length; i++) {
+        const u = D.Entities.createUnit(
+          game,
+          types[i],
+          'enemy',
+          px + (i % 3),
+          py + Math.floor(i / 3)
+        );
+        D.Orders.issue(game, [u.id], {
+          type: 'attack-move',
+          x: (cy ? cy.tileX : 10) + 1,
+          y: (cy ? cy.tileY : 50) + 1,
+        });
+      }
+      D.Game.pushMessage(game, 'Enemy army spawned!');
+    },
+
+    revealMap(game) {
+      D.config.features.fog = false;
+      D.Map.recomputeFog(game, 'player');
+      D.Game.pushMessage(game, 'Map revealed.');
+    },
+  };
+})(typeof window !== 'undefined' ? window : globalThis);
+
+/* ---- renderer.js ---- */
+/* global Dune2 */
+(function (global) {
+  'use strict';
+  const D = (global.Dune2 = global.Dune2 || {});
+
+  let canvas = null;
+  let ctx = null;
+  let minimap = null;
+  let mctx = null;
+  let terrainCanvas = null;
+  let tctx = null;
+  let viewW = 800;
+  let viewH = 600;
+
+  function ts() {
+    return D.config.TILE_SIZE;
+  }
+
+  function ownerColor(owner) {
+    return owner === 'player' ? D.config.colors.player : D.config.colors.enemy;
+  }
+
+  function terrainColor(id, spiceAmt) {
+    const C = D.config.colors;
+    const T = D.config.terrain;
+    switch (id) {
+      case T.SAND:
+        return C.sand;
+      case T.DUNE:
+        return C.dune;
+      case T.ROCK:
+        return C.rock;
+      case T.SPICE:
+        return C.spice;
+      case T.SPICE_HEAVY:
+        return C.spiceHeavy;
+      case T.CLIFF:
+        return C.cliff;
+      default:
+        return '#000';
+    }
+  }
+
+  D.Renderer = {
+    init(gameCanvas, minimapCanvas) {
+      canvas = gameCanvas;
+      ctx = canvas.getContext('2d');
+      minimap = minimapCanvas;
+      mctx = minimap.getContext('2d');
+      terrainCanvas = document.createElement('canvas');
+      tctx = terrainCanvas.getContext('2d');
+      D.Renderer.resize();
+    },
+
+    resize() {
+      if (!canvas) return;
+      const wrap = canvas.parentElement;
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      viewW = wrap.clientWidth || 800;
+      viewH = wrap.clientHeight || 600;
+      canvas.width = Math.floor(viewW * dpr);
+      canvas.height = Math.floor(viewH * dpr);
+      canvas.style.width = viewW + 'px';
+      canvas.style.height = viewH + 'px';
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    },
+
+    viewSize() {
+      return { w: viewW, h: viewH };
+    },
+
+    worldToScreen(game, wx, wy) {
+      const t = ts();
+      return {
+        x: wx * t - game.camera.x,
+        y: wy * t - game.camera.y,
+      };
+    },
+
+    screenToWorld(game, sx, sy) {
+      const t = ts();
+      return {
+        x: (sx + game.camera.x) / t,
+        y: (sy + game.camera.y) / t,
+      };
+    },
+
+    rebuildTerrain(game) {
+      if (!game.map) return;
+      const map = game.map;
+      const t = ts();
+      terrainCanvas.width = map.width * t;
+      terrainCanvas.height = map.height * t;
+      for (let ty = 0; ty < map.height; ty++) {
+        for (let tx = 0; tx < map.width; tx++) {
+          const i = ty * map.width + tx;
+          const id = map.tiles[i];
+          tctx.fillStyle = terrainColor(id, map.spiceAmount[i]);
+          tctx.fillRect(tx * t, ty * t, t, t);
+          // subtle spice density tint
+          if (id === D.config.terrain.SPICE || id === D.config.terrain.SPICE_HEAVY) {
+            const a = Math.min(0.35, map.spiceAmount[i] / 1500);
+            tctx.fillStyle = `rgba(255,120,0,${a})`;
+            tctx.fillRect(tx * t, ty * t, t, t);
+          }
+          // grid tick every 4
+          if ((tx + ty) % 2 === 0 && id === D.config.terrain.ROCK) {
+            tctx.fillStyle = 'rgba(0,0,0,0.06)';
+            tctx.fillRect(tx * t, ty * t, t, t);
+          }
+        }
+      }
+      // concrete overlays (slab pattern)
+      for (const b of game.buildings) {
+        if (b.type !== 'concrete' || b.buildProgress < 1) continue;
+        D.Sprites.drawBuilding(
+          tctx,
+          'concrete',
+          b.tileX * t,
+          b.tileY * t,
+          b.tileW * t,
+          b.tileH * t,
+          { ownerColor: D.config.colors.concrete }
+        );
+      }
+      map.terrainDirty = false;
+    },
+
+    clampCamera(game) {
+      if (!game.map) return;
+      const t = ts();
+      const maxX = Math.max(0, game.map.width * t - viewW);
+      const maxY = Math.max(0, game.map.height * t - viewH);
+      game.camera.x = Math.max(0, Math.min(maxX, game.camera.x));
+      game.camera.y = Math.max(0, Math.min(maxY, game.camera.y));
+    },
+
+    draw(game) {
+      if (!ctx || !game.map) return;
+      if (game.map.terrainDirty) D.Renderer.rebuildTerrain(game);
+      D.Renderer.clampCamera(game);
+
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, viewW, viewH);
+
+      // terrain
+      ctx.drawImage(
+        terrainCanvas,
+        game.camera.x,
+        game.camera.y,
+        viewW,
+        viewH,
+        0,
+        0,
+        viewW,
+        viewH
+      );
+
+      // FOW on terrain only — entities draw above so your buildings never
+      // disappear under "explored but not visible" dimming when a harvester leaves.
+      if (D.config.features.fog && game.fog) {
+        D.Renderer.drawFog(game);
+      }
+
+      // buildings (player always; enemy if explored)
+      const sortedBuildings = game.buildings.slice().sort((a, b) => a.id - b.id);
+      for (const b of sortedBuildings) {
+        D.Renderer.drawBuilding(game, b);
+      }
+
+      // units (player always; enemy only if currently visible)
+      const sortedUnits = game.units.slice().sort((a, b) => a.id - b.id);
+      for (const u of sortedUnits) {
+        if (!D.Renderer.shouldDrawUnit(game, u)) continue;
+        D.Renderer.drawUnit(game, u);
+      }
+
+      // projectiles — hide enemy shots in shroud
+      for (const p of game.projectiles) {
+        if (
+          p.owner !== 'player' &&
+          D.config.features.fog &&
+          !D.Map.isVisible(game, 'player', Math.floor(p.x), Math.floor(p.y))
+        ) {
+          continue;
+        }
+        const s = D.Renderer.worldToScreen(game, p.x, p.y);
+        ctx.fillStyle = p.owner === 'player' ? '#9cf' : '#f96';
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // fx
+      if (game.fx) {
+        for (const f of game.fx) {
+          const fx = f.x != null ? f.x : f.x0;
+          const fy = f.y != null ? f.y : f.y0;
+          if (
+            D.config.features.fog &&
+            fx != null &&
+            !D.Map.isVisible(game, 'player', Math.floor(fx), Math.floor(fy)) &&
+            !D.Map.isExplored(game, 'player', Math.floor(fx), Math.floor(fy))
+          ) {
+            continue;
+          }
+          if (f.type === 'tracer') {
+            const s0 = D.Renderer.worldToScreen(game, f.x0, f.y0);
+            const s1 = D.Renderer.worldToScreen(game, f.x1, f.y1);
+            ctx.strokeStyle = f.color || '#fff';
+            ctx.globalAlpha = Math.max(0, f.life * 8);
+            ctx.beginPath();
+            ctx.moveTo(s0.x, s0.y);
+            ctx.lineTo(s1.x, s1.y);
+            ctx.stroke();
+            ctx.globalAlpha = 1;
+          } else if (f.type === 'explode') {
+            const s = D.Renderer.worldToScreen(game, f.x, f.y);
+            ctx.fillStyle = `rgba(255,160,40,${Math.max(0, f.life * 2)})`;
+            ctx.beginPath();
+            ctx.arc(s.x, s.y, (f.r || 0.5) * ts() * (1.2 - f.life), 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+      }
+
+      // placement ghost
+      if (game.placement && game.phase === 'playing') {
+        D.Renderer.drawGhost(game);
+      }
+
+      // selection box
+      if (game.selection.box) {
+        const b = game.selection.box;
+        ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 3]);
+        ctx.strokeRect(b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0);
+        ctx.setLineDash([]);
+      }
+
+      // hover tile
+      if (game.hoverTile && game.phase === 'playing') {
+        const t = ts();
+        const s = D.Renderer.worldToScreen(game, game.hoverTile.tx, game.hoverTile.ty);
+        ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+        ctx.strokeRect(s.x, s.y, t, t);
+      }
+
+      D.Renderer.drawMinimap(game);
+    },
+
+    shouldDrawUnit(game, u) {
+      if (u.owner === 'player') return true;
+      if (!D.config.features.fog) return true;
+      return D.Map.isVisible(game, 'player', Math.floor(u.x), Math.floor(u.y));
+    },
+
+    shouldDrawBuilding(game, b) {
+      if (b.owner === 'player') return true;
+      if (!D.config.features.fog) return true;
+      // explored buildings remain visible (classic)
+      const c = D.Entities.buildingCenter(b);
+      return (
+        D.Map.isExplored(game, 'player', Math.floor(c.x), Math.floor(c.y)) ||
+        D.Map.isVisible(game, 'player', Math.floor(c.x), Math.floor(c.y))
+      );
+    },
+
+    drawFog(game) {
+      const map = game.map;
+      const fog = game.fog.player;
+      const t = ts();
+      const cam = game.camera;
+      const x0 = Math.max(0, Math.floor(cam.x / t));
+      const y0 = Math.max(0, Math.floor(cam.y / t));
+      const x1 = Math.min(map.width, Math.ceil((cam.x + viewW) / t) + 1);
+      const y1 = Math.min(map.height, Math.ceil((cam.y + viewH) / t) + 1);
+
+      for (let ty = y0; ty < y1; ty++) {
+        for (let tx = x0; tx < x1; tx++) {
+          const i = ty * map.width + tx;
+          if (!fog.explored[i]) {
+            ctx.fillStyle = D.config.colors.shroud;
+            const s = D.Renderer.worldToScreen(game, tx, ty);
+            ctx.fillRect(s.x, s.y, t + 0.5, t + 0.5);
+          } else if (!fog.visible[i]) {
+            // Explored-but-not-visible: dim terrain only (entities draw above).
+            // Keep alpha moderate so rock/spice still read under the veil.
+            ctx.fillStyle = 'rgba(0,0,0,0.45)';
+            const s = D.Renderer.worldToScreen(game, tx, ty);
+            ctx.fillRect(s.x, s.y, t + 0.5, t + 0.5);
+          }
+        }
+      }
+    },
+
+    drawBuilding(game, b) {
+      if (b.type === 'concrete') return; // drawn into terrain cache
+      if (!D.Renderer.shouldDrawBuilding(game, b)) return;
+      const t = ts();
+      const s = D.Renderer.worldToScreen(game, b.tileX, b.tileY);
+      const w = b.tileW * t;
+      const h = b.tileH * t;
+      const col = ownerColor(b.owner);
+      const alpha = b.buildProgress < 1 ? 0.4 + 0.6 * b.buildProgress : 1;
+      const time = game.tick * D.config.DT_SEC;
+
+      // scaffolding under construction
+      if (b.buildProgress < 1) {
+        ctx.save();
+        ctx.globalAlpha = 0.35;
+        ctx.strokeStyle = col;
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 3]);
+        ctx.strokeRect(s.x + 1, s.y + 1, w - 2, h - 2);
+        ctx.setLineDash([]);
+        ctx.restore();
+      }
+
+      D.Sprites.drawBuilding(ctx, b.type, s.x, s.y, w, h, {
+        ownerColor: col,
+        alpha,
+        time,
+        powered: game.power[b.owner]?.ratio >= 0.5,
+        facing: b._aimFacing || -Math.PI / 2,
+      });
+
+      if (b.buildProgress < 1) {
+        ctx.fillStyle = 'rgba(0,0,0,0.5)';
+        ctx.fillRect(s.x + 4, s.y + h - 10, w - 8, 5);
+        ctx.fillStyle = D.config.colors.hpOk;
+        ctx.fillRect(s.x + 4, s.y + h - 10, (w - 8) * b.buildProgress, 5);
+      }
+
+      if (b.buildProgress >= 1 && b.hp < b.hpMax) {
+        D.Renderer.drawHpBar(s.x + 4, s.y - 6, w - 8, b.hp / b.hpMax);
+      }
+
+      if (game.selection.ids.includes(b.id)) {
+        ctx.strokeStyle = D.config.colors.selection;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(s.x + 0.5, s.y + 0.5, w - 1, h - 1);
+      }
+    },
+
+    drawUnit(game, u) {
+      const t = ts();
+      const s = D.Renderer.worldToScreen(game, u.x, u.y);
+      const col = ownerColor(u.owner);
+      const def = D.config.units[u.type];
+      const size =
+        def && def.kind === 'infantry' ? t * 0.7 : u.type === 'mcv' || u.type === 'harvester' ? t * 1.05 : t * 0.9;
+      const half = size / 2;
+
+      D.Sprites.drawUnit(ctx, u.type, s.x - half, s.y - half, size, size, {
+        ownerColor: col,
+        facing: u.facing || 0,
+        cargoRatio: u.cargoMax ? u.cargo / u.cargoMax : 0,
+      });
+
+      if (game.selection.ids.includes(u.id) || u.selected) {
+        ctx.strokeStyle = D.config.colors.selection;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, half + 3, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      if (u.hp < u.hpMax) {
+        D.Renderer.drawHpBar(s.x - half, s.y - half - 6, size, u.hp / u.hpMax);
+      }
+    },
+
+    drawHpBar(x, y, w, ratio) {
+      ctx.fillStyle = '#222';
+      ctx.fillRect(x, y, w, 4);
+      const c =
+        ratio > 0.6
+          ? D.config.colors.hpOk
+          : ratio > 0.3
+            ? D.config.colors.hpMid
+            : D.config.colors.hpLow;
+      ctx.fillStyle = c;
+      ctx.fillRect(x, y, w * Math.max(0, ratio), 4);
+    },
+
+    drawGhost(game) {
+      const p = game.placement;
+      const def = D.config.buildings[p.type];
+      if (!def) return;
+      const t = ts();
+      const ok = D.Map.canPlace(game, p.type, p.tileX, p.tileY, 'player');
+      const s = D.Renderer.worldToScreen(game, p.tileX, p.tileY);
+      const w = def.tileW * t;
+      const h = def.tileH * t;
+      ctx.fillStyle = ok ? 'rgba(74,144,217,0.18)' : 'rgba(192,57,43,0.22)';
+      ctx.fillRect(s.x, s.y, w, h);
+      D.Sprites.drawBuilding(ctx, p.type, s.x, s.y, w, h, {
+        ownerColor: ok ? D.config.colors.player : D.config.colors.enemy,
+        alpha: 0.55,
+        time: game.tick * D.config.DT_SEC,
+        powered: true,
+      });
+      ctx.strokeStyle = ok ? '#4a90d9' : '#c0392b';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(s.x + 0.5, s.y + 0.5, w - 1, h - 1);
+    },
+
+    drawMinimap(game) {
+      if (!mctx || !minimap || !game.map) return;
+      const map = game.map;
+      const mw = minimap.width;
+      const mh = minimap.height;
+      const sx = mw / map.width;
+      const sy = mh / map.height;
+
+      // terrain sample
+      if (!D.Renderer._mmCache || game.map.terrainDirty) {
+        // draw live each frame is fine at 64x64
+      }
+      mctx.fillStyle = '#000';
+      mctx.fillRect(0, 0, mw, mh);
+
+      for (let ty = 0; ty < map.height; ty++) {
+        for (let tx = 0; tx < map.width; tx++) {
+          const i = ty * map.width + tx;
+          if (D.config.features.fog && game.fog && !game.fog.player.explored[i]) {
+            mctx.fillStyle = '#000';
+          } else {
+            mctx.fillStyle = terrainColor(map.tiles[i]);
+            if (D.config.features.fog && game.fog && !game.fog.player.visible[i]) {
+              // dim explored
+            }
+          }
+          mctx.fillRect(tx * sx, ty * sy, Math.ceil(sx), Math.ceil(sy));
+        }
+      }
+
+      // dim unexplored overlay already black; dim explored not visible
+      if (D.config.features.fog && game.fog) {
+        mctx.fillStyle = 'rgba(0,0,0,0.35)';
+        for (let ty = 0; ty < map.height; ty++) {
+          for (let tx = 0; tx < map.width; tx++) {
+            const i = ty * map.width + tx;
+            if (game.fog.player.explored[i] && !game.fog.player.visible[i]) {
+              mctx.fillRect(tx * sx, ty * sy, Math.ceil(sx), Math.ceil(sy));
+            }
+          }
+        }
+      }
+
+      // buildings
+      for (const b of game.buildings) {
+        if (b.type === 'concrete') continue;
+        if (b.owner !== 'player' && !D.Renderer.shouldDrawBuilding(game, b)) continue;
+        mctx.fillStyle = ownerColor(b.owner);
+        mctx.fillRect(b.tileX * sx, b.tileY * sy, Math.max(1, b.tileW * sx), Math.max(1, b.tileH * sy));
+      }
+
+      // units — player always; enemy if visible (or radar)
+      const hasRadar = game.buildings.some(
+        (b) =>
+          b.owner === 'player' &&
+          b.type === 'radar' &&
+          b.buildProgress >= 1 &&
+          b.hp > 0
+      );
+      for (const u of game.units) {
+        if (u.owner === 'enemy') {
+          const vis = D.Map.isVisible(game, 'player', Math.floor(u.x), Math.floor(u.y));
+          if (!vis) continue;
+          if (!hasRadar && !vis) continue;
+        }
+        mctx.fillStyle = ownerColor(u.owner);
+        mctx.fillRect(u.x * sx - 1, u.y * sy - 1, 2, 2);
+      }
+
+      // camera rect
+      const t = ts();
+      mctx.strokeStyle = '#fff';
+      mctx.lineWidth = 1;
+      mctx.strokeRect(
+        (game.camera.x / t) * sx,
+        (game.camera.y / t) * sy,
+        (viewW / t) * sx,
+        (viewH / t) * sy
+      );
+    },
+  };
+})(typeof window !== 'undefined' ? window : globalThis);
+
+/* ---- input.js ---- */
+/* global Dune2 */
+(function (global) {
+  'use strict';
+  const D = (global.Dune2 = global.Dune2 || {});
+
+  const keys = Object.create(null);
+  let canvas = null;
+  let minimap = null;
+  let gameRef = null;
+  let dragging = false;
+  let dragStart = null;
+  let panKeys = { left: false, right: false, up: false, down: false };
+  let lastClick = { t: 0, id: null };
+  const PAN_SPEED = 480; // px/sec
+
+  function canvasPos(e, el) {
+    const r = el.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top };
+  }
+
+  function selectedUnits(game) {
+    return game.units.filter((u) => game.selection.ids.includes(u.id) && u.owner === 'player');
+  }
+
+  function selectedBuildings(game) {
+    return game.buildings.filter(
+      (b) => game.selection.ids.includes(b.id) && b.owner === 'player'
+    );
+  }
+
+  function pickAt(game, wx, wy) {
+    // units first (topmost by id)
+    let bestU = null;
+    let bestD = 0.55;
+    for (const u of game.units) {
+      if (u.owner !== 'player' && !D.Map.isVisible(game, 'player', Math.floor(u.x), Math.floor(u.y)))
+        continue;
+      const d = Math.hypot(u.x - wx, u.y - wy);
+      if (d < bestD) {
+        bestD = d;
+        bestU = u;
+      }
+    }
+    if (bestU) return { kind: 'unit', entity: bestU };
+
+    for (const b of game.buildings) {
+      if (b.type === 'concrete') continue;
+      if (
+        b.owner !== 'player' &&
+        !D.Map.isExplored(game, 'player', Math.floor(b.tileX + b.tileW / 2), Math.floor(b.tileY + b.tileH / 2))
+      )
+        continue;
+      if (
+        wx >= b.tileX &&
+        wy >= b.tileY &&
+        wx < b.tileX + b.tileW &&
+        wy < b.tileY + b.tileH
+      ) {
+        return { kind: 'building', entity: b };
+      }
+    }
+    return null;
+  }
+
+  D.Input = {
+    init(game, gameCanvas, minimapCanvas) {
+      gameRef = game;
+      canvas = gameCanvas;
+      minimap = minimapCanvas;
+
+      window.addEventListener('keydown', (e) => {
+        keys[e.code] = true;
+        D.Input.onKeyDown(game, e);
+      });
+      window.addEventListener('keyup', (e) => {
+        keys[e.code] = false;
+        if (e.code === 'ArrowLeft' || e.code === 'KeyA') panKeys.left = false;
+        if (e.code === 'ArrowRight' || e.code === 'KeyD') panKeys.right = false;
+        if (e.code === 'ArrowUp' || e.code === 'KeyW') panKeys.up = false;
+        if (e.code === 'ArrowDown' || e.code === 'KeyS') panKeys.down = false;
+      });
+
+      canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+      canvas.addEventListener('mousedown', (e) => D.Input.onMouseDown(game, e));
+      canvas.addEventListener('mousemove', (e) => D.Input.onMouseMove(game, e));
+      canvas.addEventListener('mouseup', (e) => D.Input.onMouseUp(game, e));
+      canvas.addEventListener('mouseleave', () => {
+        dragging = false;
+        game.selection.box = null;
+      });
+
+      if (minimap) {
+        minimap.addEventListener('mousedown', (e) => D.Input.onMinimap(game, e));
+        minimap.addEventListener('mousemove', (e) => {
+          if (e.buttons === 1) D.Input.onMinimap(game, e);
+        });
+      }
+
+      window.addEventListener('resize', () => {
+        if (D.Renderer) D.Renderer.resize();
+      });
+    },
+
+    poll(game, dt) {
+      if (game.phase !== 'playing' && game.phase !== 'paused') return;
+      const speed = PAN_SPEED * dt;
+      if (panKeys.left || keys.ArrowLeft || keys.KeyA) game.camera.x -= speed;
+      if (panKeys.right || keys.ArrowRight || keys.KeyD) game.camera.x += speed;
+      if (panKeys.up || keys.ArrowUp || keys.KeyW) game.camera.y -= speed;
+      if (panKeys.down || keys.ArrowDown || keys.KeyS) game.camera.y += speed;
+      // edge pan
+      // (optional — skip for MVP cleanliness)
+      if (D.Renderer) D.Renderer.clampCamera(game);
+    },
+
+    onKeyDown(game, e) {
+      if (e.code === 'ArrowLeft' || e.code === 'KeyA') panKeys.left = true;
+      if (e.code === 'ArrowRight' || e.code === 'KeyD') panKeys.right = true;
+      if (e.code === 'ArrowUp' || e.code === 'KeyW') panKeys.up = true;
+      if (e.code === 'ArrowDown' || e.code === 'KeyS') panKeys.down = true;
+
+      // don't steal typing from nowhere — no inputs
+      if (e.code === 'Escape') {
+        game.placement = null;
+        if (game.phase === 'playing') {
+          game.phase = 'paused';
+          if (D.Save) D.Save.write(game);
+          if (D.UI) D.UI.showPause(true);
+        } else if (game.phase === 'paused') {
+          game.phase = 'playing';
+          if (D.UI) D.UI.showPause(false);
+        }
+        e.preventDefault();
+        return;
+      }
+
+      if (game.phase !== 'playing') return;
+
+      if (e.code === 'KeyF' && (e.ctrlKey || e.metaKey)) {
+        // ignore browser find
+      }
+
+      // F3 debug
+      if (e.code === 'F3') {
+        e.preventDefault();
+        const el = document.getElementById('debug-overlay');
+        if (el) el.classList.toggle('visible');
+        return;
+      }
+
+      // Deploy MCV
+      if (e.code === 'KeyD' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        // conflict with pan — use only if single MCV selected and KeyD without movement intent
+      }
+      if (e.code === 'KeyE') {
+        const mcvs = selectedUnits(game).filter((u) => u.type === 'mcv');
+        if (mcvs.length) {
+          D.Orders.issue(
+            game,
+            mcvs.map((u) => u.id),
+            { type: 'deploy' }
+          );
+        }
+        e.preventDefault();
+        return;
+      }
+
+      if (e.code === 'KeyS' && !panKeys.down) {
+        // stop — only if not holding for pan; use dedicated
+      }
+      if (e.code === 'KeyX' || e.code === 'Period') {
+        D.Orders.stop(
+          game,
+          selectedUnits(game).map((u) => u.id)
+        );
+        e.preventDefault();
+        return;
+      }
+
+      if (e.code === 'KeyH') {
+        const harvs = selectedUnits(game).filter((u) => u.type === 'harvester');
+        for (const u of harvs) {
+          const spice = D.Map.findNearestSpice(game.map, u.x, u.y);
+          if (spice) {
+            D.Orders.issue(game, [u.id], {
+              type: 'harvest',
+              tileX: spice.tx,
+              tileY: spice.ty,
+            });
+          }
+        }
+        e.preventDefault();
+        return;
+      }
+
+      if (e.code === 'Delete' || e.code === 'Backspace') {
+        // cancel structure? not for units
+      }
+
+      // Control groups
+      const num = e.code.match(/^Digit([1-9])$/);
+      if (num) {
+        const n = num[1];
+        if (e.ctrlKey || e.metaKey) {
+          game.controlGroups[n] = game.selection.ids.slice();
+          D.Game.pushMessage(game, 'Group ' + n + ' set');
+          e.preventDefault();
+        } else {
+          const ids = (game.controlGroups[n] || []).filter((id) => {
+            const ent = D.Entities.getById(game, id);
+            return ent && ent.hp > 0 && ent.owner === 'player';
+          });
+          game.selection.ids = ids;
+          if (D.UI) {
+            D.UI.invalidateSelection();
+            D.UI.refresh(game);
+          }
+          e.preventDefault();
+        }
+        return;
+      }
+
+      // Quicksave
+      if (e.code === 'F5') {
+        e.preventDefault();
+        if (D.Save && game.phase === 'playing') {
+          if (D.Save.write(game)) D.Game.pushMessage(game, 'Game saved.');
+        }
+        return;
+      }
+
+      // Debug cheats
+      const params = new URLSearchParams(location.search);
+      const debug = params.get('debug') === '1' || D.config.features.debugCheats;
+      if (debug) {
+        if (e.code === 'F1') {
+          e.preventDefault();
+          D.Game.giveCredits(game, 1000);
+        }
+        if (e.code === 'F2') {
+          e.preventDefault();
+          D.Game.spawnEnemyArmy(game);
+        }
+        if (e.code === 'F4') {
+          e.preventDefault();
+          D.Game.revealMap(game);
+        }
+      }
+    },
+
+    onMouseDown(game, e) {
+      if (game.phase !== 'playing') return;
+      const pos = canvasPos(e, canvas);
+
+      if (e.button === 0) {
+        // placement
+        if (game.placement) {
+          const world = D.Renderer.screenToWorld(game, pos.x, pos.y);
+          const tx = Math.floor(world.x);
+          const ty = Math.floor(world.y);
+          const r = D.Economy.beginStructure(
+            game,
+            'player',
+            game.placement.type,
+            tx,
+            ty
+          );
+          if (r.ok) {
+            if (!e.shiftKey) game.placement = null;
+            if (D.UI) D.UI.refresh(game);
+          } else {
+            D.Game.pushMessage(game, 'Cannot place: ' + (r.reason || 'invalid'));
+          }
+          return;
+        }
+
+        dragging = true;
+        dragStart = pos;
+        game.selection.box = { x0: pos.x, y0: pos.y, x1: pos.x, y1: pos.y };
+      }
+
+      if (e.button === 2) {
+        D.Input.rightClick(game, pos, e);
+      }
+    },
+
+    onMouseMove(game, e) {
+      if (!canvas || game.phase !== 'playing') return;
+      const pos = canvasPos(e, canvas);
+      const world = D.Renderer.screenToWorld(game, pos.x, pos.y);
+      game.hoverTile = { tx: Math.floor(world.x), ty: Math.floor(world.y) };
+
+      if (game.placement) {
+        game.placement.tileX = Math.floor(world.x);
+        game.placement.tileY = Math.floor(world.y);
+      }
+
+      if (dragging && dragStart) {
+        game.selection.box = {
+          x0: Math.min(dragStart.x, pos.x),
+          y0: Math.min(dragStart.y, pos.y),
+          x1: Math.max(dragStart.x, pos.x),
+          y1: Math.max(dragStart.y, pos.y),
+        };
+      }
+    },
+
+    onMouseUp(game, e) {
+      if (game.phase !== 'playing') return;
+      if (e.button !== 0) return;
+      const pos = canvasPos(e, canvas);
+      const box = game.selection.box;
+      dragging = false;
+      game.selection.box = null;
+
+      if (!box) return;
+      const w = box.x1 - box.x0;
+      const h = box.y1 - box.y0;
+      const shift = e.shiftKey;
+
+      if (w < 4 && h < 4) {
+        // click select
+        const world = D.Renderer.screenToWorld(game, pos.x, pos.y);
+        const hit = pickAt(game, world.x, world.y);
+        if (hit && hit.entity.owner === 'player') {
+          const id = hit.entity.id;
+          const now = performance.now();
+          if (
+            lastClick.id === id &&
+            now - lastClick.t < 350 &&
+            hit.kind === 'unit'
+          ) {
+            // double-click select-by-type
+            const type = hit.entity.type;
+            game.selection.ids = game.units
+              .filter((u) => u.owner === 'player' && u.type === type && u.hp > 0)
+              .map((u) => u.id);
+          } else if (shift) {
+            const i = game.selection.ids.indexOf(id);
+            if (i >= 0) game.selection.ids.splice(i, 1);
+            else game.selection.ids.push(id);
+          } else {
+            game.selection.ids = [id];
+          }
+          lastClick = { t: now, id };
+        } else if (!shift) {
+          game.selection.ids = [];
+        }
+      } else {
+        // box select units
+        const w0 = D.Renderer.screenToWorld(game, box.x0, box.y0);
+        const w1 = D.Renderer.screenToWorld(game, box.x1, box.y1);
+        const minX = Math.min(w0.x, w1.x);
+        const maxX = Math.max(w0.x, w1.x);
+        const minY = Math.min(w0.y, w1.y);
+        const maxY = Math.max(w0.y, w1.y);
+        const ids = game.units
+          .filter(
+            (u) =>
+              u.owner === 'player' &&
+              u.hp > 0 &&
+              u.x >= minX &&
+              u.x <= maxX &&
+              u.y >= minY &&
+              u.y <= maxY
+          )
+          .map((u) => u.id);
+        if (shift) {
+          const set = new Set(game.selection.ids.concat(ids));
+          game.selection.ids = [...set];
+        } else {
+          game.selection.ids = ids;
+        }
+      }
+      if (D.UI) {
+        D.UI.invalidateSelection();
+        D.UI.refresh(game);
+      }
+    },
+
+    rightClick(game, pos, e) {
+      const world = D.Renderer.screenToWorld(game, pos.x, pos.y);
+      const units = selectedUnits(game);
+      const buildings = selectedBuildings(game);
+
+      // rally point for selected factory
+      if (buildings.length === 1 && !units.length) {
+        const b = buildings[0];
+        const prod = ['barracks', 'lightFactory', 'heavyFactory'];
+        if (prod.includes(b.type)) {
+          D.Orders.setRally(game, b.id, world.x, world.y);
+          D.Game.pushMessage(game, 'Rally set');
+          return;
+        }
+      }
+
+      if (!units.length) return;
+
+      const hit = pickAt(game, world.x, world.y);
+
+      // attack enemy
+      if (hit && hit.entity.owner === 'enemy') {
+        D.Orders.issue(
+          game,
+          units.map((u) => u.id),
+          { type: 'attack', targetId: hit.entity.id }
+        );
+        return;
+      }
+
+      // harvester on spice
+      const tx = Math.floor(world.x);
+      const ty = Math.floor(world.y);
+      const harvs = units.filter((u) => u.type === 'harvester');
+      if (harvs.length && D.Map.spiceAt(game.map, tx, ty) > 0) {
+        D.Orders.issue(
+          game,
+          harvs.map((u) => u.id),
+          { type: 'harvest', tileX: tx, tileY: ty }
+        );
+        const rest = units.filter((u) => u.type !== 'harvester');
+        if (rest.length) {
+          D.Orders.issue(
+            game,
+            rest.map((u) => u.id),
+            { type: e.ctrlKey ? 'attack-move' : 'move', x: world.x, y: world.y }
+          );
+        }
+        return;
+      }
+
+      D.Orders.issue(
+        game,
+        units.map((u) => u.id),
+        {
+          type: e.ctrlKey || e.altKey ? 'attack-move' : 'move',
+          x: world.x,
+          y: world.y,
+        }
+      );
+    },
+
+    onMinimap(game, e) {
+      if (game.phase !== 'playing' && game.phase !== 'paused') return;
+      const pos = canvasPos(e, minimap);
+      const map = game.map;
+      if (!map) return;
+      const tx = (pos.x / minimap.clientWidth) * map.width;
+      const ty = (pos.y / minimap.clientHeight) * map.height;
+      const view = D.Renderer.viewSize();
+      const t = D.config.TILE_SIZE;
+      game.camera.x = tx * t - view.w / 2;
+      game.camera.y = ty * t - view.h / 2;
+      D.Renderer.clampCamera(game);
+    },
+
+    startPlacement(game, type) {
+      game.placement = { type, tileX: 0, tileY: 0 };
+    },
+
+    cancelPlacement(game) {
+      game.placement = null;
+    },
+  };
+})(typeof window !== 'undefined' ? window : globalThis);
+
+/* ---- ui.js ---- */
+/* global Dune2 */
+(function (global) {
+  'use strict';
+  const D = (global.Dune2 = global.Dune2 || {});
+
+  let els = {};
+  /** Last selection panel signature — avoid nuking produce buttons every frame */
+  let lastSelSig = '';
+  let boundGame = null;
+
+  function $(id) {
+    return document.getElementById(id);
+  }
+
+  function ownerColor(owner) {
+    return owner === 'player' ? D.config.colors.player : D.config.colors.enemy;
+  }
+
+  function selectionSignature(game) {
+    const ids = game.selection.ids.slice().sort((a, b) => a - b).join(',');
+    const buildings = game.buildings.filter((b) => game.selection.ids.includes(b.id));
+    const units = game.units.filter((u) => game.selection.ids.includes(u.id));
+    let extra = '';
+    if (buildings.length === 1 && !units.length) {
+      const b = buildings[0];
+      const q = (b.buildQueue || [])
+        .map((item) => item.type + ':' + Math.floor((item.progress || 0) * 20))
+        .join(',');
+      extra = `|b${b.id}|${b.type}|${Math.floor(b.buildProgress * 100)}|q${q}|hp${Math.ceil(b.hp)}`;
+    } else if (units.length === 1 && !buildings.length) {
+      const u = units[0];
+      extra = `|u${u.id}|${u.type}|hp${Math.ceil(u.hp)}|c${Math.floor(u.cargo || 0)}`;
+    } else {
+      extra = `|m${units.length}:${buildings.length}`;
+    }
+    return ids + extra;
+  }
+
+  D.UI = {
+    init(game) {
+      boundGame = game;
+      els = {
+        credits: $('stat-credits'),
+        power: $('stat-power'),
+        powerFill: $('power-fill'),
+        buildMenu: $('build-menu'),
+        unitMenu: $('unit-menu'),
+        selectionInfo: $('selection-info'),
+        messages: $('messages'),
+        menuModal: $('menu-modal'),
+        pauseModal: $('pause-modal'),
+        endModal: $('end-modal'),
+        debug: $('debug-overlay'),
+        btnContinue: $('btn-continue'),
+      };
+
+      // Event delegation — survive DOM rebuilds; never lose clicks mid-frame
+      els.unitMenu?.addEventListener('click', (e) => {
+        const produceBtn = e.target.closest('[data-produce]');
+        if (produceBtn && !produceBtn.disabled) {
+          e.preventDefault();
+          e.stopPropagation();
+          const buildingId = Number(produceBtn.dataset.buildingId);
+          const unitType = produceBtn.dataset.produce;
+          const r = D.Economy.enqueueUnit(game, buildingId, unitType);
+          if (!r.ok) {
+            const msg =
+              r.reason === 'credits'
+                ? 'Not enough credits'
+                : r.reason === 'queue'
+                  ? 'Production queue full'
+                  : r.reason === 'building'
+                    ? 'Factory not ready'
+                    : 'Cannot train: ' + r.reason;
+            D.Game.pushMessage(game, msg);
+          } else {
+            const name = D.config.units[unitType]?.name || unitType;
+            D.Game.pushMessage(game, 'Training ' + name);
+            lastSelSig = ''; // force panel refresh to show queue
+            D.UI.refresh(game);
+            if (D.Save) D.Save.write(game);
+          }
+          return;
+        }
+        const cancelBtn = e.target.closest('[data-cancel-queue]');
+        if (cancelBtn) {
+          e.preventDefault();
+          e.stopPropagation();
+          D.Economy.cancelQueue(game, Number(cancelBtn.dataset.buildingId), 0);
+          lastSelSig = '';
+          D.UI.refresh(game);
+          return;
+        }
+        const deployBtn = e.target.closest('[data-deploy]');
+        if (deployBtn) {
+          e.preventDefault();
+          D.Orders.issue(game, [Number(deployBtn.dataset.unitId)], { type: 'deploy' });
+          lastSelSig = '';
+          D.UI.refresh(game);
+        }
+      });
+
+      // Don't let sidebar clicks clear map selection / start box-select
+      const sidebar = $('sidebar');
+      sidebar?.addEventListener('mousedown', (e) => e.stopPropagation());
+
+      $('btn-start')?.addEventListener('click', () => {
+        if (D.Save) D.Save.clear();
+        D.Game.startSkirmish(game, D.MAPS.skirmish1);
+        lastSelSig = '';
+        D.UI.hideMenu();
+        D.UI.refresh(game);
+        D.Renderer.rebuildTerrain(game);
+        if (D.Save) D.Save.write(game);
+      });
+
+      $('btn-continue')?.addEventListener('click', () => {
+        const data = D.Save && D.Save.read();
+        if (!data || !D.Save.loadInto(game, data)) {
+          D.Game.pushMessage(game, 'No valid save found.');
+          return;
+        }
+        lastSelSig = '';
+        D.UI.hideMenu();
+        D.UI.refresh(game);
+        D.Renderer.rebuildTerrain(game);
+        D.Game.pushMessage(game, 'Game restored.');
+      });
+
+      $('btn-resume')?.addEventListener('click', () => {
+        game.phase = 'playing';
+        D.UI.showPause(false);
+        if (D.Save) D.Save.write(game);
+      });
+
+      $('btn-restart')?.addEventListener('click', () => {
+        D.UI.showPause(false);
+        if (D.Save) D.Save.clear();
+        D.Game.startSkirmish(game, D.MAPS.skirmish1);
+        lastSelSig = '';
+        D.UI.refresh(game);
+        D.Renderer.rebuildTerrain(game);
+      });
+
+      $('btn-end-restart')?.addEventListener('click', () => {
+        els.endModal.classList.add('hidden');
+        if (D.Save) D.Save.clear();
+        D.Game.startSkirmish(game, D.MAPS.skirmish1);
+        lastSelSig = '';
+        D.UI.refresh(game);
+        D.Renderer.rebuildTerrain(game);
+      });
+
+      $('btn-end-menu')?.addEventListener('click', () => {
+        els.endModal.classList.add('hidden');
+        game.phase = 'menu';
+        if (D.Save) D.Save.clear();
+        D.UI.updateContinueButton();
+        D.UI.showMenu();
+      });
+
+      D.UI.buildStructureButtons(game);
+      D.UI.updateContinueButton();
+      D.UI.showMenu();
+    },
+
+    updateContinueButton() {
+      const btn = els.btnContinue || $('btn-continue');
+      if (!btn) return;
+      const ok = D.Save && D.Save.has();
+      btn.style.display = ok ? '' : 'none';
+      btn.disabled = !ok;
+    },
+
+    showMenu() {
+      D.UI.updateContinueButton();
+      els.menuModal?.classList.remove('hidden');
+    },
+
+    hideMenu() {
+      els.menuModal?.classList.add('hidden');
+    },
+
+    showPause(show) {
+      if (!els.pauseModal) return;
+      if (show) els.pauseModal.classList.remove('hidden');
+      else els.pauseModal.classList.add('hidden');
+    },
+
+    showEnd(game) {
+      if (!els.endModal) return;
+      const modal = els.endModal;
+      modal.classList.remove('hidden');
+      modal.querySelector('.modal').classList.toggle('victory', game.phase === 'victory');
+      modal.querySelector('.modal').classList.toggle('defeat', game.phase === 'defeat');
+      const h2 = modal.querySelector('h2');
+      const p = modal.querySelector('p');
+      if (game.phase === 'victory') {
+        h2.textContent = 'Victory';
+        p.textContent = 'The Emperor acknowledges your control of Arrakis.';
+      } else {
+        h2.textContent = 'Defeat';
+        p.textContent = 'Your base has fallen. The spice must flow… elsewhere.';
+      }
+      if (D.Save) D.Save.clear();
+    },
+
+    buildStructureButtons(game) {
+      const root = els.buildMenu;
+      if (!root) return;
+      root.innerHTML = '';
+      const title = document.createElement('div');
+      title.className = 'section-title';
+      title.textContent = 'Structures';
+      root.appendChild(title);
+
+      const grid = document.createElement('div');
+      grid.className = 'btn-grid';
+      grid.id = 'structure-btns';
+      root.appendChild(grid);
+
+      const order = [
+        'concrete',
+        'windtrap',
+        'refinery',
+        'silo',
+        'barracks',
+        'lightFactory',
+        'heavyFactory',
+        'gunTurret',
+        'wall',
+        'radar',
+      ];
+      for (const type of order) {
+        const def = D.config.buildings[type];
+        if (!def || !def.buildable) continue;
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'game-btn icon-btn';
+        btn.dataset.type = type;
+        const icon = D.Sprites.getIconCanvas(
+          'building',
+          type,
+          40,
+          D.config.colors.player
+        );
+        icon.className = 'btn-icon';
+        icon.setAttribute('aria-hidden', 'true');
+        const label = document.createElement('span');
+        label.className = 'btn-label';
+        label.innerHTML = `<strong>${def.name}</strong><span class="meta">${def.cost}¢ · ${def.power >= 0 ? '+' : ''}${def.power}⚡</span>`;
+        btn.appendChild(icon);
+        btn.appendChild(label);
+        btn.title = `${def.name} — ${def.cost} credits`;
+        btn.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (game.phase !== 'playing') return;
+          if (!D.Economy.hasTech(game, 'player', def.requires)) {
+            D.Game.pushMessage(game, 'Requires ' + (def.requires || 'tech'));
+            return;
+          }
+          if (game.structureBuilder?.player != null) {
+            const busy = game.buildings.find((b) => b.id === game.structureBuilder.player);
+            if (busy && busy.buildProgress < 1) {
+              D.Game.pushMessage(game, 'Already constructing…');
+              return;
+            }
+          }
+          D.Input.startPlacement(game, type);
+          D.Game.pushMessage(game, 'Place ' + def.name);
+        });
+        grid.appendChild(btn);
+      }
+    },
+
+    /** Lightweight HUD update; rebuild selection panel only when needed */
+    refresh(game) {
+      if (!els.credits) return;
+
+      const c = Math.floor(game.credits.player);
+      const cap = game.spiceCap.player;
+      els.credits.textContent = `${c} / ${cap}`;
+      const p = game.power.player;
+      els.power.textContent = `${p.prod} / ${p.need}`;
+      const ratio = p.need > 0 ? Math.min(1, p.prod / p.need) : 1;
+      if (els.powerFill) {
+        els.powerFill.style.width = Math.round(ratio * 100) + '%';
+        els.powerFill.style.background =
+          ratio < 0.5 ? 'var(--danger)' : ratio < 1 ? 'var(--accent)' : 'var(--ok)';
+      }
+
+      // structure buttons enable/disable only
+      const grid = $('structure-btns');
+      if (grid) {
+        for (const btn of grid.querySelectorAll('button')) {
+          const type = btn.dataset.type;
+          const def = D.config.buildings[type];
+          const tech = D.Economy.hasTech(game, 'player', def.requires);
+          const hasCY = game.buildings.some(
+            (b) =>
+              b.owner === 'player' &&
+              b.type === 'constructionYard' &&
+              b.buildProgress >= 1
+          );
+          const busy =
+            game.structureBuilder?.player != null &&
+            game.buildings.some(
+              (b) => b.id === game.structureBuilder.player && b.buildProgress < 1
+            );
+          btn.disabled = !tech || !hasCY || busy || game.phase !== 'playing';
+          btn.classList.toggle('active', game.placement && game.placement.type === type);
+        }
+      }
+
+      const sig = selectionSignature(game);
+      if (sig !== lastSelSig) {
+        lastSelSig = sig;
+        D.UI.renderSelection(game);
+      } else {
+        // keep produce affordability in sync without rebuild
+        D.UI.syncProduceAffordability(game);
+        D.UI.syncQueueProgress(game);
+      }
+
+      if (game.phase === 'victory' || game.phase === 'defeat') {
+        if (els.endModal?.classList.contains('hidden')) D.UI.showEnd(game);
+      }
+    },
+
+    /** Force selection panel rebuild (e.g. after click select) */
+    invalidateSelection() {
+      lastSelSig = '';
+    },
+
+    syncProduceAffordability(game) {
+      if (!els.unitMenu) return;
+      for (const btn of els.unitMenu.querySelectorAll('[data-produce]')) {
+        const cost = Number(btn.dataset.cost || 0);
+        btn.disabled = game.phase !== 'playing' || !D.Economy.canAfford(game, 'player', cost);
+      }
+    },
+
+    syncQueueProgress(game) {
+      const el = $('queue-status');
+      if (!el) return;
+      const id = Number(el.dataset.buildingId);
+      const b = game.buildings.find((x) => x.id === id);
+      if (!b) return;
+      if (!b.buildQueue.length) {
+        el.textContent = '';
+        return;
+      }
+      el.textContent =
+        'Queue: ' +
+        b.buildQueue
+          .map(
+            (item, i) =>
+              `${D.config.units[item.type]?.name || item.type}${
+                i === 0 ? ` ${Math.floor(item.progress * 100)}%` : ''
+              }`
+          )
+          .join(', ');
+    },
+
+    renderSelection(game) {
+      const info = els.selectionInfo;
+      const unitMenu = els.unitMenu;
+      if (!info || !unitMenu) return;
+      info.innerHTML = '';
+      unitMenu.innerHTML = '';
+
+      const ids = game.selection.ids;
+      if (!ids.length) {
+        info.innerHTML = '<div class="meta">No selection</div>';
+        return;
+      }
+
+      const units = game.units.filter((u) => ids.includes(u.id));
+      const buildings = game.buildings.filter((b) => ids.includes(b.id));
+
+      if (units.length === 1 && !buildings.length) {
+        const u = units[0];
+        const def = D.config.units[u.type];
+        const row = document.createElement('div');
+        row.className = 'sel-row';
+        const ic = D.Sprites.getIconCanvas('unit', u.type, 48, ownerColor(u.owner));
+        ic.className = 'sel-icon';
+        const text = document.createElement('div');
+        text.innerHTML = `
+          <div class="title">${def?.name || u.type}</div>
+          <div class="meta">${u.owner} · HP ${Math.ceil(u.hp)}/${u.hpMax}</div>
+          <div class="hp-bar"><span style="width:${(u.hp / u.hpMax) * 100}%"></span></div>
+          ${u.type === 'harvester' ? `<div class="meta">Cargo ${Math.floor(u.cargo)}/${u.cargoMax}</div>` : ''}
+          ${u.type === 'mcv' ? `<div class="hint">Press <b>E</b> to deploy Construction Yard on rock.</div>` : ''}
+          ${u.type === 'harvester' ? `<div class="hint">Press <b>H</b> or RMB spice to harvest.</div>` : ''}
+        `;
+        row.appendChild(ic);
+        row.appendChild(text);
+        info.appendChild(row);
+        if (u.type === 'mcv') {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'game-btn primary';
+          btn.dataset.deploy = '1';
+          btn.dataset.unitId = String(u.id);
+          btn.textContent = 'Deploy (E)';
+          unitMenu.appendChild(btn);
+        }
+      } else if (buildings.length === 1 && !units.length) {
+        const b = buildings[0];
+        const def = D.config.buildings[b.type];
+        const row = document.createElement('div');
+        row.className = 'sel-row';
+        const ic = D.Sprites.getIconCanvas(
+          'building',
+          b.type,
+          48,
+          ownerColor(b.owner)
+        );
+        ic.className = 'sel-icon';
+        const text = document.createElement('div');
+        text.innerHTML = `
+          <div class="title">${def?.name || b.type}</div>
+          <div class="meta">HP ${Math.ceil(b.hp)}/${b.hpMax}${
+            b.buildProgress < 1 ? ` · Building ${Math.floor(b.buildProgress * 100)}%` : ''
+          }</div>
+          <div class="hp-bar"><span style="width:${(b.hp / b.hpMax) * 100}%"></span></div>
+        `;
+        row.appendChild(ic);
+        row.appendChild(text);
+        info.appendChild(row);
+
+        if (b.buildProgress >= 1 && def?.produces && def.produces.length) {
+          const title = document.createElement('div');
+          title.className = 'section-title';
+          title.textContent = 'Produce';
+          unitMenu.appendChild(title);
+          const g = document.createElement('div');
+          g.className = 'btn-grid';
+          for (const ut of def.produces) {
+            const udef = D.config.units[ut];
+            if (!udef) continue;
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'game-btn icon-btn';
+            btn.dataset.produce = ut;
+            btn.dataset.buildingId = String(b.id);
+            btn.dataset.cost = String(udef.cost);
+            const icon = D.Sprites.getIconCanvas(
+              'unit',
+              ut,
+              36,
+              D.config.colors.player
+            );
+            icon.className = 'btn-icon';
+            const label = document.createElement('span');
+            label.className = 'btn-label';
+            const can = D.Economy.canAfford(game, 'player', udef.cost);
+            label.innerHTML = `<strong>${udef.name}</strong><span class="meta ${can ? '' : 'cant-afford'}">${udef.cost}¢ · ${udef.buildTime}s${can ? '' : ' — need credits'}</span>`;
+            btn.appendChild(icon);
+            btn.appendChild(label);
+            btn.disabled = game.phase !== 'playing' || !can;
+            btn.title = can
+              ? `Train ${udef.name} (${udef.cost} credits, ${udef.buildTime}s)`
+              : `Need ${udef.cost} credits (have ${Math.floor(game.credits.player)}, cap ${game.spiceCap.player}). Build silos to raise cap.`;
+            g.appendChild(btn);
+          }
+          unitMenu.appendChild(g);
+
+          const q = document.createElement('div');
+          q.className = 'meta';
+          q.id = 'queue-status';
+          q.dataset.buildingId = String(b.id);
+          q.style.marginTop = '6px';
+          if (b.buildQueue.length) {
+            q.textContent =
+              'Queue: ' +
+              b.buildQueue
+                .map(
+                  (item, i) =>
+                    `${D.config.units[item.type]?.name || item.type}${
+                      i === 0 ? ` ${Math.floor(item.progress * 100)}%` : ''
+                    }`
+                )
+                .join(', ');
+          }
+          unitMenu.appendChild(q);
+
+          if (b.buildQueue.length) {
+            const cancel = document.createElement('button');
+            cancel.type = 'button';
+            cancel.className = 'game-btn';
+            cancel.dataset.cancelQueue = '1';
+            cancel.dataset.buildingId = String(b.id);
+            cancel.textContent = 'Cancel first (50% refund)';
+            unitMenu.appendChild(cancel);
+          }
+          const hint = document.createElement('div');
+          hint.className = 'hint';
+          hint.textContent = 'RMB on map sets rally point. Units train over time.';
+          unitMenu.appendChild(hint);
+        }
+      } else {
+        info.innerHTML = `<div class="title">${units.length} units, ${buildings.length} buildings</div>
+          <div class="meta">Ctrl+1-9 assign group · 1-9 recall</div>`;
+      }
+    },
+
+    updateDebug(game) {
+      if (!els.debug || !els.debug.classList.contains('visible')) return;
+      els.debug.textContent = [
+        `fps ${game.stats.fps | 0}  sim ${game.stats.simMs.toFixed(2)}ms`,
+        `tick ${game.tick}  phase ${game.phase}`,
+        `units ${game.units.length}  bld ${game.buildings.length}`,
+        `credits ${game.credits.player | 0}/${game.spiceCap.player}`,
+        `power ${game.power.player.prod}/${game.power.player.need} r=${game.power.player.ratio.toFixed(2)}`,
+        `ai ${game.ai.state}  repaths ${game._repathsThisTick || 0}`,
+        `cam ${game.camera.x | 0},${game.camera.y | 0}`,
+        D.Save && D.Save.has() ? 'save: yes' : 'save: no',
+      ].join('\n');
+    },
+  };
+})(typeof window !== 'undefined' ? window : globalThis);
+
+/* ---- loop.js ---- */
+/* global Dune2 */
+(function (global) {
+  'use strict';
+  const D = (global.Dune2 = global.Dune2 || {});
+
+  const MAX_FRAME_MS = 100;
+
+  D.Loop = {
+    _running: false,
+    _lastMs: 0,
+    _accMs: 0,
+    _raf: 0,
+    _frames: 0,
+    _fpsT: 0,
+    game: null,
+
+    start(game) {
+      D.Loop.game = game;
+      D.Loop._running = true;
+      D.Loop._lastMs = performance.now();
+      D.Loop._accMs = 0;
+      D.Loop._frames = 0;
+      D.Loop._fpsT = D.Loop._lastMs;
+      const frame = (now) => {
+        if (!D.Loop._running) return;
+        D.Loop._raf = requestAnimationFrame(frame);
+        D.Loop.tickFrame(now);
+      };
+      D.Loop._raf = requestAnimationFrame(frame);
+    },
+
+    stop() {
+      D.Loop._running = false;
+      if (D.Loop._raf) cancelAnimationFrame(D.Loop._raf);
+    },
+
+    tickFrame(nowMs) {
+      const game = D.Loop.game;
+      if (!game) return;
+
+      let frameMs = Math.min(nowMs - D.Loop._lastMs, MAX_FRAME_MS);
+      D.Loop._lastMs = nowMs;
+      D.Loop._accMs += frameMs;
+
+      // FPS
+      D.Loop._frames++;
+      if (nowMs - D.Loop._fpsT >= 500) {
+        game.stats.fps = (D.Loop._frames * 1000) / (nowMs - D.Loop._fpsT);
+        D.Loop._frames = 0;
+        D.Loop._fpsT = nowMs;
+      }
+
+      const dtSec = D.config.DT_SEC;
+      const stepMs = dtSec * 1000;
+
+      // input poll uses real dt for smooth camera
+      if (D.Input) D.Input.poll(game, frameMs / 1000);
+
+      if (game.phase === 'playing') {
+        let guard = 0;
+        while (D.Loop._accMs >= stepMs && guard < 5) {
+          D.Game.tick(game, dtSec);
+          D.Loop._accMs -= stepMs;
+          guard++;
+        }
+        // avoid spiral: dump excess
+        if (D.Loop._accMs > stepMs * 3) D.Loop._accMs = 0;
+      } else {
+        D.Loop._accMs = 0;
+      }
+
+      if (D.Renderer) D.Renderer.draw(game);
+      if (D.UI) {
+        // HUD stats every few ticks; selection panel only rebuilds when signature changes
+        if (game.tick % 4 === 0 || game.phase !== 'playing') D.UI.refresh(game);
+        D.UI.updateDebug(game);
+      }
+
+      // Autosave every ~15s while playing
+      if (
+        D.Save &&
+        game.phase === 'playing' &&
+        game.tick > 0 &&
+        game.tick % 300 === 0
+      ) {
+        D.Save.write(game);
+      }
+    },
+  };
+})(typeof window !== 'undefined' ? window : globalThis);
+
+/* ---- save.js ---- */
+/* global Dune2 */
+(function (global) {
+  'use strict';
+  const D = (global.Dune2 = global.Dune2 || {});
+
+  const SAVE_KEY = 'dune2_skirmish_v1';
+  const SAVE_VERSION = 1;
+
+  function arr(a) {
+    if (!a) return null;
+    return Array.from(a);
+  }
+
+  function u8(a, n) {
+    const out = new Uint8Array(n);
+    if (a) out.set(a.length === n ? a : a.slice(0, n));
+    return out;
+  }
+
+  function f32(a, n) {
+    const out = new Float32Array(n);
+    if (a) out.set(a.length === n ? a : a.slice(0, n));
+    return out;
+  }
+
+  D.Save = {
+    key: SAVE_KEY,
+
+    has() {
+      try {
+        return !!localStorage.getItem(SAVE_KEY);
+      } catch (e) {
+        return false;
+      }
+    },
+
+    clear() {
+      try {
+        localStorage.removeItem(SAVE_KEY);
+      } catch (e) {
+        /* ignore */
+      }
+    },
+
+    serialize(game) {
+      if (!game || !game.map || game.phase === 'menu') return null;
+      const map = game.map;
+      const n = map.width * map.height;
+      return {
+        v: SAVE_VERSION,
+        savedAt: Date.now(),
+        phase: game.phase === 'paused' ? 'playing' : game.phase,
+        tick: game.tick,
+        credits: { ...game.credits },
+        spiceCap: { ...game.spiceCap },
+        structureBuilder: { ...game.structureBuilder },
+        camera: { ...game.camera },
+        selection: { ids: game.selection.ids.slice() },
+        controlGroups: JSON.parse(JSON.stringify(game.controlGroups)),
+        ai: {
+          state: game.ai.state,
+          waveAt: game.ai.waveAt,
+          lastScoutTick: game.ai.lastScoutTick,
+          memory: JSON.parse(JSON.stringify(game.ai.memory || {})),
+        },
+        rngState: D.rng.getState(),
+        features: {
+          fog: D.config.features.fog,
+          ai: D.config.features.ai,
+        },
+        map: {
+          width: map.width,
+          height: map.height,
+          tiles: arr(map.tiles),
+          spiceAmount: arr(map.spiceAmount),
+          blocked: arr(map.blocked),
+          spawns: map.spawns,
+          wormZones: map.wormZones || [],
+        },
+        fog: game.fog
+          ? {
+              player: {
+                explored: arr(game.fog.player.explored),
+                visible: arr(game.fog.player.visible),
+              },
+              enemy: {
+                explored: arr(game.fog.enemy.explored),
+                visible: arr(game.fog.enemy.visible),
+              },
+            }
+          : null,
+        units: game.units.map((u) => ({
+          id: u.id,
+          type: u.type,
+          owner: u.owner,
+          x: u.x,
+          y: u.y,
+          hp: u.hp,
+          hpMax: u.hpMax,
+          facing: u.facing,
+          order: u.order,
+          orders: u.orders,
+          path: u.path,
+          weapon: u.weapon,
+          cargo: u.cargo,
+          cargoMax: u.cargoMax,
+          harvest: u.harvest,
+          sight: u.sight,
+        })),
+        buildings: game.buildings.map((b) => ({
+          id: b.id,
+          type: b.type,
+          owner: b.owner,
+          tileX: b.tileX,
+          tileY: b.tileY,
+          tileW: b.tileW,
+          tileH: b.tileH,
+          hp: b.hp,
+          hpMax: b.hpMax,
+          powered: b.powered,
+          buildProgress: b.buildProgress,
+          buildQueue: b.buildQueue,
+          rallyX: b.rallyX,
+          rallyY: b.rallyY,
+          dockTileX: b.dockTileX,
+          dockTileY: b.dockTileY,
+          sight: b.sight,
+          weapon: b.weapon,
+          costPaid: b.costPaid,
+        })),
+        nextId: D.Entities.nextId(),
+        messages: (game.messages || []).slice(0, 10),
+      };
+    },
+
+    write(game) {
+      const data = D.Save.serialize(game);
+      if (!data) return false;
+      try {
+        localStorage.setItem(SAVE_KEY, JSON.stringify(data));
+        return true;
+      } catch (e) {
+        console.warn('Save failed', e);
+        return false;
+      }
+    },
+
+    read() {
+      try {
+        const raw = localStorage.getItem(SAVE_KEY);
+        if (!raw) return null;
+        const data = JSON.parse(raw);
+        if (!data || data.v !== SAVE_VERSION) {
+          D.Save.clear();
+          return null;
+        }
+        return data;
+      } catch (e) {
+        D.Save.clear();
+        return null;
+      }
+    },
+
+    /** Apply save into an existing game object. Returns true on success. */
+    loadInto(game, data) {
+      if (!data || !data.map) return false;
+      D.Entities.resetIds();
+      // restore id counter after entities created — set high water mark
+      const mapDef = {
+        width: data.map.width,
+        height: data.map.height,
+        tiles: data.map.tiles,
+        spiceAmount: data.map.spiceAmount,
+        spawns: data.map.spawns,
+        wormZones: data.map.wormZones || [],
+      };
+      game.map = D.Map.createFromDef(mapDef);
+      const n = game.map.width * game.map.height;
+      if (data.map.blocked) {
+        game.map.blocked = u8(data.map.blocked, n);
+      } else {
+        D.Map.rebuildBlocked(game);
+      }
+      game.map.terrainDirty = true;
+
+      game.phase = data.phase === 'victory' || data.phase === 'defeat' ? data.phase : 'playing';
+      game.tick = data.tick || 0;
+      game.credits = data.credits || { player: 1000, enemy: 1000 };
+      game.spiceCap = data.spiceCap || { player: 1000, enemy: 1000 };
+      game.structureBuilder = data.structureBuilder || { player: null, enemy: null };
+      game.camera = data.camera || { x: 0, y: 0 };
+      game.selection = { ids: (data.selection && data.selection.ids) || [], box: null };
+      game.controlGroups = data.controlGroups || game.controlGroups;
+      game.ai = data.ai || { state: 'Bootstrap', waveAt: 0, lastScoutTick: 0, memory: {} };
+      game.projectiles = [];
+      game.fx = [];
+      game.worms = [];
+      game.placement = null;
+      game.messages = data.messages || [];
+      if (data.rngState != null) D.rng.setState(data.rngState);
+      if (data.features) {
+        if (data.features.fog != null) D.config.features.fog = data.features.fog;
+        if (data.features.ai != null) D.config.features.ai = data.features.ai;
+      }
+
+      if (data.fog) {
+        game.fog = {
+          player: {
+            explored: u8(data.fog.player.explored, n),
+            visible: u8(data.fog.player.visible, n),
+          },
+          enemy: {
+            explored: u8(data.fog.enemy.explored, n),
+            visible: u8(data.fog.enemy.visible, n),
+          },
+        };
+      } else {
+        D.Map.initFog(game);
+      }
+
+      game.units = [];
+      game.buildings = [];
+      let maxId = 1;
+
+      for (const raw of data.buildings || []) {
+        maxId = Math.max(maxId, raw.id + 1);
+        const b = {
+          id: raw.id,
+          type: raw.type,
+          owner: raw.owner,
+          tileX: raw.tileX,
+          tileY: raw.tileY,
+          tileW: raw.tileW,
+          tileH: raw.tileH,
+          hp: raw.hp,
+          hpMax: raw.hpMax,
+          powered: raw.powered !== false,
+          buildProgress: raw.buildProgress != null ? raw.buildProgress : 1,
+          buildQueue: raw.buildQueue || [],
+          rallyX: raw.rallyX,
+          rallyY: raw.rallyY,
+          dockTileX: raw.dockTileX,
+          dockTileY: raw.dockTileY,
+          primary: false,
+          sight: raw.sight,
+          weapon: raw.weapon || (D.config.buildings[raw.type]?.weapon ? { cooldownLeft: 0 } : null),
+          costPaid: raw.costPaid || 0,
+        };
+        if (b.weapon && b.weapon.cooldownLeft == null) b.weapon.cooldownLeft = 0;
+        game.buildings.push(b);
+      }
+
+      for (const raw of data.units || []) {
+        maxId = Math.max(maxId, raw.id + 1);
+        const def = D.config.units[raw.type];
+        const u = {
+          id: raw.id,
+          type: raw.type,
+          owner: raw.owner,
+          x: raw.x,
+          y: raw.y,
+          hp: raw.hp,
+          hpMax: raw.hpMax || (def ? def.hp : 100),
+          facing: raw.facing || 0,
+          orders: raw.orders || (raw.order ? [raw.order] : []),
+          order: raw.order || null,
+          path: raw.path || [],
+          weapon: raw.weapon || (def && def.weapon ? { cooldownLeft: 0 } : null),
+          cargo: raw.cargo || 0,
+          cargoMax: raw.cargoMax || (def && def.cargoMax) || 0,
+          harvest: raw.harvest || null,
+          sight: raw.sight || (def && def.sight) || 3,
+          selected: false,
+          repathQueued: false,
+        };
+        if (u.weapon && u.weapon.cooldownLeft == null) u.weapon.cooldownLeft = 0;
+        game.units.push(u);
+      }
+
+      D.Entities.setNextId(Math.max(maxId, data.nextId || 1));
+
+      D.Map.rebuildBlocked(game);
+      D.Economy.tickPower(game);
+      D.Economy.recalcSpiceCap(game);
+      D.Map.recomputeFog(game, 'player');
+      D.Map.recomputeFog(game, 'enemy');
+      return true;
+    },
+  };
+})(typeof window !== 'undefined' ? window : globalThis);
+
+/* ---- skirmish1.js ---- */
+/* global Dune2 */
+(function (global) {
+  'use strict';
+  const D = (global.Dune2 = global.Dune2 || {});
+  D.MAPS = D.MAPS || {};
+  D.MAPS.skirmish1 = {
+    id: 'skirmish1',
+    name: 'Arrakis Skirmish',
+    width: 64,
+    height: 64,
+    spawns: {
+      player: { x: 10, y: 50 },
+      enemy: { x: 52, y: 12 },
+    },
+    wormZones: [],
+    tiles: new Uint8Array([
+      5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,
+      5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,
+      5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,5,
+      5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,1,
+      1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,0,0,0,0,0,0,0,0,0,0,5,
+      5,0,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,0,2,2,2,0,2,0,0,0,0,0,0,5,
+      5,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,
+      0,0,0,0,0,1,0,1,0,0,0,0,0,0,0,2,2,2,0,0,2,2,2,0,2,2,2,0,0,0,0,5,
+      5,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,
+      1,0,0,0,0,1,1,0,0,0,0,0,0,2,2,2,2,2,2,2,2,2,2,2,2,0,2,2,0,0,0,5,
+      5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,
+      1,1,0,0,0,0,0,1,0,0,0,0,2,2,2,2,2,2,2,2,2,2,2,2,2,2,0,0,0,0,0,5,
+      5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,1,1,
+      0,0,0,0,0,0,1,1,0,0,0,0,0,2,0,2,2,2,2,2,2,2,2,2,2,2,2,2,0,0,0,5,
+      5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,0,0,0,0,0,1,1,0,
+      0,0,0,0,0,1,1,0,0,0,0,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,0,0,0,5,
+      5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,0,0,0,0,0,1,0,0,
+      0,0,0,0,0,1,1,1,0,0,0,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,0,0,5,
+      5,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,1,1,0,0,0,0,0,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,0,2,0,5,
+      5,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,0,0,0,0,
+      0,0,0,0,1,1,1,1,0,0,0,0,0,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,0,5,
+      5,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,0,0,0,0,
+      0,0,0,0,1,0,0,0,0,0,0,0,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,0,5,
+      5,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,0,0,0,0,
+      0,0,0,1,1,1,0,0,0,0,0,0,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,5,
+      5,0,0,0,0,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,1,0,0,0,
+      0,0,0,1,0,0,0,0,0,0,2,0,0,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,0,0,5,
+      5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,0,0,0,0,0,0,1,1,1,0,
+      1,0,1,0,0,0,0,0,0,3,3,3,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,0,0,5,
+      5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,0,0,0,0,0,0,0,0,0,
+      0,0,1,0,0,0,0,0,3,3,3,3,3,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,0,0,5,
+      5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,0,0,0,0,0,3,3,3,3,3,0,
+      0,0,0,0,0,0,0,3,3,3,3,3,3,3,2,2,2,2,2,2,2,2,2,2,2,2,0,0,2,0,0,5,
+      5,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3,3,3,3,3,3,3,
+      0,0,0,1,1,0,0,3,3,3,3,4,4,4,3,2,2,2,2,2,2,2,2,2,2,2,2,2,2,0,0,5,
+      5,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3,3,4,4,4,3,3,
+      0,0,0,1,1,0,0,3,3,3,4,4,2,4,4,2,2,2,2,2,2,2,2,2,2,2,2,2,0,0,0,5,
+      5,0,0,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3,3,4,4,4,3,3,
+      0,0,0,1,0,2,2,3,3,3,4,4,4,4,4,3,2,2,2,2,0,0,0,2,2,0,0,0,0,0,0,5,
+      5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3,3,4,4,4,3,3,
+      0,0,0,2,2,2,2,3,3,3,4,4,4,4,4,3,2,3,2,2,2,2,2,0,0,2,0,0,0,0,0,5,
+      5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3,3,3,3,3,3,3,
+      0,0,2,2,2,2,2,3,3,3,3,4,4,4,3,3,3,3,1,1,0,0,2,0,0,0,0,0,0,0,0,5,
+      5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3,3,3,3,3,0,
+      0,0,2,2,2,2,2,3,3,3,3,3,3,3,3,3,3,3,1,1,0,0,0,0,0,0,0,0,0,0,0,5,
+      5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,1,0,1,2,2,0,0,3,3,3,3,3,3,3,3,3,1,1,1,0,0,0,0,0,0,0,0,0,0,0,5,
+      5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,2,0,0,0,0,0,0,0,0,0,
+      0,1,0,0,0,0,0,0,0,3,3,3,3,3,3,3,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,5,
+      5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,2,2,2,0,0,0,0,0,0,0,
+      0,0,1,0,0,0,0,0,0,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,5,
+      5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,2,2,2,2,2,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,5,
+      5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,2,2,2,2,2,2,0,0,0,0,0,2,
+      0,2,0,0,0,0,3,3,3,3,3,0,0,1,1,0,0,0,0,1,0,1,0,0,0,0,0,0,0,0,0,5,
+      5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,2,2,2,2,2,0,0,0,0,2,2,2,
+      2,2,2,0,0,3,3,3,3,3,3,3,0,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,5,
+      5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,2,2,2,2,0,1,1,2,0,0,2,
+      2,2,2,2,2,3,3,3,3,3,3,3,3,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,5,
+      5,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,0,0,0,0,0,0,0,1,1,1,1,2,2,2,2,
+      2,2,2,2,3,3,3,4,4,4,3,3,3,1,1,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,5,
+      5,1,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,0,0,0,0,0,0,0,0,1,1,1,2,2,2,2,
+      2,2,2,0,2,3,3,4,4,4,3,3,3,0,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,0,0,5,
+      5,1,1,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,2,2,2,2,
+      2,2,2,2,3,3,3,4,4,2,2,3,3,0,0,0,0,1,0,1,0,0,0,0,0,0,0,0,0,0,0,5,
+      5,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,2,
+      2,2,2,2,3,3,3,3,2,2,2,2,3,2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,5,
+      5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,2,
+      2,2,2,0,1,3,3,2,3,2,2,2,2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,5,
+      5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3,3,
+      3,3,3,0,0,0,3,2,2,2,2,2,2,2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,5,
+      5,0,0,0,0,0,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3,3,3,
+      3,3,3,3,0,0,0,0,2,2,2,2,2,2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,5,
+      5,0,0,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,3,3,3,3,
+      3,3,3,3,3,0,0,0,2,2,2,2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,5,
+      5,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,3,3,3,3,3,3,3,0,0,1,0,3,3,3,4,
+      4,4,3,3,3,0,0,0,0,0,0,0,2,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,5,
+      5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3,3,3,3,3,3,3,3,3,0,0,2,2,2,3,4,
+      4,4,3,3,3,0,0,1,1,1,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,5,
+      5,0,0,0,0,0,0,0,1,1,0,2,0,2,2,3,3,3,3,3,3,3,3,3,3,3,2,2,2,2,3,4,
+      4,4,3,3,3,0,0,0,1,0,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,5,
+      5,0,0,0,0,0,0,2,0,2,2,2,2,2,2,2,2,2,3,4,4,4,3,3,3,3,2,2,2,2,2,3,
+      3,3,3,3,3,0,0,0,1,1,0,0,0,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,5,
+      5,0,0,0,0,0,0,1,1,2,2,2,2,2,2,2,2,2,4,4,4,4,4,3,3,3,2,2,2,2,2,3,
+      3,3,3,3,0,0,0,0,0,0,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,5,
+      5,0,0,0,0,2,0,2,2,2,2,2,2,2,2,2,2,2,2,4,2,4,4,3,3,3,0,2,2,0,3,3,
+      3,3,3,0,0,0,0,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,5,
+      5,0,0,0,0,2,0,2,2,2,2,2,2,2,2,2,2,2,2,2,4,4,4,3,3,3,0,0,0,0,0,0,
+      0,0,3,3,3,3,3,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,5,
+      5,1,1,1,0,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,4,4,3,3,3,3,0,0,0,0,0,0,
+      0,3,3,3,3,3,3,3,0,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,5,
+      5,1,1,0,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,3,3,3,3,3,0,0,0,0,1,1,
+      0,3,3,4,4,4,3,3,0,0,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,5,
+      5,1,1,0,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,3,2,3,3,0,0,0,0,0,1,0,
+      0,3,3,4,4,4,3,3,0,0,1,1,0,0,0,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,5,
+      5,0,2,0,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,3,3,0,0,0,0,0,0,0,1,
+      0,3,3,4,4,4,3,3,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,5,
+      5,0,0,0,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,0,2,0,0,0,0,0,0,0,0,0,
+      0,3,3,3,3,3,3,3,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,5,
+      5,0,0,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,0,0,0,0,0,0,0,0,0,
+      0,0,3,3,3,3,3,0,0,0,0,0,0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,0,0,0,5,
+      5,0,0,0,0,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,5,
+      5,0,0,2,0,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,1,0,0,0,0,0,0,0,5,
+      5,0,0,2,0,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,0,0,1,0,1,0,0,0,0,0,0,0,5,
+      5,0,0,0,0,0,2,2,2,2,2,2,2,2,2,2,2,2,2,2,0,0,0,1,1,1,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,1,1,0,0,0,0,1,0,0,0,0,0,0,0,0,0,5,
+      5,0,0,0,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,0,1,1,1,1,1,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,1,1,0,0,0,0,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,5,
+      5,0,0,0,0,0,2,2,2,2,2,2,2,2,2,2,0,2,2,2,0,1,0,1,0,1,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,1,0,0,0,0,0,0,0,0,0,0,1,0,1,5,
+      5,0,0,0,0,0,0,0,0,2,0,2,0,2,0,0,2,2,2,0,0,0,1,1,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,1,1,1,0,0,0,0,0,0,0,0,0,0,1,0,0,5,
+      5,0,0,0,0,0,0,0,0,0,2,2,0,2,2,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,
+      0,1,0,1,0,0,0,0,0,1,0,0,0,1,0,1,1,0,0,0,0,0,0,0,0,0,0,0,0,1,0,5,
+      5,0,0,0,0,0,0,0,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,0,0,
+      0,1,0,0,0,0,0,0,0,1,0,1,1,1,0,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,5,
+      5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,0,0,
+      0,0,1,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,5,
+      5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,5,
+      5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,
+      5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,
+    ]),
+    spiceAmount: new Float32Array([
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,191,194,202,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,247,231,218,241,198,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,204,232,227,242,201,0,
+      0,0,0,0,0,0,0,195,247,244,243,241,211,197,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,214,209,236,234,208,198,201,
+      0,0,0,0,0,0,0,192,250,219,193,501,553,535,242,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,236,190,553,530,552,192,201,
+      0,0,0,0,0,0,0,236,215,221,483,528,0,534,502,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,228,210,558,508,552,196,249,
+      0,0,0,0,0,0,0,212,203,248,503,515,515,537,499,192,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,221,199,522,489,510,212,210,
+      0,0,0,0,0,0,0,229,229,229,511,517,543,532,550,220,
+      0,193,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,200,230,246,195,242,235,232,
+      0,0,0,0,0,0,0,195,207,214,198,533,505,547,205,230,
+      241,224,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,230,236,246,211,218,0,
+      0,0,0,0,0,0,0,240,191,214,240,235,212,220,224,240,
+      221,212,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,248,226,222,210,214,207,201,191,
+      210,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,228,204,191,247,241,239,207,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,220,190,211,248,229,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,202,241,198,211,235,201,248,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,241,244,245,210,193,191,199,227,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,235,248,199,494,547,526,194,213,235,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,250,232,530,555,492,211,209,210,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,198,200,236,535,542,0,0,231,210,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,201,235,225,234,0,0,0,0,246,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,249,229,0,240,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,193,241,
+      220,223,212,0,0,0,212,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,239,227,204,
+      200,196,205,232,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,205,207,224,242,
+      240,248,237,193,238,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,224,212,239,203,218,209,219,0,0,0,0,250,204,226,529,
+      525,502,201,205,227,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      206,244,197,195,200,241,233,209,242,0,0,0,0,0,210,525,
+      555,483,235,234,212,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,235,
+      234,228,192,203,243,244,210,199,195,235,0,0,0,0,250,552,
+      552,498,226,250,202,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,205,525,530,545,193,233,209,206,0,0,0,0,0,243,
+      241,246,221,224,209,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,502,483,531,537,551,237,225,205,0,0,0,0,0,201,
+      221,192,195,193,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,492,0,539,493,241,240,198,0,0,0,0,204,228,
+      204,191,223,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,495,481,487,243,239,204,0,0,0,0,0,0,
+      0,0,190,206,203,205,234,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,496,505,242,215,213,233,0,0,0,0,0,0,
+      0,194,212,206,240,196,236,190,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,230,250,231,195,227,0,0,0,0,0,0,
+      0,193,214,536,533,501,246,216,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,227,0,206,248,0,0,0,0,0,0,0,
+      0,221,246,528,524,549,214,196,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,242,194,0,0,0,0,0,0,0,0,
+      0,243,220,553,508,500,218,194,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,241,244,192,208,191,210,206,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,250,196,194,211,200,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    ]),
+  };
+})(typeof window !== 'undefined' ? window : globalThis);
+
+/* ---- main.js ---- */
+/* global Dune2 */
+(function () {
+  'use strict';
+  const D = window.Dune2;
+
+  function boot() {
+    const params = new URLSearchParams(location.search);
+    if (params.get('debug') === '1') {
+      D.config.features.debugCheats = true;
+      const el = document.getElementById('debug-overlay');
+      if (el) el.classList.add('visible');
+    }
+    if (params.get('fog') === '0') {
+      D.config.features.fog = false;
+    }
+    if (params.get('ai') === '0') {
+      D.config.features.ai = false;
+    }
+
+    const game = D.Game.create();
+    const canvas = document.getElementById('game-canvas');
+    const minimap = document.getElementById('minimap');
+
+    // minimap resolution
+    minimap.width = 200;
+    minimap.height = 200;
+
+    D.Renderer.init(canvas, minimap);
+    D.Input.init(game, canvas, minimap);
+    D.UI.init(game);
+    D.Loop.start(game);
+
+    // Persist on tab close / refresh
+    window.addEventListener('beforeunload', () => {
+      if (D.Save && game.phase === 'playing') D.Save.write(game);
+    });
+
+    // expose for console debugging
+    window.__dune2 = { game, D };
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+  } else {
+    boot();
+  }
+})();
+
+</script>
+</body>
+</html>

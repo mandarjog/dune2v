@@ -1,0 +1,491 @@
+/* global Dune2 */
+(function (global) {
+  'use strict';
+  const D = (global.Dune2 = global.Dune2 || {});
+
+  let canvas = null;
+  let ctx = null;
+  let minimap = null;
+  let mctx = null;
+  let terrainCanvas = null;
+  let tctx = null;
+  let viewW = 800;
+  let viewH = 600;
+
+  function ts() {
+    return D.config.TILE_SIZE;
+  }
+
+  function ownerColor(owner) {
+    return owner === 'player' ? D.config.colors.player : D.config.colors.enemy;
+  }
+
+  function terrainColor(id, spiceAmt) {
+    const C = D.config.colors;
+    const T = D.config.terrain;
+    switch (id) {
+      case T.SAND:
+        return C.sand;
+      case T.DUNE:
+        return C.dune;
+      case T.ROCK:
+        return C.rock;
+      case T.SPICE:
+        return C.spice;
+      case T.SPICE_HEAVY:
+        return C.spiceHeavy;
+      case T.CLIFF:
+        return C.cliff;
+      default:
+        return '#000';
+    }
+  }
+
+  D.Renderer = {
+    init(gameCanvas, minimapCanvas) {
+      canvas = gameCanvas;
+      ctx = canvas.getContext('2d');
+      minimap = minimapCanvas;
+      mctx = minimap.getContext('2d');
+      terrainCanvas = document.createElement('canvas');
+      tctx = terrainCanvas.getContext('2d');
+      D.Renderer.resize();
+    },
+
+    resize() {
+      if (!canvas) return;
+      const wrap = canvas.parentElement;
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      viewW = wrap.clientWidth || 800;
+      viewH = wrap.clientHeight || 600;
+      canvas.width = Math.floor(viewW * dpr);
+      canvas.height = Math.floor(viewH * dpr);
+      canvas.style.width = viewW + 'px';
+      canvas.style.height = viewH + 'px';
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    },
+
+    viewSize() {
+      return { w: viewW, h: viewH };
+    },
+
+    worldToScreen(game, wx, wy) {
+      const t = ts();
+      return {
+        x: wx * t - game.camera.x,
+        y: wy * t - game.camera.y,
+      };
+    },
+
+    screenToWorld(game, sx, sy) {
+      const t = ts();
+      return {
+        x: (sx + game.camera.x) / t,
+        y: (sy + game.camera.y) / t,
+      };
+    },
+
+    rebuildTerrain(game) {
+      if (!game.map) return;
+      const map = game.map;
+      const t = ts();
+      terrainCanvas.width = map.width * t;
+      terrainCanvas.height = map.height * t;
+      for (let ty = 0; ty < map.height; ty++) {
+        for (let tx = 0; tx < map.width; tx++) {
+          const i = ty * map.width + tx;
+          const id = map.tiles[i];
+          tctx.fillStyle = terrainColor(id, map.spiceAmount[i]);
+          tctx.fillRect(tx * t, ty * t, t, t);
+          // subtle spice density tint
+          if (id === D.config.terrain.SPICE || id === D.config.terrain.SPICE_HEAVY) {
+            const a = Math.min(0.35, map.spiceAmount[i] / 1500);
+            tctx.fillStyle = `rgba(255,120,0,${a})`;
+            tctx.fillRect(tx * t, ty * t, t, t);
+          }
+          // grid tick every 4
+          if ((tx + ty) % 2 === 0 && id === D.config.terrain.ROCK) {
+            tctx.fillStyle = 'rgba(0,0,0,0.06)';
+            tctx.fillRect(tx * t, ty * t, t, t);
+          }
+        }
+      }
+      // concrete overlays (slab pattern)
+      for (const b of game.buildings) {
+        if (b.type !== 'concrete' || b.buildProgress < 1) continue;
+        D.Sprites.drawBuilding(
+          tctx,
+          'concrete',
+          b.tileX * t,
+          b.tileY * t,
+          b.tileW * t,
+          b.tileH * t,
+          { ownerColor: D.config.colors.concrete }
+        );
+      }
+      map.terrainDirty = false;
+    },
+
+    clampCamera(game) {
+      if (!game.map) return;
+      const t = ts();
+      const maxX = Math.max(0, game.map.width * t - viewW);
+      const maxY = Math.max(0, game.map.height * t - viewH);
+      game.camera.x = Math.max(0, Math.min(maxX, game.camera.x));
+      game.camera.y = Math.max(0, Math.min(maxY, game.camera.y));
+    },
+
+    draw(game) {
+      if (!ctx || !game.map) return;
+      if (game.map.terrainDirty) D.Renderer.rebuildTerrain(game);
+      D.Renderer.clampCamera(game);
+
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, viewW, viewH);
+
+      // terrain
+      ctx.drawImage(
+        terrainCanvas,
+        game.camera.x,
+        game.camera.y,
+        viewW,
+        viewH,
+        0,
+        0,
+        viewW,
+        viewH
+      );
+
+      // FOW on terrain only — entities draw above so your buildings never
+      // disappear under "explored but not visible" dimming when a harvester leaves.
+      if (D.config.features.fog && game.fog) {
+        D.Renderer.drawFog(game);
+      }
+
+      // buildings (player always; enemy if explored)
+      const sortedBuildings = game.buildings.slice().sort((a, b) => a.id - b.id);
+      for (const b of sortedBuildings) {
+        D.Renderer.drawBuilding(game, b);
+      }
+
+      // units (player always; enemy only if currently visible)
+      const sortedUnits = game.units.slice().sort((a, b) => a.id - b.id);
+      for (const u of sortedUnits) {
+        if (!D.Renderer.shouldDrawUnit(game, u)) continue;
+        D.Renderer.drawUnit(game, u);
+      }
+
+      // projectiles — hide enemy shots in shroud
+      for (const p of game.projectiles) {
+        if (
+          p.owner !== 'player' &&
+          D.config.features.fog &&
+          !D.Map.isVisible(game, 'player', Math.floor(p.x), Math.floor(p.y))
+        ) {
+          continue;
+        }
+        const s = D.Renderer.worldToScreen(game, p.x, p.y);
+        ctx.fillStyle = p.owner === 'player' ? '#9cf' : '#f96';
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // fx
+      if (game.fx) {
+        for (const f of game.fx) {
+          const fx = f.x != null ? f.x : f.x0;
+          const fy = f.y != null ? f.y : f.y0;
+          if (
+            D.config.features.fog &&
+            fx != null &&
+            !D.Map.isVisible(game, 'player', Math.floor(fx), Math.floor(fy)) &&
+            !D.Map.isExplored(game, 'player', Math.floor(fx), Math.floor(fy))
+          ) {
+            continue;
+          }
+          if (f.type === 'tracer') {
+            const s0 = D.Renderer.worldToScreen(game, f.x0, f.y0);
+            const s1 = D.Renderer.worldToScreen(game, f.x1, f.y1);
+            ctx.strokeStyle = f.color || '#fff';
+            ctx.globalAlpha = Math.max(0, f.life * 8);
+            ctx.beginPath();
+            ctx.moveTo(s0.x, s0.y);
+            ctx.lineTo(s1.x, s1.y);
+            ctx.stroke();
+            ctx.globalAlpha = 1;
+          } else if (f.type === 'explode') {
+            const s = D.Renderer.worldToScreen(game, f.x, f.y);
+            ctx.fillStyle = `rgba(255,160,40,${Math.max(0, f.life * 2)})`;
+            ctx.beginPath();
+            ctx.arc(s.x, s.y, (f.r || 0.5) * ts() * (1.2 - f.life), 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+      }
+
+      // placement ghost
+      if (game.placement && game.phase === 'playing') {
+        D.Renderer.drawGhost(game);
+      }
+
+      // selection box
+      if (game.selection.box) {
+        const b = game.selection.box;
+        ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 3]);
+        ctx.strokeRect(b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0);
+        ctx.setLineDash([]);
+      }
+
+      // hover tile
+      if (game.hoverTile && game.phase === 'playing') {
+        const t = ts();
+        const s = D.Renderer.worldToScreen(game, game.hoverTile.tx, game.hoverTile.ty);
+        ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+        ctx.strokeRect(s.x, s.y, t, t);
+      }
+
+      D.Renderer.drawMinimap(game);
+    },
+
+    shouldDrawUnit(game, u) {
+      if (u.owner === 'player') return true;
+      if (!D.config.features.fog) return true;
+      return D.Map.isVisible(game, 'player', Math.floor(u.x), Math.floor(u.y));
+    },
+
+    shouldDrawBuilding(game, b) {
+      if (b.owner === 'player') return true;
+      if (!D.config.features.fog) return true;
+      // explored buildings remain visible (classic)
+      const c = D.Entities.buildingCenter(b);
+      return (
+        D.Map.isExplored(game, 'player', Math.floor(c.x), Math.floor(c.y)) ||
+        D.Map.isVisible(game, 'player', Math.floor(c.x), Math.floor(c.y))
+      );
+    },
+
+    drawFog(game) {
+      const map = game.map;
+      const fog = game.fog.player;
+      const t = ts();
+      const cam = game.camera;
+      const x0 = Math.max(0, Math.floor(cam.x / t));
+      const y0 = Math.max(0, Math.floor(cam.y / t));
+      const x1 = Math.min(map.width, Math.ceil((cam.x + viewW) / t) + 1);
+      const y1 = Math.min(map.height, Math.ceil((cam.y + viewH) / t) + 1);
+
+      for (let ty = y0; ty < y1; ty++) {
+        for (let tx = x0; tx < x1; tx++) {
+          const i = ty * map.width + tx;
+          if (!fog.explored[i]) {
+            ctx.fillStyle = D.config.colors.shroud;
+            const s = D.Renderer.worldToScreen(game, tx, ty);
+            ctx.fillRect(s.x, s.y, t + 0.5, t + 0.5);
+          } else if (!fog.visible[i]) {
+            // Explored-but-not-visible: dim terrain only (entities draw above).
+            // Keep alpha moderate so rock/spice still read under the veil.
+            ctx.fillStyle = 'rgba(0,0,0,0.45)';
+            const s = D.Renderer.worldToScreen(game, tx, ty);
+            ctx.fillRect(s.x, s.y, t + 0.5, t + 0.5);
+          }
+        }
+      }
+    },
+
+    drawBuilding(game, b) {
+      if (b.type === 'concrete') return; // drawn into terrain cache
+      if (!D.Renderer.shouldDrawBuilding(game, b)) return;
+      const t = ts();
+      const s = D.Renderer.worldToScreen(game, b.tileX, b.tileY);
+      const w = b.tileW * t;
+      const h = b.tileH * t;
+      const col = ownerColor(b.owner);
+      const alpha = b.buildProgress < 1 ? 0.4 + 0.6 * b.buildProgress : 1;
+      const time = game.tick * D.config.DT_SEC;
+
+      // scaffolding under construction
+      if (b.buildProgress < 1) {
+        ctx.save();
+        ctx.globalAlpha = 0.35;
+        ctx.strokeStyle = col;
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 3]);
+        ctx.strokeRect(s.x + 1, s.y + 1, w - 2, h - 2);
+        ctx.setLineDash([]);
+        ctx.restore();
+      }
+
+      D.Sprites.drawBuilding(ctx, b.type, s.x, s.y, w, h, {
+        ownerColor: col,
+        alpha,
+        time,
+        powered: game.power[b.owner]?.ratio >= 0.5,
+        facing: b._aimFacing || -Math.PI / 2,
+      });
+
+      if (b.buildProgress < 1) {
+        ctx.fillStyle = 'rgba(0,0,0,0.5)';
+        ctx.fillRect(s.x + 4, s.y + h - 10, w - 8, 5);
+        ctx.fillStyle = D.config.colors.hpOk;
+        ctx.fillRect(s.x + 4, s.y + h - 10, (w - 8) * b.buildProgress, 5);
+      }
+
+      if (b.buildProgress >= 1 && b.hp < b.hpMax) {
+        D.Renderer.drawHpBar(s.x + 4, s.y - 6, w - 8, b.hp / b.hpMax);
+      }
+
+      if (game.selection.ids.includes(b.id)) {
+        ctx.strokeStyle = D.config.colors.selection;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(s.x + 0.5, s.y + 0.5, w - 1, h - 1);
+      }
+    },
+
+    drawUnit(game, u) {
+      const t = ts();
+      const s = D.Renderer.worldToScreen(game, u.x, u.y);
+      const col = ownerColor(u.owner);
+      const def = D.config.units[u.type];
+      const size =
+        def && def.kind === 'infantry' ? t * 0.7 : u.type === 'mcv' || u.type === 'harvester' ? t * 1.05 : t * 0.9;
+      const half = size / 2;
+
+      D.Sprites.drawUnit(ctx, u.type, s.x - half, s.y - half, size, size, {
+        ownerColor: col,
+        facing: u.facing || 0,
+        cargoRatio: u.cargoMax ? u.cargo / u.cargoMax : 0,
+      });
+
+      if (game.selection.ids.includes(u.id) || u.selected) {
+        ctx.strokeStyle = D.config.colors.selection;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, half + 3, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      if (u.hp < u.hpMax) {
+        D.Renderer.drawHpBar(s.x - half, s.y - half - 6, size, u.hp / u.hpMax);
+      }
+    },
+
+    drawHpBar(x, y, w, ratio) {
+      ctx.fillStyle = '#222';
+      ctx.fillRect(x, y, w, 4);
+      const c =
+        ratio > 0.6
+          ? D.config.colors.hpOk
+          : ratio > 0.3
+            ? D.config.colors.hpMid
+            : D.config.colors.hpLow;
+      ctx.fillStyle = c;
+      ctx.fillRect(x, y, w * Math.max(0, ratio), 4);
+    },
+
+    drawGhost(game) {
+      const p = game.placement;
+      const def = D.config.buildings[p.type];
+      if (!def) return;
+      const t = ts();
+      const ok = D.Map.canPlace(game, p.type, p.tileX, p.tileY, 'player');
+      const s = D.Renderer.worldToScreen(game, p.tileX, p.tileY);
+      const w = def.tileW * t;
+      const h = def.tileH * t;
+      ctx.fillStyle = ok ? 'rgba(74,144,217,0.18)' : 'rgba(192,57,43,0.22)';
+      ctx.fillRect(s.x, s.y, w, h);
+      D.Sprites.drawBuilding(ctx, p.type, s.x, s.y, w, h, {
+        ownerColor: ok ? D.config.colors.player : D.config.colors.enemy,
+        alpha: 0.55,
+        time: game.tick * D.config.DT_SEC,
+        powered: true,
+      });
+      ctx.strokeStyle = ok ? '#4a90d9' : '#c0392b';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(s.x + 0.5, s.y + 0.5, w - 1, h - 1);
+    },
+
+    drawMinimap(game) {
+      if (!mctx || !minimap || !game.map) return;
+      const map = game.map;
+      const mw = minimap.width;
+      const mh = minimap.height;
+      const sx = mw / map.width;
+      const sy = mh / map.height;
+
+      // terrain sample
+      if (!D.Renderer._mmCache || game.map.terrainDirty) {
+        // draw live each frame is fine at 64x64
+      }
+      mctx.fillStyle = '#000';
+      mctx.fillRect(0, 0, mw, mh);
+
+      for (let ty = 0; ty < map.height; ty++) {
+        for (let tx = 0; tx < map.width; tx++) {
+          const i = ty * map.width + tx;
+          if (D.config.features.fog && game.fog && !game.fog.player.explored[i]) {
+            mctx.fillStyle = '#000';
+          } else {
+            mctx.fillStyle = terrainColor(map.tiles[i]);
+            if (D.config.features.fog && game.fog && !game.fog.player.visible[i]) {
+              // dim explored
+            }
+          }
+          mctx.fillRect(tx * sx, ty * sy, Math.ceil(sx), Math.ceil(sy));
+        }
+      }
+
+      // dim unexplored overlay already black; dim explored not visible
+      if (D.config.features.fog && game.fog) {
+        mctx.fillStyle = 'rgba(0,0,0,0.35)';
+        for (let ty = 0; ty < map.height; ty++) {
+          for (let tx = 0; tx < map.width; tx++) {
+            const i = ty * map.width + tx;
+            if (game.fog.player.explored[i] && !game.fog.player.visible[i]) {
+              mctx.fillRect(tx * sx, ty * sy, Math.ceil(sx), Math.ceil(sy));
+            }
+          }
+        }
+      }
+
+      // buildings
+      for (const b of game.buildings) {
+        if (b.type === 'concrete') continue;
+        if (b.owner !== 'player' && !D.Renderer.shouldDrawBuilding(game, b)) continue;
+        mctx.fillStyle = ownerColor(b.owner);
+        mctx.fillRect(b.tileX * sx, b.tileY * sy, Math.max(1, b.tileW * sx), Math.max(1, b.tileH * sy));
+      }
+
+      // units — player always; enemy if visible (or radar)
+      const hasRadar = game.buildings.some(
+        (b) =>
+          b.owner === 'player' &&
+          b.type === 'radar' &&
+          b.buildProgress >= 1 &&
+          b.hp > 0
+      );
+      for (const u of game.units) {
+        if (u.owner === 'enemy') {
+          const vis = D.Map.isVisible(game, 'player', Math.floor(u.x), Math.floor(u.y));
+          if (!vis) continue;
+          if (!hasRadar && !vis) continue;
+        }
+        mctx.fillStyle = ownerColor(u.owner);
+        mctx.fillRect(u.x * sx - 1, u.y * sy - 1, 2, 2);
+      }
+
+      // camera rect
+      const t = ts();
+      mctx.strokeStyle = '#fff';
+      mctx.lineWidth = 1;
+      mctx.strokeRect(
+        (game.camera.x / t) * sx,
+        (game.camera.y / t) * sy,
+        (viewW / t) * sx,
+        (viewH / t) * sy
+      );
+    },
+  };
+})(typeof window !== 'undefined' ? window : globalThis);

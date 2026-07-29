@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Dune II — Browser Skirmish</title>
+    <link rel="stylesheet" href="css/styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <div id="game-wrap">
+        <canvas id="game-canvas"></canvas>
+        <div id="debug-overlay"></div>
+      </div>
+      <aside id="sidebar">
+        <h1>Dune II</h1>
+        <div class="stat-row">
+          <span class="label">Credits</span>
+          <span class="value" id="stat-credits">0 / 1000</span>
+        </div>
+        <div class="stat-row">
+          <span class="label">Power</span>
+          <span class="value" id="stat-power">0 / 0</span>
+        </div>
+        <div id="power-bar"><div id="power-fill"></div></div>
+
+        <div class="section-title">Minimap</div>
+        <canvas id="minimap" width="200" height="200"></canvas>
+
+        <div id="selection-info">
+          <div class="meta">No selection</div>
+        </div>
+        <div id="unit-menu"></div>
+        <div id="build-menu"></div>
+
+        <div class="hint">
+          LMB select · box select · RMB move/attack<br />
+          Ctrl+RMB attack-move · E deploy MCV · H harvest<br />
+          Ctrl+1-9 groups · Esc pause · F3 debug
+        </div>
+        <div id="messages"></div>
+      </aside>
+    </div>
+
+    <!-- Main menu -->
+    <div id="menu-modal" class="modal-backdrop">
+      <div class="modal">
+        <h2>Dune II</h2>
+        <p>
+          Unofficial browser skirmish inspired by Westwood’s Dune II.
+          Harvest spice, build your base, destroy the enemy Construction Yard.
+        </p>
+        <p style="font-size: 12px">
+          Atreides (blue) vs Harkonnen (red) · procedural art · offline
+        </p>
+        <div class="actions">
+          <button id="btn-continue" type="button" style="display: none">Continue</button>
+          <button id="btn-start" type="button">New Skirmish</button>
+        </div>
+        <p class="hint" style="margin-top: 16px">
+          Progress autosaves (also F5 / Esc pause). Refresh → Continue.<br />
+          <code>?debug=1</code> cheats · <code>?ai=0</code> · <code>?fog=0</code>
+        </p>
+      </div>
+    </div>
+
+    <!-- Pause -->
+    <div id="pause-modal" class="modal-backdrop hidden">
+      <div class="modal">
+        <h2>Paused</h2>
+        <p>Esc to resume</p>
+        <div class="actions">
+          <button id="btn-resume" type="button">Resume</button>
+          <button id="btn-restart" type="button">Restart</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Victory / Defeat -->
+    <div id="end-modal" class="modal-backdrop hidden">
+      <div class="modal">
+        <h2>Victory</h2>
+        <p></p>
+        <div class="actions">
+          <button id="btn-end-restart" type="button">Play Again</button>
+          <button id="btn-end-menu" type="button">Main Menu</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Script order matches DESIGN.md dependencies -->
+    <script src="js/config.js"></script>
+    <script src="js/rng.js"></script>
+    <script src="js/sprites.js"></script>
+    <script src="js/map.js"></script>
+    <script src="js/pathfinding.js"></script>
+    <script src="js/entities.js"></script>
+    <script src="js/orders.js"></script>
+    <script src="js/economy.js"></script>
+    <script src="js/combat.js"></script>
+    <script src="js/ai.js"></script>
+    <script src="js/game.js"></script>
+    <script src="js/renderer.js"></script>
+    <script src="js/input.js"></script>
+    <script src="js/ui.js"></script>
+    <script src="js/loop.js"></script>
+    <script src="js/save.js"></script>
+    <script src="maps/skirmish1.js"></script>
+    <script src="js/main.js"></script>
+  </body>
+</html>
