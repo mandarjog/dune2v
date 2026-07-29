@@ -47,7 +47,7 @@ Health check: `GET /health` → `{ "ok": true }`.
 3. Friend opens the link → joins as Harkonnen (red); host is Atreides (blue).
 4. Match auto-starts when the second player connects.
 
-Host runs the simulation; guest receives snapshots over WebSocket. AI is off in MP.
+**Server** runs the simulation (real-time, not turn-based). Both browsers only send orders and render snapshots. AI is off in MP. Keep a single Fly machine so both players share the same room process.
 
 Config: [`fly.toml`](./fly.toml) — `min_machines_running = 1`, `auto_stop_machines = off` so multiplayer rooms are not cold-stopped mid-match. Tweak region/size there.
 

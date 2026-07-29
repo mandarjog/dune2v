@@ -191,7 +191,7 @@
 
       game.localOwner = localOwner;
       game.multiplayer = true;
-      game.netRole = 'guest';
+      // netRole set by Net layer (host/guest are seats only)
 
       if (keepCam && hadMap) {
         game.camera.x = keepCam.x;

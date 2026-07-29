@@ -175,8 +175,9 @@
 
     tick(game, dt) {
       if (game.phase !== 'playing') return;
-      // Guest never runs sim — host is authoritative
-      if (game.multiplayer && game.netRole === 'guest') return;
+      // Multiplayer: server runs the sim; browsers only render + send cmds.
+      // (Server process sets game._serverSim so it still ticks.)
+      if (game.multiplayer && !game._serverSim) return;
 
       const t0 = typeof performance !== 'undefined' ? performance.now() : 0;
 
@@ -188,10 +189,6 @@
       D.Map.recomputeFog(game, 'player');
       D.Map.recomputeFog(game, 'enemy');
       D.Game.checkWinLoss(game);
-
-      if (game.multiplayer && game.netRole === 'host' && D.Net) {
-        D.Net.sendState(game, false);
-      }
 
       if (typeof performance !== 'undefined') {
         game.stats.simMs = performance.now() - t0;

@@ -15,6 +15,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { WebSocketServer } = require('ws');
+const { RoomSim } = require('./room-sim');
 
 const PORT = Number(process.env.PORT || 8080);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -22,7 +23,7 @@ const ROOT = process.env.STATIC_ROOT
   ? path.resolve(process.env.STATIC_ROOT)
   : path.resolve(__dirname, '..');
 
-const PROTOCOL = 2;
+const PROTOCOL = 3; // server-authoritative sim
 const MAX_SEATS = 2;
 const ROOM_CODE_LEN = 6;
 const ROOM_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -106,8 +107,8 @@ function serveStatic(req, res) {
   });
 }
 
-// ─── Rooms ─────────────────────────────────────────────────
-/** @typedef {{ id: string, seats: Map<string, import('ws').WebSocket>, started: boolean, touched: number }} Room */
+// ─── Rooms (server-authoritative sim) ──────────────────────
+/** @typedef {{ id: string, seats: Map<string, import('ws').WebSocket>, started: boolean, touched: number, sim: import('./room-sim').RoomSim | null }} Room */
 
 /** @type {Map<string, Room>} */
 const rooms = new Map();
@@ -139,6 +140,7 @@ function roomSnapshot(room) {
     seats,
     started: room.started,
     open: room.seats.size < MAX_SEATS,
+    authority: 'server',
   };
 }
 
@@ -150,8 +152,16 @@ function touch(room) {
   if (room) room.touched = Date.now();
 }
 
+function stopSim(room) {
+  if (room && room.sim) {
+    room.sim.stop();
+    room.sim = null;
+  }
+}
+
 function destroyRoom(room) {
   if (!room) return;
+  stopSim(room);
   rooms.delete(room.id);
 }
 
@@ -160,6 +170,7 @@ function leaveRoom(ws) {
   if (!room) return null;
   const seat = ws.seat;
   const playerId = ws.playerId;
+  const wasHost = ws.role === 'host';
   room.seats.delete(seat);
   ws.roomRef = null;
   ws.seat = null;
@@ -170,8 +181,13 @@ function leaveRoom(ws) {
     return { roomId: room.id, empty: true, seat, playerId };
   }
 
-  // If host left, promote remaining player to host (still same seat labels)
-  if (ws.role === 'host') {
+  // Match cannot continue fairly with one player — stop sim
+  if (room.started) {
+    stopSim(room);
+    room.started = false;
+  }
+
+  if (wasHost) {
     for (const peer of room.seats.values()) {
       peer.role = 'host';
       break;
@@ -192,17 +208,52 @@ function broadcastRoom(room, obj, except) {
   }
 }
 
-function hostOf(room) {
-  for (const ws of room.seats.values()) {
-    if (ws.role === 'host') return ws;
-  }
-  return room.seats.values().next().value || null;
-}
-
 function assignSeat(room) {
   if (!room.seats.has('player')) return 'player';
   if (!room.seats.has('enemy')) return 'enemy';
   return null;
+}
+
+/** Start server sim when both seats filled. */
+function maybeStartMatch(room) {
+  if (!room || room.started || room.seats.size < MAX_SEATS) return;
+  room.started = true;
+  touch(room);
+
+  const startMsg = {
+    type: 'start',
+    seed: 42,
+    map: 'skirmish1',
+    authority: 'server',
+    ...roomSnapshot(room),
+  };
+  broadcastRoom(room, startMsg, null);
+
+  const sim = new RoomSim(room.id);
+  room.sim = sim;
+  sim.onState = (payload, tick) => {
+    const wire = JSON.stringify({
+      type: 'state',
+      tick,
+      payload,
+      ts: Date.now(),
+    });
+    for (const peer of room.seats.values()) {
+      if (peer.readyState === 1) peer.send(wire);
+    }
+  };
+  sim.onEnd = (phase) => {
+    broadcastRoom(room, { type: 'match_end', phase }, null);
+  };
+  try {
+    sim.start();
+    console.log(`[room ${room.id}] server sim started`);
+  } catch (err) {
+    console.error(`[room ${room.id}] sim failed`, err);
+    room.started = false;
+    room.sim = null;
+    broadcastRoom(room, { type: 'error', error: 'sim_failed', message: String(err.message || err) }, null);
+  }
 }
 
 function joinExisting(ws, roomId, playerId) {
@@ -216,8 +267,7 @@ function joinExisting(ws, roomId, playerId) {
   }
   let room = getRoom(id);
   if (!room) {
-    // First arrival with a chosen code creates the room (shareable URL before host open)
-    room = { id, seats: new Map(), started: false, touched: Date.now() };
+    room = { id, seats: new Map(), started: false, touched: Date.now(), sim: null };
     rooms.set(id, room);
   }
   if (room.seats.size >= MAX_SEATS) {
@@ -233,7 +283,7 @@ function joinExisting(ws, roomId, playerId) {
   leaveRoom(ws);
   ws.playerId = playerId || `p_${Math.random().toString(36).slice(2, 8)}`;
   ws.seat = seat;
-  // First client in the room is host (runs sim); second is guest
+  // "host" = first joiner / Atreides seat label only — sim is on server
   ws.role = room.seats.size === 0 ? 'host' : 'guest';
   ws.roomRef = room;
   room.seats.set(seat, ws);
@@ -257,12 +307,14 @@ function joinExisting(ws, roomId, playerId) {
     },
     ws
   );
+
+  maybeStartMatch(room);
 }
 
 function createRoom(ws, playerId) {
   leaveRoom(ws);
   const id = uniqueRoomCode();
-  const room = { id, seats: new Map(), started: false, touched: Date.now() };
+  const room = { id, seats: new Map(), started: false, touched: Date.now(), sim: null };
   rooms.set(id, room);
   ws.playerId = playerId || `p_${Math.random().toString(36).slice(2, 8)}`;
   ws.seat = 'player';
@@ -296,7 +348,7 @@ function setupWs(server) {
       type: 'hello',
       service: 'dune2v',
       protocol: PROTOCOL,
-      message: 'Send {type:"create"} or {type:"join",room:"ABC123"}',
+      message: 'Server-authoritative MP. create | join | cmd',
     });
 
     ws.on('message', (buf) => {
@@ -344,65 +396,31 @@ function setupWs(server) {
       }
       touch(room);
 
-      // Host marks match started and fans out to peers
+      // Optional client nudge — server starts automatically at 2 players
       if (msg.type === 'start') {
-        if (ws.role !== 'host') {
-          sendJson(ws, { type: 'error', error: 'host_only' });
-          return;
-        }
-        room.started = true;
-        const payload = {
-          type: 'start',
-          from: ws.playerId,
-          seed: msg.seed != null ? msg.seed : 42,
-          map: msg.map || 'skirmish1',
-          ...roomSnapshot(room),
-        };
-        broadcastRoom(room, payload); // include host? host already started locally
-        // Guests need it; host can ignore
-        sendJson(ws, payload);
+        maybeStartMatch(room);
         return;
       }
 
-      // Host → guests: authoritative snapshot
-      if (msg.type === 'state') {
-        if (ws.role !== 'host') {
-          sendJson(ws, { type: 'error', error: 'host_only' });
-          return;
-        }
-        const payload = JSON.stringify({
-          type: 'state',
-          from: ws.playerId,
-          tick: msg.tick,
-          payload: msg.payload,
-          ts: Date.now(),
-        });
-        for (const peer of room.seats.values()) {
-          if (peer !== ws && peer.readyState === 1) peer.send(payload);
-        }
-        return;
-      }
-
-      // Guest (or host echo) commands → host applies
+      // Both seats send commands; server applies
       if (msg.type === 'cmd') {
-        const host = hostOf(room);
-        if (!host) return;
-        const envelope = {
-          type: 'cmd',
-          from: ws.playerId,
-          seat: ws.seat,
-          payload: msg.payload != null ? msg.payload : msg,
-          ts: Date.now(),
-        };
-        if (ws === host) {
-          // Host cmds stay local; optional echo to guests not needed (state carries)
+        if (!room.sim || !room.started) {
+          sendJson(ws, { type: 'error', error: 'not_started' });
           return;
         }
-        sendJson(host, envelope);
+        const payload = msg.payload != null ? msg.payload : msg;
+        const result = room.sim.applyCommand(ws.seat, payload);
+        if (!result.ok && result.reason && result.reason !== 'ids') {
+          // soft-fail noisy reasons; still ok to ignore
+        }
         return;
       }
 
-      // Lightweight chat / lobby note
+      // Ignore legacy client→client state (server is authority)
+      if (msg.type === 'state') {
+        return;
+      }
+
       if (msg.type === 'chat') {
         broadcastRoom(
           room,
@@ -438,11 +456,12 @@ function setupWs(server) {
     });
   });
 
-  // Sweep idle empty-ish rooms
+  // Sweep idle rooms
   setInterval(() => {
     const now = Date.now();
     for (const [id, room] of rooms) {
       if (room.seats.size === 0 || now - room.touched > ROOM_IDLE_MS) {
+        stopSim(room);
         for (const peer of room.seats.values()) {
           try {
             peer.close();

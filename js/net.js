@@ -3,9 +3,6 @@
   'use strict';
   const D = (global.Dune2 = global.Dune2 || {});
 
-  const STATE_EVERY_TICKS = 2; // ~10 Hz snapshots from host
-  const RECONNECT_MS = 2000;
-
   function wsUrl() {
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
     return proto + '//' + location.host + '/ws';
@@ -14,7 +11,6 @@
   function roomLink(code) {
     const u = new URL(location.href);
     u.searchParams.set('room', code);
-    // drop single-player-only flags that confuse joiners
     return u.pathname + u.search + u.hash;
   }
 
@@ -24,7 +20,7 @@
     status: 'idle', // idle | connecting | lobby | playing | error
     room: null,
     seat: null, // 'player' | 'enemy'
-    role: null, // 'host' | 'guest'
+    role: null, // 'host' | 'guest' (lobby label only; sim is server)
     playerId: null,
     peers: 0,
     seats: {},
@@ -33,7 +29,7 @@
     _createOnOpen: false,
     _handlers: [],
     _lastStateTick: -1,
-    _reconnectTimer: 0,
+    _focusedOnce: false,
 
     isMultiplayer(game) {
       return !!(game && game.multiplayer);
@@ -68,7 +64,7 @@
       D.Net.game = game;
     },
 
-    /** Connect and create a fresh room (host). */
+    /** Connect and create a fresh room. */
     host() {
       D.Net._createOnOpen = true;
       D.Net._wantRoom = null;
@@ -106,10 +102,13 @@
       D.Net.role = null;
       D.Net.peers = 0;
       D.Net.seats = {};
+      D.Net._lastStateTick = -1;
+      D.Net._focusedOnce = false;
       if (D.Net.game) {
         D.Net.game.multiplayer = false;
         D.Net.game.netRole = null;
         D.Net.game.localOwner = 'player';
+        D.Net.game._serverSim = false;
       }
       D.Net._emit('left');
     },
@@ -121,7 +120,6 @@
         D.Net._emit('error', { error: 'no_ws' });
         return;
       }
-      // file:// or odd hosts — only works when served from our Node/Fly host
       if (!location.host || location.protocol === 'file:') {
         D.Net.lastError = 'Multiplayer needs the game server (npm start / Fly)';
         D.Net.status = 'error';
@@ -222,7 +220,6 @@
           game.localOwner = D.Net.seat || 'player';
           game.roomCode = D.Net.room;
         }
-        // Put shareable room in the address bar
         try {
           const u = new URL(location.href);
           u.searchParams.set('room', D.Net.room);
@@ -231,10 +228,6 @@
           /* ignore */
         }
         D.Net._emit('joined', msg);
-        // Host auto-starts when second player is already present
-        if (D.Net.role === 'host' && D.Net.peers >= 2 && game && game.phase === 'menu') {
-          D.Net.startMatch();
-        }
         return;
       }
 
@@ -242,12 +235,6 @@
         D.Net.peers = msg.peers || D.Net.peers;
         D.Net.seats = msg.seats || D.Net.seats;
         D.Net._emit('peer_joined', msg);
-        if (D.Net.role === 'host' && D.Net.peers >= 2) {
-          const game = D.Net.game;
-          if (game && (game.phase === 'menu' || game.phase === 'lobby')) {
-            D.Net.startMatch();
-          }
-        }
         return;
       }
 
@@ -256,7 +243,7 @@
         D.Net.seats = msg.seats || {};
         D.Net._emit('peer_left', msg);
         if (D.Net.game && D.Net.game.phase === 'playing') {
-          D.Game.pushMessage(D.Net.game, 'Opponent disconnected.');
+          D.Game.pushMessage(D.Net.game, 'Opponent disconnected — match paused on server.');
         }
         return;
       }
@@ -271,66 +258,29 @@
         return;
       }
 
-      if (msg.type === 'cmd') {
-        // Only host receives remote cmds
-        if (D.Net.role === 'host' && D.Net.game) {
-          D.Net.applyCommand(D.Net.game, msg.seat, msg.payload);
-        }
+      if (msg.type === 'match_end') {
+        // phase arrives via state snapshots too
         return;
       }
-    },
 
-    startMatch() {
-      const game = D.Net.game;
-      if (!game || D.Net.role !== 'host') return;
-      if (game.phase === 'playing') return;
-
-      // Multiplayer skirmish: no AI, fixed seed
-      D.config.features.ai = false;
-      if (D.Save) D.Save.clear();
-      D.Game.startSkirmish(game, D.MAPS.skirmish1);
-      game.multiplayer = true;
-      game.netRole = 'host';
-      game.localOwner = D.Net.seat || 'player';
-      game.roomCode = D.Net.room;
-      game.phase = 'playing';
-      D.Net.status = 'playing';
-      D.Net._lastStateTick = -1;
-
-      // Camera on local spawn
-      D.Net._focusSpawn(game);
-
-      if (D.UI) {
-        D.UI.hideMenu();
-        D.UI.hideLobby && D.UI.hideLobby();
-        D.UI.refresh(game);
-      }
-      if (D.Renderer) D.Renderer.rebuildTerrain(game);
-
-      D.Net._send({
-        type: 'start',
-        seed: D.config.seed,
-        map: 'skirmish1',
-      });
-      // Immediate full state so guest is in sync
-      D.Net.sendState(game, true);
-      D.Game.pushMessage(game, 'Multiplayer match started — you are Atreides (blue).');
-      D.Net._emit('match_started', { role: 'host' });
+      // legacy: ignore client cmd relay
+      if (msg.type === 'cmd') return;
     },
 
     _handleStart(msg) {
       const game = D.Net.game;
       if (!game) return;
-      if (D.Net.role === 'host') return; // already started locally
 
       D.config.features.ai = false;
       if (D.Save) D.Save.clear();
-      // Guest waits for first state snapshot; prepare shell
+
       game.multiplayer = true;
-      game.netRole = 'guest';
-      game.localOwner = D.Net.seat || 'enemy';
+      game.netRole = D.Net.role;
+      game.localOwner = D.Net.seat || 'player';
       game.roomCode = D.Net.room;
       D.Net.status = 'playing';
+      D.Net._lastStateTick = -1;
+      D.Net._focusedOnce = false;
 
       if (D.UI) {
         D.UI.hideMenu();
@@ -339,32 +289,37 @@
       D.Game.pushMessage(
         game,
         game.localOwner === 'enemy'
-          ? 'Joined match — you are Harkonnen (red).'
-          : 'Joined match — you are Atreides (blue).'
+          ? 'Match live — you are Harkonnen (red). Both sides move in real time.'
+          : 'Match live — you are Atreides (blue). Both sides move in real time.'
       );
-      D.Net._emit('match_started', { role: 'guest' });
+      D.Net._emit('match_started', { role: D.Net.role });
     },
 
     _handleState(msg) {
       const game = D.Net.game;
-      if (!game || D.Net.role !== 'guest') return;
+      if (!game || !game.multiplayer) return;
       if (!msg.payload) return;
       if (msg.tick != null && msg.tick < D.Net._lastStateTick) return;
       D.Net._lastStateTick = msg.tick != null ? msg.tick : D.Net._lastStateTick;
 
       const hadMap = !!game.map;
       const ok = D.Save.applyNetState(game, msg.payload, {
-        localOwner: D.Net.seat || 'enemy',
+        localOwner: D.Net.seat || game.localOwner || 'player',
       });
       if (!ok) return;
 
       game.multiplayer = true;
-      game.netRole = 'guest';
-      game.localOwner = D.Net.seat || 'enemy';
+      game.netRole = D.Net.role;
+      game.localOwner = D.Net.seat || game.localOwner || 'player';
+      // clients never run Game.tick
+      game._serverSim = false;
 
       if (!hadMap && D.Renderer) {
         D.Renderer.rebuildTerrain(game);
         D.Net._focusSpawn(game);
+      } else if (!D.Net._focusedOnce && game.map) {
+        D.Net._focusSpawn(game);
+        D.Net._focusedOnce = true;
       }
       if (D.UI) {
         D.UI.hideMenu();
@@ -382,6 +337,7 @@
       game.camera.x = sp.x * t - 400;
       game.camera.y = sp.y * t - 300;
       if (D.Renderer) D.Renderer.clampCamera(game);
+      D.Net._focusedOnce = true;
     },
 
     _send(obj) {
@@ -392,30 +348,20 @@
       return false;
     },
 
-    /** Host: push snapshot to guest */
-    sendState(game, force) {
-      if (!D.Net.isHost(game) || !game.map) return;
-      if (!force && game.tick % STATE_EVERY_TICKS !== 0) return;
-      const payload = D.Save.serializeNet(game);
-      if (!payload) return;
-      D.Net._send({ type: 'state', tick: game.tick, payload });
-    },
-
     /**
      * Issue a gameplay command.
-     * Host applies locally; guest sends to host.
-     * Single-player: apply locally with localOwner.
+     * Multiplayer: always send to server (both seats).
+     * Single-player: apply locally.
      */
     command(game, payload) {
       if (!payload || !payload.op) return { ok: false, reason: 'bad' };
       const owner = game.localOwner || 'player';
 
-      if (D.Net.isGuest(game)) {
+      if (game.multiplayer) {
         D.Net._send({ type: 'cmd', payload });
         return { ok: true, deferred: true };
       }
 
-      // host or SP
       return D.Net.applyCommand(game, owner, payload);
     },
 
@@ -423,7 +369,6 @@
       if (!game || !payload || !payload.op) return { ok: false, reason: 'bad' };
       const owner = seat === 'enemy' ? 'enemy' : 'player';
 
-      // Validate unit/building ownership for orders
       function ownedIds(ids) {
         const out = [];
         for (const id of ids || []) {

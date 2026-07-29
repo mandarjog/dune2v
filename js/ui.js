@@ -355,9 +355,9 @@
           const n = D.Net.peers || 1;
           if (n < 2) {
             els.lobbyStatus.textContent =
-              'Waiting for opponent… share the link below. Match starts when they join.';
+              'Waiting for opponent… share the link below. Real-time match starts when they join.';
           } else {
-            els.lobbyStatus.textContent = 'Opponent connected — starting match…';
+            els.lobbyStatus.textContent = 'Opponent connected — server starting match…';
           }
         } else if (D.Net.status === 'playing') {
           els.lobbyStatus.textContent = 'Match in progress.';
