@@ -39,9 +39,17 @@
     // Shareable multiplayer room: ?room=ABC123
     const room = (params.get('room') || '').trim().toUpperCase();
     if (room && D.Net) {
+      // Prefer ?name= on the link, else saved name, else input field
+      const qName = params.get('name');
+      const input = document.getElementById('mp-name-input');
+      const name =
+        qName ||
+        (input && input.value) ||
+        D.Net.loadStoredName();
+      if (input && name) input.value = name;
       D.UI.hideMenu();
       D.UI.showLobby('Joining room ' + room + '…');
-      D.Net.join(room);
+      D.Net.join(room, name);
     }
 
     // expose for console debugging

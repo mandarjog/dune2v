@@ -359,9 +359,12 @@ button.game-btn.icon-btn .btn-label .meta.cant-afford {
 }
 
 .mp-join-row input,
-#lobby-link {
+#lobby-link,
+#mp-name-input {
   flex: 1;
   min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
   background: #12100c;
   border: 1px solid var(--panel-border);
   color: var(--text);
@@ -369,6 +372,72 @@ button.game-btn.icon-btn .btn-label .meta.cant-afford {
   font-size: 13px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   letter-spacing: 0.04em;
+}
+
+#mp-name-input {
+  font-family: "Segoe UI", system-ui, sans-serif;
+  letter-spacing: normal;
+}
+
+.lobby-roster {
+  text-align: left;
+  margin: 10px 0 12px;
+  padding: 8px 10px;
+  background: #12100c;
+  border: 1px solid var(--panel-border);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.lobby-roster .empty {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.lobby-roster .seat-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.lobby-roster .seat-house {
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.lobby-roster .seat-name {
+  font-weight: 600;
+}
+
+.lobby-roster .seat-name.you {
+  color: var(--accent);
+}
+
+.lobby-roster .seat-name.atreides {
+  color: var(--player);
+}
+
+.lobby-roster .seat-name.harkonnen {
+  color: var(--enemy);
+}
+
+.mp-matchup {
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--muted);
+  border-bottom: 1px solid var(--panel-border);
+  padding-bottom: 6px;
+  margin-bottom: 2px;
+}
+
+.mp-matchup .you {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.mp-matchup.hidden {
+  display: none;
 }
 
 .mp-join-row button {

@@ -129,10 +129,27 @@ function uniqueRoomCode() {
   return genRoomCode() + Date.now().toString(36).slice(-3).toUpperCase();
 }
 
+const NAME_MAX = 20;
+
+function sanitizeName(raw) {
+  let s = String(raw == null ? '' : raw)
+    .replace(/[\u0000-\u001f\u007f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, NAME_MAX);
+  // Strip angle brackets to avoid accidental HTML if ever reflected poorly
+  s = s.replace(/[<>]/g, '');
+  return s || 'Commander';
+}
+
 function roomSnapshot(room) {
   const seats = {};
   for (const [seat, ws] of room.seats) {
-    seats[seat] = { playerId: ws.playerId, role: ws.role };
+    seats[seat] = {
+      playerId: ws.playerId,
+      role: ws.role,
+      name: ws.displayName || 'Commander',
+    };
   }
   return {
     room: room.id,
@@ -194,7 +211,14 @@ function leaveRoom(ws) {
     }
   }
   touch(room);
-  return { roomId: room.id, empty: false, seat, playerId, room };
+  return {
+    roomId: room.id,
+    empty: false,
+    seat,
+    playerId,
+    name: ws.displayName,
+    room,
+  };
 }
 
 function sendJson(ws, obj) {
@@ -220,12 +244,17 @@ function maybeStartMatch(room) {
   room.started = true;
   touch(room);
 
+  const snap = roomSnapshot(room);
   const startMsg = {
     type: 'start',
     seed: 42,
     map: 'skirmish1',
     authority: 'server',
-    ...roomSnapshot(room),
+    ...snap,
+    names: {
+      player: (snap.seats.player && snap.seats.player.name) || 'Atreides',
+      enemy: (snap.seats.enemy && snap.seats.enemy.name) || 'Harkonnen',
+    },
   };
   broadcastRoom(room, startMsg, null);
 
@@ -256,7 +285,7 @@ function maybeStartMatch(room) {
   }
 }
 
-function joinExisting(ws, roomId, playerId) {
+function joinExisting(ws, roomId, playerId, name) {
   const id = String(roomId || '')
     .trim()
     .toUpperCase()
@@ -282,6 +311,7 @@ function joinExisting(ws, roomId, playerId) {
 
   leaveRoom(ws);
   ws.playerId = playerId || `p_${Math.random().toString(36).slice(2, 8)}`;
+  ws.displayName = sanitizeName(name);
   ws.seat = seat;
   // "host" = first joiner / Atreides seat label only — sim is on server
   ws.role = room.seats.size === 0 ? 'host' : 'guest';
@@ -293,6 +323,7 @@ function joinExisting(ws, roomId, playerId) {
     type: 'joined',
     protocol: PROTOCOL,
     playerId: ws.playerId,
+    name: ws.displayName,
     seat: ws.seat,
     role: ws.role,
     ...roomSnapshot(room),
@@ -302,6 +333,7 @@ function joinExisting(ws, roomId, playerId) {
     {
       type: 'peer_joined',
       playerId: ws.playerId,
+      name: ws.displayName,
       seat: ws.seat,
       ...roomSnapshot(room),
     },
@@ -311,12 +343,13 @@ function joinExisting(ws, roomId, playerId) {
   maybeStartMatch(room);
 }
 
-function createRoom(ws, playerId) {
+function createRoom(ws, playerId, name) {
   leaveRoom(ws);
   const id = uniqueRoomCode();
   const room = { id, seats: new Map(), started: false, touched: Date.now(), sim: null };
   rooms.set(id, room);
   ws.playerId = playerId || `p_${Math.random().toString(36).slice(2, 8)}`;
+  ws.displayName = sanitizeName(name);
   ws.seat = 'player';
   ws.role = 'host';
   ws.roomRef = room;
@@ -326,6 +359,7 @@ function createRoom(ws, playerId) {
     type: 'joined',
     protocol: PROTOCOL,
     playerId: ws.playerId,
+    name: ws.displayName,
     seat: ws.seat,
     role: ws.role,
     created: true,
@@ -341,6 +375,7 @@ function setupWs(server) {
     ws.seat = null;
     ws.role = null;
     ws.playerId = null;
+    ws.displayName = 'Commander';
     const remote = req.socket.remoteAddress || '?';
     console.log(`[ws] connect ${remote} (clients=${wss.clients.size})`);
 
@@ -348,7 +383,7 @@ function setupWs(server) {
       type: 'hello',
       service: 'dune2v',
       protocol: PROTOCOL,
-      message: 'Server-authoritative MP. create | join | cmd',
+      message: 'Server-authoritative MP. create | join | cmd | set_name',
     });
 
     ws.on('message', (buf) => {
@@ -366,12 +401,34 @@ function setupWs(server) {
       }
 
       if (msg.type === 'create') {
-        createRoom(ws, msg.playerId);
+        createRoom(ws, msg.playerId, msg.name);
         return;
       }
 
       if (msg.type === 'join') {
-        joinExisting(ws, msg.room, msg.playerId);
+        joinExisting(ws, msg.room, msg.playerId, msg.name);
+        return;
+      }
+
+      if (msg.type === 'set_name') {
+        ws.displayName = sanitizeName(msg.name);
+        const room = ws.roomRef;
+        if (room) {
+          touch(room);
+          broadcastRoom(
+            room,
+            {
+              type: 'roster',
+              ...roomSnapshot(room),
+            },
+            null
+          );
+        }
+        sendJson(ws, {
+          type: 'name_ok',
+          name: ws.displayName,
+          ...(room ? roomSnapshot(room) : {}),
+        });
         return;
       }
 
@@ -382,6 +439,7 @@ function setupWs(server) {
             type: 'peer_left',
             playerId: left.playerId,
             seat: left.seat,
+            name: left.name || null,
             ...roomSnapshot(left.room),
           });
         }
@@ -461,6 +519,7 @@ function setupWs(server) {
           type: 'peer_left',
           playerId: left.playerId,
           seat: left.seat,
+          name: left.name || null,
           ...roomSnapshot(left.room),
         });
       }

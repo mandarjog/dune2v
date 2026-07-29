@@ -48,6 +48,14 @@
     return owner === 'player' ? 'Atreides (blue)' : 'Harkonnen (red)';
   }
 
+  function escapeHtml(s) {
+    return String(s == null ? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
   D.UI = {
     init(game) {
       boundGame = game;
@@ -69,7 +77,26 @@
         lobbyLink: $('lobby-link'),
         lobbyCode: $('lobby-code'),
         lobbySeat: $('lobby-seat'),
+        lobbyRoster: $('lobby-roster'),
+        mpNameInput: $('mp-name-input'),
+        mpMatchup: $('mp-matchup'),
       };
+
+      // Restore saved multiplayer display name
+      if (els.mpNameInput && D.Net) {
+        els.mpNameInput.value = D.Net.loadStoredName();
+        els.mpNameInput.addEventListener('change', () => {
+          D.Net.saveName(els.mpNameInput.value);
+        });
+        els.mpNameInput.addEventListener('keydown', (e) => {
+          // Don't let Enter bubble into game hotkeys
+          if (e.code === 'Enter') {
+            e.preventDefault();
+            D.Net.saveName(els.mpNameInput.value);
+            els.mpNameInput.blur();
+          }
+        });
+      }
 
       // Event delegation — survive DOM rebuilds; never lose clicks mid-frame
       els.unitMenu?.addEventListener('click', (e) => {
@@ -168,18 +195,20 @@
 
       $('btn-mp-host')?.addEventListener('click', () => {
         if (!D.Net) return;
+        const name = els.mpNameInput ? els.mpNameInput.value : undefined;
         D.UI.hideMenu();
         D.UI.showLobby('Creating room…');
-        D.Net.host();
+        D.Net.host(name);
       });
 
       $('btn-mp-join')?.addEventListener('click', () => {
         const input = $('mp-code-input');
         const code = (input && input.value) || '';
         if (!D.Net) return;
+        const name = els.mpNameInput ? els.mpNameInput.value : undefined;
         D.UI.hideMenu();
         D.UI.showLobby('Joining room…');
-        D.Net.join(code);
+        D.Net.join(code, name);
       });
 
       $('btn-lobby-copy')?.addEventListener('click', async () => {
@@ -265,13 +294,20 @@
 
       if (D.Net) {
         D.Net.on((ev, data) => {
-          if (ev === 'joined' || ev === 'peer_joined' || ev === 'peer_left' || ev === 'status') {
+          if (
+            ev === 'joined' ||
+            ev === 'peer_joined' ||
+            ev === 'peer_left' ||
+            ev === 'roster' ||
+            ev === 'status'
+          ) {
             D.UI.refreshLobby();
           }
           if (ev === 'match_started') {
             D.UI.hideLobby();
             D.UI.hideMenu();
             lastSelSig = '';
+            D.UI.refreshMatchup(game);
             D.UI.refresh(game);
           }
           if (ev === 'error') {
@@ -338,12 +374,37 @@
       if (els.lobbyLink) {
         els.lobbyLink.value = url;
       }
+      if (els.lobbyRoster) {
+        const seats = D.Net.seats || {};
+        const rows = [];
+        const renderSeat = (seat, house, css) => {
+          const info = seats[seat];
+          const name = (info && info.name) || (seat === D.Net.seat ? D.Net.name : null);
+          const you = seat === D.Net.seat;
+          if (name) {
+            rows.push(
+              `<div class="seat-row"><span class="seat-house">${house}</span>` +
+                `<span class="seat-name ${css}${you ? ' you' : ''}">${escapeHtml(name)}${
+                  you ? ' (you)' : ''
+                }</span></div>`
+            );
+          } else {
+            rows.push(
+              `<div class="seat-row"><span class="seat-house">${house}</span>` +
+                `<span class="empty">waiting…</span></div>`
+            );
+          }
+        };
+        renderSeat('player', 'Atreides · blue', 'atreides');
+        renderSeat('enemy', 'Harkonnen · red', 'harkonnen');
+        els.lobbyRoster.innerHTML = rows.join('');
+      }
       if (els.lobbySeat) {
         if (D.Net.seat) {
           els.lobbySeat.textContent =
-            'You: ' +
+            'Playing as ' +
             houseLabel(D.Net.seat) +
-            (D.Net.role === 'host' ? ' · host' : ' · guest');
+            (D.Net.role === 'host' ? ' · room host' : '');
         } else {
           els.lobbySeat.textContent = '';
         }
@@ -357,7 +418,7 @@
             els.lobbyStatus.textContent =
               'Waiting for opponent… share the link below. Real-time match starts when they join.';
           } else {
-            els.lobbyStatus.textContent = 'Opponent connected — server starting match…';
+            els.lobbyStatus.textContent = 'Both commanders ready — starting match…';
           }
         } else if (D.Net.status === 'playing') {
           els.lobbyStatus.textContent = 'Match in progress.';
@@ -365,6 +426,28 @@
           els.lobbyStatus.textContent = D.Net.lastError;
         }
       }
+    },
+
+    refreshMatchup(game) {
+      const el = els.mpMatchup || $('mp-matchup');
+      if (!el) return;
+      if (!game.multiplayer) {
+        el.classList.add('hidden');
+        el.textContent = '';
+        return;
+      }
+      const names = game.playerNames || {
+        player: D.Net ? D.Net.nameFor('player') : 'Atreides',
+        enemy: D.Net ? D.Net.nameFor('enemy') : 'Harkonnen',
+      };
+      const local = me(game);
+      const a = escapeHtml(names.player || 'Atreides');
+      const h = escapeHtml(names.enemy || 'Harkonnen');
+      el.innerHTML =
+        `<span class="${local === 'player' ? 'you' : ''}">${a}</span>` +
+        ` <span style="opacity:.5">vs</span> ` +
+        `<span class="${local === 'enemy' ? 'you' : ''}">${h}</span>`;
+      el.classList.remove('hidden');
     },
 
     showPause(show) {
@@ -382,12 +465,25 @@
       modal.querySelector('.modal').classList.toggle('defeat', local === 'defeat');
       const h2 = modal.querySelector('h2');
       const p = modal.querySelector('p');
+      const names = game.playerNames;
+      const myName =
+        (names && names[D.Game.me(game)]) ||
+        (D.Net && D.Net.name) ||
+        'Commander';
+      const foeName =
+        (names && names[D.Game.foe(game)]) ||
+        (D.Net && D.Net.nameFor(D.Game.foe(game))) ||
+        'Opponent';
       if (local === 'victory') {
         h2.textContent = 'Victory';
-        p.textContent = 'The Emperor acknowledges your control of Arrakis.';
+        p.textContent = game.multiplayer
+          ? myName + ' defeats ' + foeName + '. The Emperor acknowledges your control of Arrakis.'
+          : 'The Emperor acknowledges your control of Arrakis.';
       } else {
         h2.textContent = 'Defeat';
-        p.textContent = 'Your base has fallen. The spice must flow… elsewhere.';
+        p.textContent = game.multiplayer
+          ? foeName + ' triumphs over ' + myName + '. The spice must flow… elsewhere.'
+          : 'Your base has fallen. The spice must flow… elsewhere.';
       }
       if (D.Save && !game.multiplayer) D.Save.clear();
     },
@@ -466,6 +562,7 @@
     refresh(game) {
       if (!els.credits) return;
       const o = me(game);
+      D.UI.refreshMatchup(game);
 
       const c = Math.floor(game.credits[o] || 0);
       const cap = game.spiceCap[o] || 0;

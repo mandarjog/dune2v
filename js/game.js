@@ -63,6 +63,7 @@
         multiplayer: false,
         netRole: null,
         roomCode: null,
+        playerNames: null, // { player, enemy } display names when MP
       };
     },
 

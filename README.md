@@ -43,9 +43,9 @@ Health check: `GET /health` → `{ "ok": true }`.
 ### Multiplayer (shared room)
 
 1. Open the game on Fly (or `npm start`).
-2. **Host room** → copy the link (`?room=ABC123`).
-3. Friend opens the link → joins as Harkonnen (red); host is Atreides (blue).
-4. Match auto-starts when the second player connects.
+2. Enter **your name**, then **Host room** → copy the link (`?room=ABC123`).
+3. Friend enters their name and opens the link → joins as Harkonnen (red); host is Atreides (blue).
+4. Match auto-starts when the second player connects. Names show in the lobby and sidebar.
 
 **Server** runs the simulation (real-time, not turn-based). Both browsers only send orders and render snapshots. AI is off in MP. Keep a single Fly machine so both players share the same room process.
 

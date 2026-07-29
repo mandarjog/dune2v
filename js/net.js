@@ -14,6 +14,19 @@
     return u.pathname + u.search + u.hash;
   }
 
+  const NAME_KEY = 'dune2_player_name';
+  const NAME_MAX = 20;
+
+  function sanitizeName(raw) {
+    let s = String(raw == null ? '' : raw)
+      .replace(/[\u0000-\u001f\u007f]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, NAME_MAX)
+      .replace(/[<>]/g, '');
+    return s || 'Commander';
+  }
+
   D.Net = {
     ws: null,
     game: null,
@@ -22,14 +35,65 @@
     seat: null, // 'player' | 'enemy'
     role: null, // 'host' | 'guest' (lobby label only; sim is server)
     playerId: null,
+    name: 'Commander',
     peers: 0,
     seats: {},
+    names: { player: null, enemy: null },
     lastError: null,
     _wantRoom: null,
     _createOnOpen: false,
     _handlers: [],
     _lastStateTick: -1,
     _focusedOnce: false,
+
+    loadStoredName() {
+      try {
+        const n = localStorage.getItem(NAME_KEY);
+        if (n) D.Net.name = sanitizeName(n);
+      } catch (e) {
+        /* ignore */
+      }
+      return D.Net.name;
+    },
+
+    saveName(raw) {
+      D.Net.name = sanitizeName(raw);
+      try {
+        localStorage.setItem(NAME_KEY, D.Net.name);
+      } catch (e) {
+        /* ignore */
+      }
+      return D.Net.name;
+    },
+
+    /** Display name for a seat from last roster/start. */
+    nameFor(seat) {
+      if (D.Net.names && D.Net.names[seat]) return D.Net.names[seat];
+      const s = D.Net.seats && D.Net.seats[seat];
+      if (s && s.name) return s.name;
+      return seat === 'enemy' ? 'Harkonnen' : 'Atreides';
+    },
+
+    _applyRoster(msg) {
+      if (msg.seats) D.Net.seats = msg.seats;
+      if (msg.peers != null) D.Net.peers = msg.peers;
+      const names = { player: null, enemy: null };
+      if (msg.seats) {
+        if (msg.seats.player && msg.seats.player.name) names.player = msg.seats.player.name;
+        if (msg.seats.enemy && msg.seats.enemy.name) names.enemy = msg.seats.enemy.name;
+      }
+      if (msg.names) {
+        if (msg.names.player) names.player = msg.names.player;
+        if (msg.names.enemy) names.enemy = msg.names.enemy;
+      }
+      D.Net.names = names;
+      if (D.Net.game) {
+        D.Net.game.playerNames = {
+          player: names.player || 'Atreides',
+          enemy: names.enemy || 'Harkonnen',
+        };
+      }
+    },
 
     isMultiplayer(game) {
       return !!(game && game.multiplayer);
@@ -62,17 +126,20 @@
 
     init(game) {
       D.Net.game = game;
+      D.Net.loadStoredName();
     },
 
     /** Connect and create a fresh room. */
-    host() {
+    host(name) {
+      if (name != null) D.Net.saveName(name);
+      else D.Net.loadStoredName();
       D.Net._createOnOpen = true;
       D.Net._wantRoom = null;
       D.Net._connect();
     },
 
     /** Connect and join/create room code (shareable URL). */
-    join(roomCode) {
+    join(roomCode, name) {
       const code = String(roomCode || '')
         .trim()
         .toUpperCase();
@@ -81,6 +148,8 @@
         D.Net._emit('error', { error: 'bad_room' });
         return;
       }
+      if (name != null) D.Net.saveName(name);
+      else D.Net.loadStoredName();
       D.Net._createOnOpen = false;
       D.Net._wantRoom = code;
       D.Net._connect();
@@ -102,6 +171,7 @@
       D.Net.role = null;
       D.Net.peers = 0;
       D.Net.seats = {};
+      D.Net.names = { player: null, enemy: null };
       D.Net._lastStateTick = -1;
       D.Net._focusedOnce = false;
       if (D.Net.game) {
@@ -109,6 +179,7 @@
         D.Net.game.netRole = null;
         D.Net.game.localOwner = 'player';
         D.Net.game._serverSim = false;
+        D.Net.game.playerNames = null;
       }
       D.Net._emit('left');
     },
@@ -153,14 +224,22 @@
       D.Net.ws = ws;
 
       ws.onopen = () => {
+        const name = D.Net.name || D.Net.loadStoredName();
         if (D.Net._createOnOpen) {
-          ws.send(JSON.stringify({ type: 'create', playerId: D.Net.playerId }));
+          ws.send(
+            JSON.stringify({
+              type: 'create',
+              playerId: D.Net.playerId,
+              name,
+            })
+          );
         } else if (D.Net._wantRoom) {
           ws.send(
             JSON.stringify({
               type: 'join',
               room: D.Net._wantRoom,
               playerId: D.Net.playerId,
+              name,
             })
           );
         }
@@ -210,8 +289,9 @@
         D.Net.seat = msg.seat;
         D.Net.role = msg.role;
         D.Net.playerId = msg.playerId;
+        if (msg.name) D.Net.name = msg.name;
         D.Net.peers = msg.peers || 1;
-        D.Net.seats = msg.seats || {};
+        D.Net._applyRoster(msg);
         D.Net.status = 'lobby';
         const game = D.Net.game;
         if (game) {
@@ -231,19 +311,20 @@
         return;
       }
 
-      if (msg.type === 'peer_joined') {
-        D.Net.peers = msg.peers || D.Net.peers;
-        D.Net.seats = msg.seats || D.Net.seats;
-        D.Net._emit('peer_joined', msg);
+      if (msg.type === 'peer_joined' || msg.type === 'roster' || msg.type === 'name_ok') {
+        if (msg.name && msg.type === 'name_ok') D.Net.name = msg.name;
+        D.Net._applyRoster(msg);
+        D.Net._emit(msg.type === 'peer_joined' ? 'peer_joined' : 'roster', msg);
         return;
       }
 
       if (msg.type === 'peer_left') {
         D.Net.peers = msg.peers || 0;
-        D.Net.seats = msg.seats || {};
+        D.Net._applyRoster(msg);
         D.Net._emit('peer_left', msg);
         if (D.Net.game && D.Net.game.phase === 'playing') {
-          D.Game.pushMessage(D.Net.game, 'Opponent disconnected — match paused on server.');
+          const left = msg.name || 'Opponent';
+          D.Game.pushMessage(D.Net.game, left + ' disconnected — match paused on server.');
         }
         return;
       }
@@ -293,11 +374,14 @@
         D.UI.hideMenu();
         D.UI.hideLobby && D.UI.hideLobby();
       }
+      D.Net._applyRoster(msg);
+      const meName = D.Net.nameFor(game.localOwner);
+      const foeSeat = game.localOwner === 'player' ? 'enemy' : 'player';
+      const foeName = D.Net.nameFor(foeSeat);
+      const house = game.localOwner === 'enemy' ? 'Harkonnen (red)' : 'Atreides (blue)';
       D.Game.pushMessage(
         game,
-        game.localOwner === 'enemy'
-          ? 'Match live — you are Harkonnen (red). Select your MCV and press E to deploy.'
-          : 'Match live — you are Atreides (blue). Select your MCV and press E to deploy.'
+        meName + ' vs ' + foeName + ' — you are ' + house + '. Select MCV, press E to deploy.'
       );
       D.Net._emit('match_started', { role: D.Net.role });
     },
