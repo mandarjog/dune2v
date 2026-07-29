@@ -176,6 +176,12 @@
             mcvs.map((u) => u.id),
             { type: 'deploy' }
           );
+          if (!game.multiplayer) {
+            // SP: try immediately for snappy feedback
+            for (const u of mcvs) D.Orders.tryDeploy(game, u);
+          }
+        } else {
+          D.Game.pushMessage(game, 'Select your MCV first, then press E to deploy.');
         }
         e.preventDefault();
         return;

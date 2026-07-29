@@ -96,8 +96,9 @@
       });
       D.Entities.removeUnit(game, u);
       D.Economy.tickPower(game);
-      if (D.Game && D.Game.pushMessage) {
-        D.Game.pushMessage(game, u.owner === 'player' ? 'Construction Yard deployed.' : null);
+      // Message for local/SP; multiplayer server sends cmd_result instead
+      if (D.Game && D.Game.pushMessage && !game.multiplayer) {
+        D.Game.pushMessage(game, 'Construction Yard deployed.');
       }
       return true;
     },

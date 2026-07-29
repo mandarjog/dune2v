@@ -106,7 +106,24 @@ class RoomSim {
       case 'order': {
         const ids = ownedIds(payload.ids);
         if (!ids.length) return { ok: false, reason: 'ids' };
-        D.Orders.issue(game, ids, payload.order || { type: 'stop' });
+        const order = payload.order || { type: 'stop' };
+        D.Orders.issue(game, ids, order);
+        // Immediate deploy attempt so clients get fast feedback
+        if (order.type === 'deploy') {
+          let any = false;
+          let fail = false;
+          for (const id of ids) {
+            const u = game.units.find((x) => x.id === id);
+            if (!u || u.type !== 'mcv') continue;
+            if (D.Orders.tryDeploy(game, u)) any = true;
+            else fail = true;
+          }
+          if (any) {
+            this._broadcast(true);
+            return { ok: true, info: 'Construction Yard deployed.' };
+          }
+          if (fail) return { ok: false, reason: 'deploy' };
+        }
         return { ok: true };
       }
       case 'stop': {

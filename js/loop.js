@@ -71,8 +71,11 @@
 
       if (D.Renderer) D.Renderer.draw(game);
       if (D.UI) {
-        // HUD stats every few ticks; selection panel only rebuilds when signature changes
-        if (game.tick % 4 === 0 || game.phase !== 'playing') D.UI.refresh(game);
+        // HUD stats; selection panel only rebuilds when signature changes.
+        // MP clients don't advance tick locally — refresh on a time cadence too.
+        const mpHud = game.multiplayer && nowMs - (D.Loop._lastUiMs || 0) >= 200;
+        if (mpHud) D.Loop._lastUiMs = nowMs;
+        if (game.tick % 4 === 0 || game.phase !== 'playing' || mpHud) D.UI.refresh(game);
         D.UI.updateDebug(game);
       }
 

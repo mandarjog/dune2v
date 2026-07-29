@@ -263,6 +263,11 @@
         return;
       }
 
+      if (msg.type === 'cmd_result') {
+        D.Net._handleCmdResult(msg);
+        return;
+      }
+
       // legacy: ignore client cmd relay
       if (msg.type === 'cmd') return;
     },
@@ -278,6 +283,8 @@
       game.netRole = D.Net.role;
       game.localOwner = D.Net.seat || 'player';
       game.roomCode = D.Net.room;
+      // Allow input immediately; first state fills the world
+      if (game.phase === 'menu' || game.phase === 'lobby') game.phase = 'playing';
       D.Net.status = 'playing';
       D.Net._lastStateTick = -1;
       D.Net._focusedOnce = false;
@@ -289,8 +296,8 @@
       D.Game.pushMessage(
         game,
         game.localOwner === 'enemy'
-          ? 'Match live — you are Harkonnen (red). Both sides move in real time.'
-          : 'Match live — you are Atreides (blue). Both sides move in real time.'
+          ? 'Match live — you are Harkonnen (red). Select your MCV and press E to deploy.'
+          : 'Match live — you are Atreides (blue). Select your MCV and press E to deploy.'
       );
       D.Net._emit('match_started', { role: D.Net.role });
     },
@@ -306,26 +313,52 @@
       const ok = D.Save.applyNetState(game, msg.payload, {
         localOwner: D.Net.seat || game.localOwner || 'player',
       });
-      if (!ok) return;
+      if (!ok) {
+        console.warn('[net] applyNetState failed', msg.tick);
+        return;
+      }
 
       game.multiplayer = true;
       game.netRole = D.Net.role;
       game.localOwner = D.Net.seat || game.localOwner || 'player';
-      // clients never run Game.tick
       game._serverSim = false;
+      if (game.phase === 'menu') game.phase = 'playing';
 
       if (!hadMap && D.Renderer) {
         D.Renderer.rebuildTerrain(game);
         D.Net._focusSpawn(game);
       } else if (!D.Net._focusedOnce && game.map) {
         D.Net._focusSpawn(game);
-        D.Net._focusedOnce = true;
       }
+      // Do NOT invalidateSelection every snapshot — that destroys Deploy/produce buttons
+      // mid-click. UI.refresh uses a signature and updates HUD cheaply.
       if (D.UI) {
         D.UI.hideMenu();
         D.UI.hideLobby && D.UI.hideLobby();
-        D.UI.invalidateSelection();
       }
+    },
+
+    _handleCmdResult(msg) {
+      const game = D.Net.game;
+      if (!game || !msg) return;
+      if (msg.ok) {
+        if (msg.info) D.Game.pushMessage(game, msg.info);
+        return;
+      }
+      const reasons = {
+        ids: 'No valid units for that order.',
+        placement: 'Cannot deploy here — need rock (move MCV onto rock first).',
+        rock: 'Cannot deploy here — need rock (move MCV onto rock first).',
+        deploy: 'Deploy failed — MCV must sit on open rock.',
+        building: 'Factory not ready.',
+        credits: 'Not enough credits.',
+        tech: 'Missing required building.',
+        busy: 'Already constructing.',
+        not_started: 'Match not started yet.',
+        not_running: 'Server sim not running.',
+      };
+      const text = msg.message || reasons[msg.reason] || 'Order failed: ' + (msg.reason || '?');
+      D.Game.pushMessage(game, text);
     },
 
     _focusSpawn(game) {
@@ -358,7 +391,10 @@
       const owner = game.localOwner || 'player';
 
       if (game.multiplayer) {
-        D.Net._send({ type: 'cmd', payload });
+        if (!D.Net._send({ type: 'cmd', payload })) {
+          D.Game.pushMessage(game, 'Not connected to server.');
+          return { ok: false, reason: 'disconnected' };
+        }
         return { ok: true, deferred: true };
       }
 

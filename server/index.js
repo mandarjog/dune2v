@@ -405,14 +405,26 @@ function setupWs(server) {
       // Both seats send commands; server applies
       if (msg.type === 'cmd') {
         if (!room.sim || !room.started) {
-          sendJson(ws, { type: 'error', error: 'not_started' });
+          sendJson(ws, {
+            type: 'cmd_result',
+            ok: false,
+            reason: 'not_started',
+          });
           return;
         }
         const payload = msg.payload != null ? msg.payload : msg;
-        const result = room.sim.applyCommand(ws.seat, payload);
-        if (!result.ok && result.reason && result.reason !== 'ids') {
-          // soft-fail noisy reasons; still ok to ignore
-        }
+        const result = room.sim.applyCommand(ws.seat, payload) || {
+          ok: false,
+          reason: 'unknown',
+        };
+        // Always ack so client can show deploy/placement errors
+        sendJson(ws, {
+          type: 'cmd_result',
+          ok: !!result.ok,
+          reason: result.reason || null,
+          info: result.info || null,
+          op: payload.op || null,
+        });
         return;
       }
 
