@@ -59,7 +59,8 @@ function send(res, status, body, headers = {}) {
 }
 
 function serveStatic(req, res) {
-  let urlPath = req.url || '/';
+  // Strip query string first — shareable MP links are /?room=CODE
+  let urlPath = (req.url || '/').split('?')[0] || '/';
   if (urlPath === '/health' || urlPath === '/healthz') {
     return send(
       res,
@@ -81,7 +82,7 @@ function serveStatic(req, res) {
     return send(res, 426, 'Upgrade Required', { 'Content-Type': 'text/plain' });
   }
 
-  if (urlPath === '/') urlPath = '/index.html';
+  if (urlPath === '/' || urlPath === '') urlPath = '/index.html';
 
   const filePath = safeJoin(ROOT, urlPath);
   if (!filePath) return send(res, 403, 'Forbidden');
