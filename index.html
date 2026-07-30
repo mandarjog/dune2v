@@ -10,6 +10,10 @@
     <div id="app">
       <div id="game-wrap">
         <canvas id="game-canvas"></canvas>
+        <!-- Player chat (top-left, separate from system messages) -->
+        <div id="chat-hud" class="chat-hud hidden" aria-live="polite">
+          <div id="chat-hud-log" class="chat-hud-log"></div>
+        </div>
         <div id="debug-overlay"></div>
       </div>
       <aside id="sidebar">
@@ -43,14 +47,13 @@
         <div id="messages"></div>
 
         <div id="chat-panel" class="chat-panel hidden">
-          <div class="section-title">Chat</div>
-          <div id="chat-log" class="chat-log"></div>
+          <div class="section-title">Say (Enter)</div>
           <form id="chat-form" class="chat-form" autocomplete="off">
             <input
               id="chat-input"
               type="text"
               maxlength="200"
-              placeholder="Message opponent…"
+              placeholder="Chat appears top-left…"
               spellcheck="true"
             />
             <button type="submit" id="btn-chat-send">Send</button>

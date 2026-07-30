@@ -84,7 +84,8 @@
         joinNameInput: $('join-name-input'),
         joinRoomLabel: $('join-room-label'),
         chatPanel: $('chat-panel'),
-        chatLog: $('chat-log'),
+        chatHud: $('chat-hud'),
+        chatHudLog: $('chat-hud-log'),
         chatForm: $('chat-form'),
         chatInput: $('chat-input'),
         feedbackModal: $('feedback-modal'),
@@ -500,42 +501,49 @@
 
     setChatVisible(show) {
       const panel = els.chatPanel || $('chat-panel');
-      if (!panel) return;
-      panel.classList.toggle('hidden', !show);
-      if (!show && els.chatLog) els.chatLog.innerHTML = '';
+      const hud = els.chatHud || $('chat-hud');
+      if (panel) panel.classList.toggle('hidden', !show);
+      if (hud) hud.classList.toggle('hidden', !show);
+      if (!show) {
+        const log = els.chatHudLog || $('chat-hud-log');
+        if (log) log.innerHTML = '';
+      }
     },
 
     appendChat(msg) {
-      const log = els.chatLog || $('chat-log');
-      if (!log || !msg) return;
+      if (!msg) return;
+      const hud = els.chatHud || $('chat-hud');
+      const log = els.chatHudLog || $('chat-hud-log');
+      if (!log) return;
+      if (hud) hud.classList.remove('hidden');
+
       const mine = msg.seat && boundGame && msg.seat === D.Game.me(boundGame);
       const line = document.createElement('div');
-      line.className = 'chat-line ' + (mine ? 'mine' : 'theirs');
+      line.className = 'chat-hud-line ' + (mine ? 'mine' : 'theirs');
+
       const who = document.createElement('span');
       who.className = 'who';
-      who.textContent = msg.name || (msg.seat === 'enemy' ? 'Harkonnen' : 'Atreides');
-      const when = document.createElement('span');
-      when.className = 'when';
-      try {
-        when.textContent = new Date(msg.ts || Date.now()).toLocaleTimeString([], {
-          hour: '2-digit',
-          minute: '2-digit',
-        });
-      } catch (e) {
-        when.textContent = '';
-      }
+      const name =
+        msg.name ||
+        (msg.seat === 'enemy' ? 'Harkonnen' : 'Atreides');
+      who.textContent = name;
+
       const body = document.createElement('span');
+      body.className = 'body';
       body.textContent = ': ' + (msg.text || '');
+
       line.appendChild(who);
-      line.appendChild(when);
       line.appendChild(body);
       log.appendChild(line);
-      while (log.children.length > 40) log.removeChild(log.firstChild);
-      log.scrollTop = log.scrollHeight;
-      // Also toast briefly in the game message strip
-      if (!mine && D.Game && boundGame) {
-        D.Game.pushMessage(boundGame, (msg.name || 'Opponent') + ': ' + (msg.text || ''));
-      }
+      while (log.children.length > 12) log.removeChild(log.firstChild);
+
+      // Fade like classic RTS chat after a few seconds
+      const FADE_MS = 10000;
+      const REMOVE_MS = 12000;
+      setTimeout(() => line.classList.add('fading'), FADE_MS);
+      setTimeout(() => {
+        if (line.parentNode) line.parentNode.removeChild(line);
+      }, REMOVE_MS);
     },
 
     sendChat() {
