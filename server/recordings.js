@@ -59,6 +59,8 @@ function begin(meta) {
     baseDt: meta.baseDt || 0.05,
     seed: meta.seed != null ? meta.seed : 42,
     format: 'cmd-v1',
+    // idStable: entity ids are sequential without snapshot burns (post nextId fix)
+    idStable: true,
     events: 0,
     cmds: 0,
     _fd: null,
@@ -87,6 +89,7 @@ function writeMeta(rec) {
     baseDt: rec.baseDt,
     seed: rec.seed,
     format: rec.format || 'cmd-v1',
+    idStable: rec.idStable !== false,
     events: rec.events,
     cmds: rec.cmds || 0,
   };

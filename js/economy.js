@@ -110,11 +110,24 @@
       return { ok: true, building: b, queue: nBuild + 1, maxQueue: maxQ };
     },
 
-    enqueueUnit(game, buildingId, unitType) {
-      const b = game.buildings.find((x) => x.id === buildingId);
-      if (!b || b.buildProgress < 1) return { ok: false, reason: 'building' };
+    enqueueUnit(game, buildingId, unitType, opts) {
+      opts = opts || {};
+      let b = game.buildings.find((x) => x.id === buildingId);
       const udef = D.config.units[unitType];
-      if (!udef || udef.builtAt !== b.type) return { ok: false, reason: 'type' };
+      if (!udef) return { ok: false, reason: 'type' };
+      // Replay / desynced ids: fall back to an owned factory of the right type
+      if ((!b || b.buildProgress < 1 || udef.builtAt !== b.type) && opts.owner) {
+        b = game.buildings.find(
+          (x) =>
+            x.owner === opts.owner &&
+            x.type === udef.builtAt &&
+            x.buildProgress >= 1 &&
+            x.hp > 0 &&
+            (x.buildQueue || []).length < 5
+        );
+      }
+      if (!b || b.buildProgress < 1) return { ok: false, reason: 'building' };
+      if (udef.builtAt !== b.type) return { ok: false, reason: 'type' };
       if (b.buildQueue.length >= 5) return { ok: false, reason: 'queue' };
       if (!D.Economy.charge(game, b.owner, udef.cost)) {
         return { ok: false, reason: 'credits' };
@@ -124,7 +137,7 @@
         progress: 0,
         costPaid: udef.cost,
       });
-      return { ok: true };
+      return { ok: true, buildingId: b.id };
     },
 
     cancelQueue(game, buildingId, index) {

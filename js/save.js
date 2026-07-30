@@ -130,7 +130,11 @@
           weapon: b.weapon,
           costPaid: b.costPaid,
         })),
-        nextId: D.Entities.nextId(),
+        // IMPORTANT: use peek — nextId() increments and burned an ID on every
+        // MP snapshot (~every 2 ticks), desyncing recorded entity ids vs replay.
+        nextId: D.Entities.peekNextId
+          ? D.Entities.peekNextId()
+          : D.Entities.nextId(),
         messages: (game.messages || []).slice(0, 10),
         // Combat visuals — required for multiplayer clients (turret shells, tracers)
         projectiles: (game.projectiles || []).map((p) => ({

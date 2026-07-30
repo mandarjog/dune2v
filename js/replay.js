@@ -4,6 +4,8 @@
   const D = (global.Dune2 = global.Dune2 || {});
 
   const BASE_DT = 0.05;
+  /** Must match server/room-sim.js STATE_EVERY — old recordings burned one id per snapshot. */
+  const STATE_EVERY = 2;
 
   function formatClock(ticks) {
     const sec = Math.max(0, Math.floor((ticks || 0) * BASE_DT));
@@ -102,6 +104,10 @@
       D.Replay._isCmd = isCmd;
       D.Replay._frameIndex = 0;
       D.Replay._scrubbing = false;
+      // Pre-fix recordings: serialize() called nextId() every snapshot and on
+      // init, so live entity ids (produce buildingId, order unit ids) do not
+      // match a clean re-sim. Emulate those burns so cmds resolve.
+      D.Replay._idBurnCompat = recording.idStable !== true;
 
       game.multiplayer = false;
       game.replay = true;
@@ -187,6 +193,10 @@
         game.selection.ids = [];
         game.selection.box = null;
       }
+      // Old init serialize consumed one id via nextId(); server continued at +1
+      if (D.Replay._idBurnCompat && D.Entities && D.Entities.peekNextId) {
+        D.Entities.setNextId(D.Entities.peekNextId() + 1);
+      }
       // Skip past init event
       D.Replay.eventIndex = 0;
       while (
@@ -198,6 +208,12 @@
       D.Replay._targetTick = game.tick || 0;
       D.Replay._acc = 0;
       return true;
+    },
+
+    /** Emulate MP snapshot id burns from the buggy serialize(nextId()). */
+    _burnSnapshotId() {
+      if (!D.Replay._idBurnCompat || !D.Entities || !D.Entities.nextId) return;
+      D.Entities.nextId();
     },
 
     _bootLegacy(game, frames) {
@@ -291,6 +307,9 @@
         D.Replay._applyEventsAtTick(game, game.tick | 0);
         if (game.phase !== 'playing') break;
         D.Game.tick(game, BASE_DT);
+        if (D.Replay._idBurnCompat && (game.tick | 0) % STATE_EVERY === 0) {
+          D.Replay._burnSnapshotId();
+        }
       }
       game._replaySeeking = false;
       if (D.Map) {
@@ -380,6 +399,10 @@
         game.replay = true;
         game._serverSim = true;
         D.Game.tick(game, BASE_DT);
+        // Old server burned one entity id on every even-tick state snapshot
+        if (D.Replay._idBurnCompat && (game.tick | 0) % STATE_EVERY === 0) {
+          D.Replay._burnSnapshotId();
+        }
 
         if (D.Replay.eventIndex >= D.Replay.events.length && game.phase === 'playing') {
           if (game.tick > (D.Replay.recording.durationTicks || 0) + 40) {
@@ -404,10 +427,13 @@
           const order = payload.order || { type: 'stop' };
           D.Orders.issue(game, ids, order);
           if (order.type === 'deploy') {
+            let any = false;
             for (const id of ids) {
               const u = game.units.find((x) => x.id === id);
-              if (u && u.type === 'mcv') D.Orders.tryDeploy(game, u);
+              if (u && u.type === 'mcv' && D.Orders.tryDeploy(game, u)) any = true;
             }
+            // Server force-broadcast after deploy → one extra id burn (old bug)
+            if (any) D.Replay._burnSnapshotId();
           }
         } else if (payload.op === 'stop') {
           const ids = (payload.ids || []).filter((id) => {
@@ -424,11 +450,39 @@
             payload.tileY | 0
           );
         } else if (payload.op === 'produce') {
-          D.Economy.enqueueUnit(game, payload.buildingId, payload.unitType);
+          const r = D.Economy.enqueueUnit(game, payload.buildingId, payload.unitType, {
+            owner,
+          });
+          if (!r || !r.ok) {
+            console.warn(
+              '[replay] produce failed',
+              payload.unitType,
+              'b',
+              payload.buildingId,
+              r && r.reason
+            );
+          }
         } else if (payload.op === 'cancelQueue') {
-          D.Economy.cancelQueue(game, payload.buildingId, payload.index | 0);
+          let b = game.buildings.find((x) => x.id === payload.buildingId);
+          if (!b) {
+            b = game.buildings.find(
+              (x) => x.owner === owner && (x.buildQueue || []).length && x.hp > 0
+            );
+          }
+          if (b) D.Economy.cancelQueue(game, b.id, payload.index | 0);
         } else if (payload.op === 'rally') {
-          D.Orders.setRally(game, payload.buildingId, payload.x, payload.y);
+          let b = game.buildings.find((x) => x.id === payload.buildingId);
+          if (!b) {
+            b = game.buildings.find(
+              (x) =>
+                x.owner === owner &&
+                (x.type === 'barracks' ||
+                  x.type === 'lightFactory' ||
+                  x.type === 'heavyFactory') &&
+                x.buildProgress >= 1
+            );
+          }
+          if (b) D.Orders.setRally(game, b.id, payload.x, payload.y);
         }
       } catch (e) {
         console.warn('[replay] cmd failed', e);
