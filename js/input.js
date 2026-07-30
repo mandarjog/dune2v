@@ -268,6 +268,68 @@
         return;
       }
 
+      // M / G — move selected units to tile under cursor (no right-click needed)
+      // A — attack-move to hover tile
+      if (e.code === 'KeyM' || e.code === 'KeyG' || e.code === 'KeyA') {
+        const units = selectedUnits(game);
+        if (!units.length) {
+          D.Game.pushMessage(game, 'Select unit(s), hover the map, then M/G to move (A = attack-move).');
+          e.preventDefault();
+          return;
+        }
+        const ht = game.hoverTile;
+        if (!ht || ht.tx == null) {
+          D.Game.pushMessage(game, 'Move the pointer over the map first, then press M.');
+          e.preventDefault();
+          return;
+        }
+        const wx = ht.tx + 0.5;
+        const wy = ht.ty + 0.5;
+        const attackMove = e.code === 'KeyA';
+        // Harvesters on spice → harvest order when moving with M/G
+        if (!attackMove) {
+          const harvs = units.filter((u) => u.type === 'harvester');
+          if (harvs.length && game.map && D.Map.spiceAt(game.map, ht.tx, ht.ty) > 0) {
+            issueOrder(
+              game,
+              harvs.map((u) => u.id),
+              { type: 'harvest', tileX: ht.tx, tileY: ht.ty }
+            );
+            const rest = units.filter((u) => u.type !== 'harvester');
+            if (rest.length) {
+              issueOrder(
+                game,
+                rest.map((u) => u.id),
+                { type: 'move', x: wx, y: wy }
+              );
+            }
+            e.preventDefault();
+            return;
+          }
+        }
+        // Attack enemy under cursor with A or when clicking attack on foe
+        if (attackMove) {
+          const hit = pickAt(game, wx, wy);
+          const enemy = foe(game);
+          if (hit && hit.entity.owner === enemy) {
+            issueOrder(
+              game,
+              units.map((u) => u.id),
+              { type: 'attack', targetId: hit.entity.id }
+            );
+            e.preventDefault();
+            return;
+          }
+        }
+        issueOrder(
+          game,
+          units.map((u) => u.id),
+          { type: attackMove ? 'attack-move' : 'move', x: wx, y: wy }
+        );
+        e.preventDefault();
+        return;
+      }
+
       if (e.code === 'KeyH') {
         const harvs = selectedUnits(game).filter((u) => u.type === 'harvester');
         for (const u of harvs) {
