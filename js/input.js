@@ -38,12 +38,14 @@
   }
 
   function issueOrder(game, ids, order) {
+    if (game && game.replay) return { ok: false, reason: 'replay' };
     if (D.Net) return D.Net.command(game, { op: 'order', ids, order });
     D.Orders.issue(game, ids, order);
     return { ok: true };
   }
 
   function issueStop(game, ids) {
+    if (game && game.replay) return { ok: false, reason: 'replay' };
     if (D.Net) return D.Net.command(game, { op: 'stop', ids });
     D.Orders.stop(game, ids);
     return { ok: true };
@@ -132,13 +134,18 @@
     },
 
     poll(game, dt) {
-      if (game.phase !== 'playing' && game.phase !== 'paused') return;
+      if (game.phase !== 'playing' && game.phase !== 'paused' && !game.replay) return;
       const speed = PAN_SPEED * dt;
       if (panKeys.left || keys.ArrowLeft || keys.KeyA) game.camera.x -= speed;
       if (panKeys.right || keys.ArrowRight || keys.KeyD) game.camera.x += speed;
       if (panKeys.up || keys.ArrowUp || keys.KeyW) game.camera.y -= speed;
       if (panKeys.down || keys.ArrowDown || keys.KeyS) game.camera.y += speed;
       if (D.Renderer) D.Renderer.clampCamera(game);
+    },
+
+    /** True when viewer must not issue orders / place buildings. */
+    isSpectator(game) {
+      return !!(game && game.replay);
     },
 
     onKeyDown(game, e) {
@@ -153,6 +160,56 @@
       if (e.code === 'ArrowRight' || e.code === 'KeyD') panKeys.right = true;
       if (e.code === 'ArrowUp' || e.code === 'KeyW') panKeys.up = true;
       if (e.code === 'ArrowDown' || e.code === 'KeyS') panKeys.down = true;
+
+      // Replay: camera + transport controls only (no orders / build)
+      if (game.replay && D.Replay) {
+        if (e.code === 'Space') {
+          e.preventDefault();
+          const on = D.Replay.togglePause();
+          const b = document.getElementById('btn-replay-pause');
+          if (b) b.textContent = on ? 'Pause' : 'Play';
+          D.Game.pushMessage(game, on ? 'Replay playing' : 'Replay paused');
+          return;
+        }
+        if (
+          e.code === 'BracketLeft' ||
+          e.key === '-' ||
+          e.code === 'Minus' ||
+          e.code === 'NumpadSubtract'
+        ) {
+          D.Replay.setSpeed(Math.max(0.25, D.Replay.speed / 2));
+          D.Game.pushMessage(game, 'Replay ' + D.Replay.speed + '×');
+          if (D.UI) D.UI.refreshSpeedHud(game);
+          e.preventDefault();
+          return;
+        }
+        if (
+          e.code === 'BracketRight' ||
+          e.key === '+' ||
+          e.code === 'Equal' ||
+          e.code === 'NumpadAdd'
+        ) {
+          D.Replay.setSpeed(Math.min(8, D.Replay.speed * 2));
+          D.Game.pushMessage(game, 'Replay ' + D.Replay.speed + '×');
+          if (D.UI) D.UI.refreshSpeedHud(game);
+          e.preventDefault();
+          return;
+        }
+        if (e.code === 'Escape') {
+          e.preventDefault();
+          D.Replay.stop(game);
+          if (D.UI) {
+            if (D.UI.hideEnd) D.UI.hideEnd();
+            D.UI.showMenu();
+          }
+          return;
+        }
+        if (e.key === '?' || (e.code === 'Slash' && e.shiftKey) || e.code === 'Slash') {
+          e.preventDefault();
+          if (D.UI) D.UI.showHelp();
+        }
+        return;
+      }
 
       if (e.code === 'Escape') {
         game.placement = null;
@@ -183,15 +240,18 @@
         return;
       }
 
-      // SP speed ±
+      // SP speed ± (same steps as sidebar dropdown)
       if (!game.multiplayer && !game.replay) {
-        const steps = [0.5, 1, 2, 4];
+        const steps = [0.5, 1, 1.5, 2, 3];
         if (e.key === '+' || e.code === 'Equal' || e.code === 'NumpadAdd') {
           let i = steps.indexOf(game.speedMult || 1);
           if (i < 0) i = 1;
           game.speedMult = steps[Math.min(steps.length - 1, i + 1)];
           D.Game.pushMessage(game, 'Speed ' + game.speedMult + '×');
-          if (D.UI) D.UI.refreshSpeedHud(game);
+          if (D.UI) {
+            D.UI.refreshSpeedHud(game);
+            if (D.UI.syncSpeedSelect) D.UI.syncSpeedSelect(game);
+          }
           e.preventDefault();
           return;
         }
@@ -200,34 +260,11 @@
           if (i < 0) i = 1;
           game.speedMult = steps[Math.max(0, i - 1)];
           D.Game.pushMessage(game, 'Speed ' + game.speedMult + '×');
-          if (D.UI) D.UI.refreshSpeedHud(game);
+          if (D.UI) {
+            D.UI.refreshSpeedHud(game);
+            if (D.UI.syncSpeedSelect) D.UI.syncSpeedSelect(game);
+          }
           e.preventDefault();
-          return;
-        }
-      }
-
-      // Replay controls
-      if (game.replay && D.Replay) {
-        if (e.code === 'Space') {
-          e.preventDefault();
-          const on = D.Replay.togglePause();
-          D.Game.pushMessage(game, on ? 'Replay playing' : 'Replay paused');
-          return;
-        }
-        if (e.code === 'BracketLeft') {
-          D.Replay.setSpeed(Math.max(0.25, D.Replay.speed / 2));
-          D.Game.pushMessage(game, 'Replay ' + D.Replay.speed + '×');
-          return;
-        }
-        if (e.code === 'BracketRight') {
-          D.Replay.setSpeed(Math.min(8, D.Replay.speed * 2));
-          D.Game.pushMessage(game, 'Replay ' + D.Replay.speed + '×');
-          return;
-        }
-        if (e.code === 'Escape') {
-          e.preventDefault();
-          D.Replay.stop(game);
-          if (D.UI) D.UI.showMenu();
           return;
         }
       }
@@ -405,7 +442,22 @@
     },
 
     onMouseDown(game, e) {
-      if (game.phase !== 'playing') return;
+      if (game.phase !== 'playing' && !game.replay) return;
+      // Replay is view-only (camera still pans via keys / minimap)
+      if (game.replay) {
+        if (e.button === 0) {
+          // allow box-select for looking around only — no orders
+          dragging = true;
+          dragStart = canvasPos(e, canvas);
+          game.selection.box = {
+            x0: dragStart.x,
+            y0: dragStart.y,
+            x1: dragStart.x,
+            y1: dragStart.y,
+          };
+        }
+        return;
+      }
       const pos = canvasPos(e, canvas);
       const o = me(game);
 
@@ -459,12 +511,12 @@
     },
 
     onMouseMove(game, e) {
-      if (!canvas || game.phase !== 'playing') return;
+      if (!canvas || (game.phase !== 'playing' && !game.replay)) return;
       const pos = canvasPos(e, canvas);
       const world = D.Renderer.screenToWorld(game, pos.x, pos.y);
       game.hoverTile = { tx: Math.floor(world.x), ty: Math.floor(world.y) };
 
-      if (game.placement) {
+      if (game.placement && !game.replay) {
         game.placement.tileX = Math.floor(world.x);
         game.placement.tileY = Math.floor(world.y);
       }
@@ -480,10 +532,10 @@
     },
 
     onMouseUp(game, e) {
-      if (game.phase !== 'playing') return;
+      if (game.phase !== 'playing' && !game.replay) return;
       if (e.button !== 0) return;
       // Order clicks (Ctrl/⌘) were handled on mousedown
-      if (D.Input.isOrderModifier(e)) {
+      if (D.Input.isOrderModifier(e) && !game.replay) {
         dragging = false;
         game.selection.box = null;
         return;
@@ -560,6 +612,7 @@
     },
 
     rightClick(game, pos, e) {
+      if (game.replay) return;
       const world = D.Renderer.screenToWorld(game, pos.x, pos.y);
       const units = selectedUnits(game);
       const buildings = selectedBuildings(game);
@@ -635,7 +688,7 @@
     },
 
     onMinimap(game, e) {
-      if (game.phase !== 'playing' && game.phase !== 'paused') return;
+      if (game.phase !== 'playing' && game.phase !== 'paused' && !game.replay) return;
       const pos = canvasPos(e, minimap);
       const map = game.map;
       if (!map) return;
@@ -649,6 +702,7 @@
     },
 
     startPlacement(game, type) {
+      if (game.replay) return;
       game.placement = { type, tileX: 0, tileY: 0 };
     },
 

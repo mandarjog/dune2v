@@ -105,6 +105,7 @@ class RoomSim {
         this.game ? this.game.phase : 'unknown',
         this.game ? this.game.tick : 0
       );
+      this._lastRecordingId = (info && info.id) || this._rec.id;
       this._rec = null;
     }
     this.game = null;
@@ -125,7 +126,7 @@ class RoomSim {
   }
 
   get recordingId() {
-    return this._rec ? this._rec.id : null;
+    return this._rec ? this._rec.id : this._lastRecordingId || null;
   }
 
   _tick() {
@@ -134,9 +135,10 @@ class RoomSim {
     if (this.game.phase !== 'playing') {
       this._broadcast(true);
       const phase = this.game.phase;
-      const recId = this.recordingId;
+      // Finish recording first so /api/recordings/:id is ready when clients open Watch
+      const info = this.stop();
+      const recId = (info && info.id) || this._lastRecordingId || null;
       if (this.onEnd) this.onEnd(phase, { recordingId: recId });
-      this.stop();
       return;
     }
     D.Game.tick(this.game, BASE_DT);

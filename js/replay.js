@@ -47,6 +47,16 @@
       const events = recording.events || recording.frames || [];
       if (!events.length) return false;
 
+      // Drop MP socket so leftover state snapshots cannot stomp the replay
+      // (host often still connected after match_end; guest may already have left).
+      if (D.Net && typeof D.Net.leave === 'function') {
+        try {
+          D.Net.leave();
+        } catch (e) {
+          /* ignore */
+        }
+      }
+
       // Detect format
       const isCmd =
         recording.format === 'cmd-v1' ||
@@ -71,20 +81,44 @@
       game.localOwner = 'player';
       game.netRole = null;
       game.speedMult = 1;
+      game.placement = null;
+      game.selection = game.selection || { ids: [], box: null };
+      game.selection.ids = [];
+      game.selection.box = null;
 
       if (isCmd) {
-        if (!D.Replay._bootCmd(game, events)) return false;
+        if (!D.Replay._bootCmd(game, events)) {
+          D.Replay.stop(game);
+          return false;
+        }
       } else {
-        if (!D.Replay._bootLegacy(game, events)) return false;
+        if (!D.Replay._bootLegacy(game, events)) {
+          D.Replay.stop(game);
+          return false;
+        }
       }
 
       if (D.Renderer) D.Renderer.rebuildTerrain(game);
       if (D.UI) {
         D.UI.hideMenu();
-        D.UI.hideLobby && D.UI.hideLobby();
+        if (D.UI.hideLobby) D.UI.hideLobby();
+        if (D.UI.hideEnd) D.UI.hideEnd();
+        if (D.UI.hideReplays) D.UI.hideReplays();
         D.UI.setChatVisible(false);
+        D.UI.setMpSpeedVisible(false);
         D.UI.showReplayBar(true);
         D.UI.refresh(game);
+      }
+      // Shareable deep link
+      try {
+        if (recording.id) {
+          const u = new URL(location.href);
+          u.searchParams.delete('room');
+          u.searchParams.set('replay', recording.id);
+          history.replaceState(null, '', u.pathname + u.search + u.hash);
+        }
+      } catch (e) {
+        /* ignore */
       }
       const a = (recording.names && recording.names.player) || 'Atreides';
       const b = (recording.names && recording.names.enemy) || 'Harkonnen';
@@ -95,7 +129,8 @@
           ' vs ' +
           b +
           (isCmd ? ' (cmd stream)' : ' (legacy)') +
-          ' — Space pause, [ ] speed, Esc exit'
+          ' — Space pause, +/− speed, Esc exit' +
+          (recording.id ? ' · link ?replay=' + recording.id : '')
       );
       return true;
     },
@@ -148,9 +183,32 @@
       if (game) {
         game.replay = false;
         game._serverSim = false;
+        game.placement = null;
         game.phase = 'menu';
       }
       if (D.UI) D.UI.showReplayBar(false);
+      try {
+        const u = new URL(location.href);
+        if (u.searchParams.has('replay')) {
+          u.searchParams.delete('replay');
+          history.replaceState(null, '', u.pathname + u.search + u.hash);
+        }
+      } catch (e) {
+        /* ignore */
+      }
+    },
+
+    /** Absolute share URL for a recording id. */
+    shareUrl(id) {
+      try {
+        const u = new URL(location.href);
+        u.search = '';
+        u.hash = '';
+        u.searchParams.set('replay', String(id));
+        return u.toString();
+      } catch (e) {
+        return location.origin + '/?replay=' + encodeURIComponent(id);
+      }
     },
 
     setSpeed(s) {

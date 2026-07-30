@@ -228,30 +228,51 @@
     },
 
     spawnPoint(game, b) {
-      // toward rally, outside footprint
+      // toward rally, outside footprint — skip tiles already holding a unit
       const rx = b.rallyX;
       const ry = b.rallyY;
       const candidates = [];
-      for (let r = 0; r <= 2; r++) {
+      function push(tx, ty) {
+        if (!D.Map.isWalkable(game.map, tx, ty)) return;
+        candidates.push({ x: tx + 0.5, y: ty + 0.5, tx, ty });
+      }
+      for (let r = 0; r <= 4; r++) {
         for (let dy = -r; dy <= r; dy++) {
           for (let dx = -r; dx <= r; dx++) {
-            const tx = Math.floor(rx) + dx;
-            const ty = Math.floor(ry) + dy;
-            if (D.Map.isWalkable(game.map, tx, ty)) {
-              candidates.push({ x: tx + 0.5, y: ty + 0.5 });
-            }
+            push(Math.floor(rx) + dx, Math.floor(ry) + dy);
           }
         }
       }
       // also edges of building
       for (let dx = 0; dx < b.tileW; dx++) {
-        const tx = b.tileX + dx;
-        const ty = b.tileY + b.tileH;
-        if (D.Map.isWalkable(game.map, tx, ty)) {
-          candidates.push({ x: tx + 0.5, y: ty + 0.5 });
-        }
+        push(b.tileX + dx, b.tileY + b.tileH);
+        push(b.tileX + dx, b.tileY - 1);
       }
-      if (candidates.length) return candidates[0];
+      for (let dy = 0; dy < b.tileH; dy++) {
+        push(b.tileX - 1, b.tileY + dy);
+        push(b.tileX + b.tileW, b.tileY + dy);
+      }
+
+      function occupied(x, y) {
+        for (const u of game.units) {
+          if (u.hp <= 0) continue;
+          if (Math.hypot(u.x - x, u.y - y) < 0.55) return true;
+        }
+        return false;
+      }
+
+      for (const c of candidates) {
+        if (!occupied(c.x, c.y)) return { x: c.x, y: c.y };
+      }
+      // Soft stack offset if every tile is full
+      if (candidates.length) {
+        const c = candidates[0];
+        const n = game.units.filter(
+          (u) => u.hp > 0 && Math.hypot(u.x - c.x, u.y - c.y) < 0.8
+        ).length;
+        const ang = n * 0.9;
+        return { x: c.x + Math.cos(ang) * 0.35, y: c.y + Math.sin(ang) * 0.35 };
+      }
       return { x: b.tileX + b.tileW / 2, y: b.tileY + b.tileH + 1.5 };
     },
 

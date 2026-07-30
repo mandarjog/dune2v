@@ -49,6 +49,7 @@
     seats: {},
     names: { player: null, enemy: null },
     lastError: null,
+    lastRecordingId: null,
     _wantRoom: null,
     _createOnOpen: false,
     _handlers: [],
@@ -544,7 +545,7 @@
 
     _handleState(msg) {
       const game = D.Net.game;
-      if (!game || !game.multiplayer) return;
+      if (!game || !game.multiplayer || game.replay) return;
       if (!msg.payload) return;
       if (msg.tick != null && msg.tick < D.Net._lastStateTick) return;
       D.Net._lastStateTick = msg.tick != null ? msg.tick : D.Net._lastStateTick;

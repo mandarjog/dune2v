@@ -254,9 +254,42 @@
 
       els.mpSpeedSelect?.addEventListener('change', () => {
         const v = Number(els.mpSpeedSelect.value);
-        if (D.Net && boundGame && boundGame.multiplayer) {
+        if (!boundGame || !Number.isFinite(v)) return;
+        if (boundGame.replay) {
+          if (D.Replay) {
+            D.Replay.setSpeed(v);
+            D.Game.pushMessage(boundGame, 'Replay ' + v + '×');
+            D.UI.refreshSpeedHud(boundGame);
+          }
+          return;
+        }
+        if (boundGame.multiplayer && D.Net) {
           D.Net.requestSpeed(v);
           D.Game.pushMessage(boundGame, 'Requested ' + v + '× speed — waiting for opponent…');
+          return;
+        }
+        // Single-player: apply immediately
+        boundGame.speedMult = v;
+        D.Game.pushMessage(boundGame, 'Speed ' + v + '×');
+        D.UI.refreshSpeedHud(boundGame);
+      });
+
+      $('btn-end-watch')?.addEventListener('click', () => {
+        D.UI.watchRecording(D.Net && D.Net.lastRecordingId);
+      });
+      $('btn-end-copy-replay')?.addEventListener('click', async () => {
+        const id = D.Net && D.Net.lastRecordingId;
+        if (!id || !D.Replay) return;
+        const url = D.Replay.shareUrl(id);
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(url);
+            D.Game.pushMessage(boundGame, 'Replay link copied.');
+          } else {
+            window.prompt('Copy replay link:', url);
+          }
+        } catch (err) {
+          window.prompt('Copy replay link:', url);
         }
       });
 
@@ -498,10 +531,16 @@
           }
           if (ev === 'match_end') {
             if (data.recordingId) {
+              if (D.Net) D.Net.lastRecordingId = data.recordingId;
               D.Game.pushMessage(
                 game,
-                'Match recorded — open Watch replays (id ' + data.recordingId + ').'
+                'Match recorded — Watch replay on this screen, or share ?replay=' +
+                  data.recordingId
               );
+              // Refresh end modal buttons if already showing
+              if (game.phase === 'victory' || game.phase === 'defeat') {
+                D.UI.showEnd(game);
+              }
             }
           }
           if (ev === 'error') {
@@ -670,6 +709,68 @@
       if (wrap) wrap.classList.toggle('hidden', !show);
     },
 
+    /** Show speed dropdown for SP (instant) or MP (request). Hidden in menu. */
+    updateSpeedControl(game) {
+      if (!game) {
+        D.UI.setMpSpeedVisible(false);
+        return;
+      }
+      if (game.replay) {
+        D.UI.setMpSpeedVisible(false);
+        return;
+      }
+      const playing = game.phase === 'playing' || game.phase === 'paused';
+      D.UI.setMpSpeedVisible(playing);
+      D.UI.syncSpeedSelect(game);
+      const sel = els.mpSpeedSelect || $('mp-speed-select');
+      if (sel) {
+        sel.title = game.multiplayer
+          ? 'Request speed change (opponent must accept)'
+          : 'Game speed (applies immediately)';
+      }
+    },
+
+    syncSpeedSelect(game) {
+      const sel = els.mpSpeedSelect || $('mp-speed-select');
+      if (!sel || !game) return;
+      let v = 1;
+      if (game.multiplayer) v = game.netSpeed || 1;
+      else v = game.speedMult || 1;
+      const s = String(v);
+      // Ensure option exists
+      if (![...sel.options].some((o) => o.value === s)) {
+        const opt = document.createElement('option');
+        opt.value = s;
+        opt.textContent = s + '×';
+        sel.appendChild(opt);
+      }
+      if (sel.value !== s) sel.value = s;
+    },
+
+    hideEnd() {
+      const modal = els.endModal || $('end-modal');
+      modal?.classList.add('hidden');
+    },
+
+    async watchRecording(id) {
+      if (!id || !D.Replay || !boundGame) {
+        D.Game.pushMessage(boundGame, 'No recording id for this match.');
+        return;
+      }
+      try {
+        D.UI.hideEnd();
+        D.UI.hideMenu();
+        D.UI.hideReplays();
+        const rec = await D.Replay.load(id);
+        if (!D.Replay.start(boundGame, rec)) {
+          throw new Error('start_failed');
+        }
+      } catch (err) {
+        D.Game.pushMessage(boundGame, 'Failed to load replay ' + id);
+        D.UI.showMenu();
+      }
+    },
+
     showSpeedRequest(msg) {
       if (!boundGame || !msg) return;
       // Requester already knows
@@ -778,24 +879,40 @@
             ' · ' +
             escapeHtml(it.id) +
             '</span>';
+          const actions = document.createElement('div');
+          actions.className = 'replay-row-actions';
           const btn = document.createElement('button');
           btn.type = 'button';
+          btn.className = 'primary';
           btn.textContent = 'Watch';
           btn.addEventListener('click', async () => {
             if (status) status.textContent = 'Loading ' + it.id + '…';
             try {
-              const rec = await D.Replay.load(it.id);
-              D.UI.hideReplays();
-              D.UI.hideMenu();
-              if (!D.Replay.start(boundGame, rec)) {
-                throw new Error('start_failed');
-              }
+              await D.UI.watchRecording(it.id);
             } catch (err) {
               if (status) status.textContent = 'Failed to load replay.';
             }
           });
+          const copy = document.createElement('button');
+          copy.type = 'button';
+          copy.textContent = 'Copy link';
+          copy.addEventListener('click', async () => {
+            const url = D.Replay.shareUrl(it.id);
+            try {
+              if (navigator.clipboard && navigator.clipboard.writeText) {
+                await navigator.clipboard.writeText(url);
+                if (status) status.textContent = 'Link copied for ' + it.id;
+              } else {
+                window.prompt('Copy replay link:', url);
+              }
+            } catch (err) {
+              window.prompt('Copy replay link:', url);
+            }
+          });
+          actions.appendChild(btn);
+          actions.appendChild(copy);
           row.appendChild(left);
-          row.appendChild(btn);
+          row.appendChild(actions);
           list.appendChild(row);
         }
       } catch (err) {
@@ -987,6 +1104,24 @@
           ? foeName + ' triumphs over ' + myName + '. The spice must flow… elsewhere.'
           : 'Your base has fallen. The spice must flow… elsewhere.';
       }
+      const recId = (D.Net && D.Net.lastRecordingId) || null;
+      const note = $('end-recording-note');
+      const btnWatch = $('btn-end-watch');
+      const btnCopy = $('btn-end-copy-replay');
+      // Show for either seat whenever this client received match_end with an id
+      if (recId) {
+        if (note) {
+          note.classList.remove('hidden');
+          note.textContent =
+            'Recording ' + recId + ' — Watch here, or Copy link to share (?replay=).';
+        }
+        btnWatch?.classList.remove('hidden');
+        btnCopy?.classList.remove('hidden');
+      } else {
+        note?.classList.add('hidden');
+        btnWatch?.classList.add('hidden');
+        btnCopy?.classList.add('hidden');
+      }
       if (D.Save && !game.multiplayer) D.Save.clear();
     },
 
@@ -1041,7 +1176,7 @@
         btn.addEventListener('click', (e) => {
           e.preventDefault();
           e.stopPropagation();
-          if (game.phase !== 'playing') return;
+          if (game.phase !== 'playing' || game.replay) return;
           const o = me(game);
           if (!D.Economy.hasTech(game, o, def.requires)) {
             D.Game.pushMessage(game, 'Requires ' + (def.requires || 'tech'));
@@ -1069,9 +1204,7 @@
       const o = me(game);
       D.UI.refreshMatchup(game);
       D.UI.refreshSpeedHud(game);
-      if (game.multiplayer && game.phase === 'playing') {
-        D.UI.setMpSpeedVisible(true);
-      }
+      D.UI.updateSpeedControl(game);
 
       const c = Math.floor(game.credits[o] || 0);
       const cap = game.spiceCap[o] || 0;
@@ -1106,8 +1239,16 @@
               b.buildProgress >= 1
           );
           const queueFull = qCount >= maxQ;
-          btn.disabled = !tech || !hasCY || queueFull || game.phase !== 'playing';
-          btn.classList.toggle('active', game.placement && game.placement.type === type);
+          btn.disabled =
+            !tech ||
+            !hasCY ||
+            queueFull ||
+            game.phase !== 'playing' ||
+            !!game.replay;
+          btn.classList.toggle(
+            'active',
+            !!(game.placement && game.placement.type === type && !game.replay)
+          );
           if (queueFull) {
             btn.title = (def.name || type) + ' — queue full (' + maxQ + ' max)';
           }
@@ -1297,10 +1438,95 @@
           hint.textContent = 'RMB on map sets rally point. Units train over time.';
           unitMenu.appendChild(hint);
         }
+      } else if (units.length > 1 && !buildings.length) {
+        D.UI.renderUnitGrid(game, info, units);
+      } else if (units.length >= 1) {
+        // Mixed selection: show unit grid + building count
+        if (units.length) D.UI.renderUnitGrid(game, info, units);
+        if (buildings.length) {
+          const meta = document.createElement('div');
+          meta.className = 'meta';
+          meta.style.marginTop = '6px';
+          meta.textContent =
+            buildings.length +
+            ' building' +
+            (buildings.length > 1 ? 's' : '') +
+            ' also selected';
+          info.appendChild(meta);
+        }
       } else {
         info.innerHTML = `<div class="title">${units.length} units, ${buildings.length} buildings</div>
           <div class="meta">Ctrl+1-9 assign group · 1-9 recall</div>`;
       }
+    },
+
+    /**
+     * Portrait grid for multi-unit selection.
+     * Click = select only that unit; Ctrl/⌘+click = toggle in group.
+     */
+    renderUnitGrid(game, info, units) {
+      const title = document.createElement('div');
+      title.className = 'title';
+      title.textContent = units.length + ' units selected';
+      info.appendChild(title);
+
+      const grid = document.createElement('div');
+      grid.className = 'sel-unit-grid';
+      const sorted = units.slice().sort((a, b) => {
+        if (a.type !== b.type) return a.type < b.type ? -1 : 1;
+        return a.id - b.id;
+      });
+      for (const u of sorted) {
+        const def = D.config.units[u.type];
+        const cell = document.createElement('button');
+        cell.type = 'button';
+        cell.className = 'sel-unit-cell is-selected';
+        cell.dataset.unitId = String(u.id);
+        cell.title =
+          (def?.name || u.type) +
+          ' #' +
+          u.id +
+          ' — click: select only · Ctrl+click: toggle';
+        const ic = D.Sprites.getIconCanvas('unit', u.type, 36, ownerColor(u.owner));
+        cell.appendChild(ic);
+        const hp = document.createElement('div');
+        hp.className = 'sel-unit-hp';
+        const fill = document.createElement('span');
+        fill.style.width = Math.max(0, Math.min(100, (u.hp / u.hpMax) * 100)) + '%';
+        if (u.hp / u.hpMax < 0.35) fill.style.background = 'var(--danger)';
+        else if (u.hp / u.hpMax < 0.7) fill.style.background = 'var(--accent)';
+        hp.appendChild(fill);
+        cell.appendChild(hp);
+        const nm = document.createElement('div');
+        nm.className = 'sel-unit-name';
+        nm.textContent = def?.name || u.type;
+        cell.appendChild(nm);
+        cell.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (game.replay) return;
+          const id = u.id;
+          const ctrl = !!(e.ctrlKey || e.metaKey);
+          if (ctrl) {
+            const set = new Set(game.selection.ids);
+            if (set.has(id)) set.delete(id);
+            else set.add(id);
+            game.selection.ids = [...set];
+          } else {
+            game.selection.ids = [id];
+          }
+          lastSelSig = '';
+          D.UI.renderSelection(game);
+          D.UI.refresh(game);
+        });
+        grid.appendChild(cell);
+      }
+      info.appendChild(grid);
+      const hint = document.createElement('div');
+      hint.className = 'sel-unit-hint';
+      hint.innerHTML =
+        'Click portrait = that unit only · <b>Ctrl+click</b> toggle · then move/attack as usual';
+      info.appendChild(hint);
     },
 
     updateDebug(game) {

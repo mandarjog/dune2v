@@ -46,7 +46,10 @@
             <h1>Dune II</h1>
             <span id="mp-speed-wrap" class="mp-speed-wrap hidden">
               <label for="mp-speed-select">Speed</label>
-              <select id="mp-speed-select" title="Request speed change (opponent must accept)">
+              <select
+                id="mp-speed-select"
+                title="Game speed (SP: instant · MP: opponent must accept)"
+              >
                 <option value="0.5">0.5×</option>
                 <option value="1" selected>1×</option>
                 <option value="1.5">1.5×</option>
@@ -188,14 +191,22 @@
             <tr><td><b>F5</b></td><td>Quicksave (SP)</td></tr>
             <tr><td><b>F3</b></td><td>Debug overlay</td></tr>
             <tr><td><b>?</b> or <b>/</b></td><td>This help</td></tr>
-            <tr><td><b>+</b> / <b>-</b></td><td>SP game speed up / down</td></tr>
+            <tr><td><b>+</b> / <b>-</b></td><td>Game speed up / down (SP instant; replay too)</td></tr>
           </table>
+          <h3>Selection</h3>
+          <p>
+            Multi-unit selection shows a grid in the sidebar. Click a portrait to
+            select only that unit; <b>Ctrl+click</b> toggles units in/out of the group.
+            Orders (move / attack) apply to the current selection.
+          </p>
           <h3>Multiplayer</h3>
           <p>
             Speed changes must be <b>requested</b> then <b>accepted</b> by the opponent
             (both clients share the server clock). Matches are recorded for
-            <b>Watch replays</b> on the main menu.
+            <b>Watch replays</b>. Share a recording with
+            <code>?replay=ID</code> (Copy link on the replays list).
           </p>
+          <p class="hint">Currently 1v1 only (Atreides vs Harkonnen). No 3-player / Ordos yet.</p>
         </div>
         <div class="actions">
           <button type="button" id="btn-help-close" class="primary">Close</button>
@@ -322,7 +333,10 @@
       <div class="modal">
         <h2>Victory</h2>
         <p></p>
+        <p id="end-recording-note" class="hint hidden"></p>
         <div class="actions">
+          <button id="btn-end-watch" type="button" class="primary hidden">Watch replay</button>
+          <button id="btn-end-copy-replay" type="button" class="hidden">Copy replay link</button>
           <button id="btn-end-restart" type="button">Play Again</button>
           <button id="btn-end-menu" type="button">Main Menu</button>
         </div>

@@ -56,10 +56,10 @@
       const speed =
         game.replay || game.multiplayer
           ? 1
-          : Math.max(0.25, Math.min(4, Number(game.speedMult) || 1));
+          : Math.max(0.25, Math.min(3, Number(game.speedMult) || 1));
 
-      // input poll uses real dt for smooth camera
-      if (D.Input && !game.replay) D.Input.poll(game, frameMs / 1000);
+      // input poll uses real dt for smooth camera (replay: pan only)
+      if (D.Input) D.Input.poll(game, frameMs / 1000);
 
       if (game.replay && D.Replay) {
         D.Replay.tick(game, frameMs);

@@ -345,6 +345,101 @@ button.game-btn.icon-btn .btn-label .meta.cant-afford {
   image-rendering: pixelated;
 }
 
+/* Multi-unit portraits (sidebar) */
+.sel-unit-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+  margin-top: 4px;
+}
+
+button.sel-unit-cell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 3px 2px 4px;
+  background: #1c1812;
+  border: 1px solid var(--panel-border);
+  border-radius: 3px;
+  cursor: pointer;
+  color: var(--text);
+  min-width: 0;
+}
+
+button.sel-unit-cell:hover {
+  border-color: var(--accent);
+  background: #2a241c;
+}
+
+button.sel-unit-cell.is-selected {
+  border-color: var(--player);
+  box-shadow: inset 0 0 0 1px var(--player);
+  background: #243040;
+}
+
+button.sel-unit-cell canvas {
+  width: 36px;
+  height: 36px;
+  image-rendering: pixelated;
+  border-radius: 2px;
+  background: #0e0c0a;
+}
+
+button.sel-unit-cell .sel-unit-hp {
+  position: absolute;
+  left: 3px;
+  right: 3px;
+  bottom: 14px;
+  height: 3px;
+  background: #3a3020;
+  border-radius: 1px;
+  overflow: hidden;
+}
+
+button.sel-unit-cell .sel-unit-hp > span {
+  display: block;
+  height: 100%;
+  background: var(--ok);
+}
+
+button.sel-unit-cell .sel-unit-name {
+  font-size: 9px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  line-height: 1.1;
+}
+
+.sel-unit-hint {
+  margin-top: 4px;
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.replay-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--panel-border);
+}
+
+.replay-row-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.replay-row-actions button {
+  min-width: 72px;
+}
+
 #messages {
   flex: 0 0 auto;
   height: 88px;

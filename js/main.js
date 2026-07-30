@@ -38,7 +38,23 @@
 
     // Shareable multiplayer room: ?room=ABC123 → name prompt, then join
     const room = (params.get('room') || '').trim().toUpperCase();
-    if (room && D.Net && D.UI) {
+    const replayId = (params.get('replay') || '').trim();
+    if (replayId && D.Replay && D.UI) {
+      // Deep-link to a match recording
+      (async () => {
+        try {
+          D.UI.hideMenu();
+          const rec = await D.Replay.load(replayId);
+          if (!D.Replay.start(game, rec)) {
+            D.Game.pushMessage(game, 'Could not start replay ' + replayId);
+            D.UI.showMenu();
+          }
+        } catch (err) {
+          D.Game.pushMessage(game, 'Recording not found: ' + replayId);
+          D.UI.showMenu();
+        }
+      })();
+    } else if (room && D.Net && D.UI) {
       const qName = params.get('name');
       D.UI.showJoinPrompt(room, qName || undefined);
     }

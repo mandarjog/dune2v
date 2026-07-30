@@ -189,7 +189,9 @@ function list() {
 }
 
 function get(id) {
-  const safe = String(id || '').replace(/[^a-zA-Z0-9_-]/g, '');
+  const safe = String(id || '')
+    .replace(/[^a-zA-Z0-9_-]/g, '')
+    .toUpperCase();
   if (!safe) return null;
   const mp = metaPath(safe);
   const ep = eventsPath(safe);
