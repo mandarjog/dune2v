@@ -142,6 +142,8 @@
           weapon: p.weapon,
           owner: p.owner,
           life: p.life,
+          kind: p.kind,
+          fromTurret: !!p.fromTurret,
         })),
         fx: (game.fx || []).map((f) => ({
           type: f.type,
@@ -154,6 +156,7 @@
           life: f.life,
           r: f.r,
           color: f.color,
+          owner: f.owner,
         })),
       };
     },
