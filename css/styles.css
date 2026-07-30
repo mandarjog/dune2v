@@ -463,6 +463,107 @@ button.game-btn.icon-btn .btn-label .meta.cant-afford {
   display: none;
 }
 
+/* Chat (multiplayer) */
+.chat-panel {
+  margin-top: 6px;
+  border-top: 1px solid var(--panel-border);
+  padding-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+}
+
+.chat-panel.hidden {
+  display: none;
+}
+
+.chat-log {
+  max-height: 110px;
+  overflow-y: auto;
+  background: #12100c;
+  border: 1px solid var(--panel-border);
+  padding: 6px 8px;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.chat-log .chat-line {
+  margin-bottom: 4px;
+  word-break: break-word;
+}
+
+.chat-log .chat-line .who {
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.chat-log .chat-line.mine .who {
+  color: var(--player);
+}
+
+.chat-log .chat-line.theirs .who {
+  color: var(--enemy);
+}
+
+.chat-log .chat-line .when {
+  color: var(--muted);
+  font-size: 10px;
+  margin-left: 4px;
+}
+
+.chat-form {
+  display: flex;
+  gap: 6px;
+}
+
+.chat-form input {
+  flex: 1;
+  min-width: 0;
+  background: #12100c;
+  border: 1px solid var(--panel-border);
+  color: var(--text);
+  padding: 6px 8px;
+  font-size: 12px;
+}
+
+.chat-form button {
+  background: #2c261e;
+  color: var(--text);
+  border: 1px solid var(--accent);
+  padding: 6px 10px;
+  font-size: 11px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.chat-form button:hover {
+  background: #3a3228;
+}
+
+#feedback-text {
+  width: 100%;
+  box-sizing: border-box;
+  background: #12100c;
+  border: 1px solid var(--panel-border);
+  color: var(--text);
+  padding: 8px 10px;
+  font-size: 13px;
+  font-family: inherit;
+  resize: vertical;
+  min-height: 100px;
+}
+
+#feedback-contact {
+  width: 100%;
+  box-sizing: border-box;
+  background: #12100c;
+  border: 1px solid var(--panel-border);
+  color: var(--text);
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
 .mp-join-row button {
   min-width: 72px;
 }

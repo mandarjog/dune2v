@@ -179,20 +179,42 @@
         D.Renderer.drawUnit(game, u);
       }
 
-      // projectiles — hide enemy shots in shroud
-      for (const p of game.projectiles) {
-        if (
-          p.owner !== me(game) &&
-          D.config.features.fog &&
-          !D.Map.isVisible(game, me(game), Math.floor(p.x), Math.floor(p.y))
-        ) {
-          continue;
+      // projectiles — show if shell tile or path endpoint is visible to local player
+      const local = me(game);
+      for (const p of game.projectiles || []) {
+        if (D.config.features.fog && p.owner !== local) {
+          const visHere = D.Map.isVisible(game, local, Math.floor(p.x), Math.floor(p.y));
+          const visTgt =
+            p.tx != null && D.Map.isVisible(game, local, Math.floor(p.tx), Math.floor(p.ty));
+          if (!visHere && !visTgt) continue;
         }
         const s = D.Renderer.worldToScreen(game, p.x, p.y);
-        ctx.fillStyle = p.owner === me(game) ? '#9cf' : '#f96';
+        const friendly = p.owner === local;
+        const col = friendly ? '#9cf' : '#f96';
+        const big = p.fromTurret || p.kind === 'shell';
+        // Trail toward target for readability
+        if (p.tx != null && p.ty != null) {
+          const s1 = D.Renderer.worldToScreen(game, p.tx, p.ty);
+          ctx.strokeStyle = col;
+          ctx.globalAlpha = 0.35;
+          ctx.lineWidth = big ? 2 : 1;
+          ctx.beginPath();
+          ctx.moveTo(s.x, s.y);
+          // short tail opposite of travel
+          const ang = Math.atan2(p.ty - p.y, p.tx - p.x);
+          ctx.lineTo(s.x - Math.cos(ang) * (big ? 14 : 8), s.y - Math.sin(ang) * (big ? 14 : 8));
+          ctx.stroke();
+          ctx.globalAlpha = 1;
+        }
+        ctx.fillStyle = col;
         ctx.beginPath();
-        ctx.arc(s.x, s.y, 3, 0, Math.PI * 2);
+        ctx.arc(s.x, s.y, big ? 5 : 3.5, 0, Math.PI * 2);
         ctx.fill();
+        ctx.strokeStyle = '#fff';
+        ctx.globalAlpha = 0.5;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.globalAlpha = 1;
       }
 
       // fx
@@ -203,8 +225,8 @@
           if (
             D.config.features.fog &&
             fx != null &&
-            !D.Map.isVisible(game, me(game), Math.floor(fx), Math.floor(fy)) &&
-            !D.Map.isExplored(game, me(game), Math.floor(fx), Math.floor(fy))
+            !D.Map.isVisible(game, local, Math.floor(fx), Math.floor(fy)) &&
+            !D.Map.isExplored(game, local, Math.floor(fx), Math.floor(fy))
           ) {
             continue;
           }
@@ -212,11 +234,22 @@
             const s0 = D.Renderer.worldToScreen(game, f.x0, f.y0);
             const s1 = D.Renderer.worldToScreen(game, f.x1, f.y1);
             ctx.strokeStyle = f.color || '#fff';
-            ctx.globalAlpha = Math.max(0, f.life * 8);
+            ctx.lineWidth = 2;
+            ctx.globalAlpha = Math.max(0, Math.min(1, f.life * 10));
             ctx.beginPath();
             ctx.moveTo(s0.x, s0.y);
             ctx.lineTo(s1.x, s1.y);
             ctx.stroke();
+            ctx.globalAlpha = 1;
+            ctx.lineWidth = 1;
+          } else if (f.type === 'muzzle') {
+            const s = D.Renderer.worldToScreen(game, f.x, f.y);
+            const a = Math.max(0, f.life * 8);
+            ctx.fillStyle = f.color || '#ffc';
+            ctx.globalAlpha = a;
+            ctx.beginPath();
+            ctx.arc(s.x, s.y, (f.r || 0.3) * ts() * (1.4 - f.life), 0, Math.PI * 2);
+            ctx.fill();
             ctx.globalAlpha = 1;
           } else if (f.type === 'explode') {
             const s = D.Renderer.worldToScreen(game, f.x, f.y);

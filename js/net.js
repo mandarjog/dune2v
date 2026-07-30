@@ -475,6 +475,11 @@
         return;
       }
 
+      if (msg.type === 'chat') {
+        D.Net._emit('chat', msg);
+        return;
+      }
+
       // legacy: ignore client cmd relay
       if (msg.type === 'cmd') return;
     },
@@ -688,6 +693,17 @@
 
     sharePath() {
       return D.Net.room ? roomLink(D.Net.room) : '';
+    },
+
+    /** Send a chat line to the room (both seats receive, including sender). */
+    sendChat(text) {
+      const t = String(text || '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 200);
+      if (!t) return false;
+      if (!D.Net.game || !D.Net.game.multiplayer) return false;
+      return D.Net._send({ type: 'chat', text: t });
     },
   };
 })(typeof window !== 'undefined' ? window : globalThis);

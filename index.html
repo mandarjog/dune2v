@@ -37,9 +37,24 @@
         <div class="hint">
           LMB select · box select · RMB move/attack<br />
           Ctrl+RMB attack-move · E deploy MCV · H harvest<br />
-          Ctrl+1-9 groups · Esc pause · F3 debug
+          Ctrl+1-9 groups · Esc pause · F3 debug · Enter chat
         </div>
         <div id="messages"></div>
+
+        <div id="chat-panel" class="chat-panel hidden">
+          <div class="section-title">Chat</div>
+          <div id="chat-log" class="chat-log"></div>
+          <form id="chat-form" class="chat-form" autocomplete="off">
+            <input
+              id="chat-input"
+              type="text"
+              maxlength="200"
+              placeholder="Message opponent…"
+              spellcheck="true"
+            />
+            <button type="submit" id="btn-chat-send">Send</button>
+          </form>
+        </div>
       </aside>
     </div>
 
@@ -91,6 +106,41 @@
           SP autosaves (F5 / Esc pause). MP: share <code>?room=CODE</code>.<br />
           <code>?debug=1</code> · <code>?ai=0</code> · <code>?fog=0</code>
         </p>
+        <div class="actions" style="margin-top: 12px">
+          <button id="btn-feedback" type="button">Send feedback</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Feedback -->
+    <div id="feedback-modal" class="modal-backdrop hidden">
+      <div class="modal modal-wide">
+        <h2>Feedback</h2>
+        <p class="hint" style="text-align: left; margin-bottom: 10px">
+          Bugs, balance, multiplayer issues, feature ideas — anything helps.
+        </p>
+        <label class="lobby-link-label" for="feedback-text">Message</label>
+        <textarea
+          id="feedback-text"
+          rows="5"
+          maxlength="2000"
+          placeholder="What happened? What did you expect?"
+        ></textarea>
+        <label class="lobby-link-label" for="feedback-contact" style="margin-top: 10px"
+          >Contact (optional)</label
+        >
+        <input
+          id="feedback-contact"
+          type="text"
+          maxlength="120"
+          placeholder="email or Discord"
+          autocomplete="email"
+        />
+        <p id="feedback-status" class="hint" style="margin-top: 10px"></p>
+        <div class="actions" style="margin-top: 14px">
+          <button id="btn-feedback-send" type="button" class="primary">Submit</button>
+          <button id="btn-feedback-cancel" type="button">Close</button>
+        </div>
       </div>
     </div>
 

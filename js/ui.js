@@ -83,6 +83,14 @@
         joinModal: $('join-modal'),
         joinNameInput: $('join-name-input'),
         joinRoomLabel: $('join-room-label'),
+        chatPanel: $('chat-panel'),
+        chatLog: $('chat-log'),
+        chatForm: $('chat-form'),
+        chatInput: $('chat-input'),
+        feedbackModal: $('feedback-modal'),
+        feedbackText: $('feedback-text'),
+        feedbackContact: $('feedback-contact'),
+        feedbackStatus: $('feedback-status'),
       };
 
       D.UI._pendingJoinRoom = null;
@@ -205,6 +213,33 @@
         D.UI.refresh(game);
         D.Renderer.rebuildTerrain(game);
         D.Game.pushMessage(game, 'Game restored.');
+      });
+
+      $('btn-feedback')?.addEventListener('click', () => {
+        D.UI.showFeedback();
+      });
+      $('btn-feedback-cancel')?.addEventListener('click', () => {
+        D.UI.hideFeedback();
+      });
+      $('btn-feedback-send')?.addEventListener('click', () => {
+        D.UI.submitFeedback();
+      });
+
+      els.chatForm?.addEventListener('submit', (e) => {
+        e.preventDefault();
+        D.UI.sendChat();
+      });
+
+      // Enter focuses chat when multiplayer (unless typing in an input already)
+      window.addEventListener('keydown', (e) => {
+        if (e.code !== 'Enter' || e.ctrlKey || e.metaKey || e.altKey) return;
+        const tag = (e.target && e.target.tagName) || '';
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target?.isContentEditable) return;
+        if (!boundGame || !boundGame.multiplayer || boundGame.phase !== 'playing') return;
+        const input = els.chatInput || $('chat-input');
+        if (!input || (els.chatPanel && els.chatPanel.classList.contains('hidden'))) return;
+        e.preventDefault();
+        input.focus();
       });
 
       $('btn-mp-host')?.addEventListener('click', () => {
@@ -332,6 +367,7 @@
         game.multiplayer = false;
         game.localOwner = 'player';
         D.config.features.ai = true;
+        D.UI.setChatVisible(false);
         if (D.Save) D.Save.clear();
         D.UI.updateContinueButton();
         D.UI.showMenu();
@@ -354,8 +390,18 @@
             D.UI.hideLobby();
             D.UI.hideMenu();
             lastSelSig = '';
+            D.UI.setChatVisible(true);
             D.UI.refreshMatchup(game);
             D.UI.refresh(game);
+          }
+          if (ev === 'joined') {
+            D.UI.setChatVisible(!!(game && game.multiplayer));
+          }
+          if (ev === 'left' || ev === 'disconnect') {
+            D.UI.setChatVisible(false);
+          }
+          if (ev === 'chat') {
+            D.UI.appendChat(data);
           }
           if (ev === 'error') {
             const err = (data && data.error) || D.Net.lastError || 'error';
@@ -450,6 +496,110 @@
     hideJoinPrompt() {
       const modal = els.joinModal || $('join-modal');
       modal?.classList.add('hidden');
+    },
+
+    setChatVisible(show) {
+      const panel = els.chatPanel || $('chat-panel');
+      if (!panel) return;
+      panel.classList.toggle('hidden', !show);
+      if (!show && els.chatLog) els.chatLog.innerHTML = '';
+    },
+
+    appendChat(msg) {
+      const log = els.chatLog || $('chat-log');
+      if (!log || !msg) return;
+      const mine = msg.seat && boundGame && msg.seat === D.Game.me(boundGame);
+      const line = document.createElement('div');
+      line.className = 'chat-line ' + (mine ? 'mine' : 'theirs');
+      const who = document.createElement('span');
+      who.className = 'who';
+      who.textContent = msg.name || (msg.seat === 'enemy' ? 'Harkonnen' : 'Atreides');
+      const when = document.createElement('span');
+      when.className = 'when';
+      try {
+        when.textContent = new Date(msg.ts || Date.now()).toLocaleTimeString([], {
+          hour: '2-digit',
+          minute: '2-digit',
+        });
+      } catch (e) {
+        when.textContent = '';
+      }
+      const body = document.createElement('span');
+      body.textContent = ': ' + (msg.text || '');
+      line.appendChild(who);
+      line.appendChild(when);
+      line.appendChild(body);
+      log.appendChild(line);
+      while (log.children.length > 40) log.removeChild(log.firstChild);
+      log.scrollTop = log.scrollHeight;
+      // Also toast briefly in the game message strip
+      if (!mine && D.Game && boundGame) {
+        D.Game.pushMessage(boundGame, (msg.name || 'Opponent') + ': ' + (msg.text || ''));
+      }
+    },
+
+    sendChat() {
+      const input = els.chatInput || $('chat-input');
+      if (!input || !D.Net) return;
+      const text = input.value;
+      if (!D.Net.sendChat(text)) return;
+      input.value = '';
+      input.focus();
+    },
+
+    showFeedback() {
+      const modal = els.feedbackModal || $('feedback-modal');
+      if (!modal) return;
+      if (els.feedbackStatus) els.feedbackStatus.textContent = '';
+      if (els.feedbackText) els.feedbackText.value = '';
+      modal.classList.remove('hidden');
+      setTimeout(() => els.feedbackText?.focus(), 0);
+    },
+
+    hideFeedback() {
+      const modal = els.feedbackModal || $('feedback-modal');
+      modal?.classList.add('hidden');
+    },
+
+    async submitFeedback() {
+      const textEl = els.feedbackText || $('feedback-text');
+      const contactEl = els.feedbackContact || $('feedback-contact');
+      const status = els.feedbackStatus || $('feedback-status');
+      const text = (textEl && textEl.value) || '';
+      const contact = (contactEl && contactEl.value) || '';
+      if (!text.trim()) {
+        if (status) status.textContent = 'Please write a short message.';
+        return;
+      }
+      if (status) status.textContent = 'Sending…';
+      const btn = $('btn-feedback-send');
+      if (btn) btn.disabled = true;
+      try {
+        const res = await fetch('/api/feedback', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text: text.trim(),
+            contact: contact.trim(),
+            room: (boundGame && boundGame.roomCode) || (D.Net && D.Net.room) || null,
+            href: location.href,
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.ok) {
+          throw new Error((data && data.error) || 'send_failed');
+        }
+        if (status) status.textContent = 'Thanks — feedback sent.';
+        if (textEl) textEl.value = '';
+        setTimeout(() => D.UI.hideFeedback(), 900);
+      } catch (err) {
+        if (status) {
+          status.textContent =
+            'Could not send (need the live server). Try again from dune2v.fly.dev.';
+        }
+      } finally {
+        if (btn) btn.disabled = false;
+      }
     },
 
     refreshLobby() {

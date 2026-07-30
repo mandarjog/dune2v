@@ -130,6 +130,31 @@
         })),
         nextId: D.Entities.nextId(),
         messages: (game.messages || []).slice(0, 10),
+        // Combat visuals — required for multiplayer clients (turret shells, tracers)
+        projectiles: (game.projectiles || []).map((p) => ({
+          id: p.id,
+          x: p.x,
+          y: p.y,
+          tx: p.tx,
+          ty: p.ty,
+          targetId: p.targetId,
+          speed: p.speed,
+          weapon: p.weapon,
+          owner: p.owner,
+          life: p.life,
+        })),
+        fx: (game.fx || []).map((f) => ({
+          type: f.type,
+          x: f.x,
+          y: f.y,
+          x0: f.x0,
+          y0: f.y0,
+          x1: f.x1,
+          y1: f.y1,
+          life: f.life,
+          r: f.r,
+          color: f.color,
+        })),
       };
     },
 
@@ -339,8 +364,8 @@
       }
       D.Entities.setNextId(Math.max(maxId, data.nextId || 1));
 
-      // projectiles optional
       game.projectiles = (data.projectiles || []).map((p) => ({ ...p }));
+      game.fx = (data.fx || []).map((f) => ({ ...f }));
       if (!data.map.blocked) D.Map.rebuildBlocked(game);
       D.Economy.tickPower(game);
       D.Economy.recalcSpiceCap(game);
@@ -377,8 +402,8 @@
       game.selection = { ids: (data.selection && data.selection.ids) || [], box: null };
       game.controlGroups = data.controlGroups || game.controlGroups;
       game.ai = data.ai || { state: 'Bootstrap', waveAt: 0, lastScoutTick: 0, memory: {} };
-      game.projectiles = [];
-      game.fx = [];
+      game.projectiles = (data.projectiles || []).map((p) => ({ ...p }));
+      game.fx = (data.fx || []).map((f) => ({ ...f }));
       game.worms = [];
       game.placement = null;
       game.messages = data.messages || [];

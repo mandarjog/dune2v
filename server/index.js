@@ -61,6 +61,32 @@ function send(res, status, body, headers = {}) {
   res.end(body);
 }
 
+/** @type {{ at: number, text: string, contact: string, ua: string, ip: string }[]} */
+const feedbackLog = [];
+const FEEDBACK_MAX = 200;
+
+function readJsonBody(req, limit = 8000) {
+  return new Promise((resolve, reject) => {
+    let raw = '';
+    req.on('data', (chunk) => {
+      raw += chunk;
+      if (raw.length > limit) {
+        reject(new Error('too_large'));
+        req.destroy();
+      }
+    });
+    req.on('end', () => {
+      if (!raw) return resolve({});
+      try {
+        resolve(JSON.parse(raw));
+      } catch {
+        reject(new Error('invalid_json'));
+      }
+    });
+    req.on('error', reject);
+  });
+}
+
 function serveStatic(req, res) {
   // Strip query string first — shareable MP links are /?room=CODE
   let urlPath = (req.url || '/').split('?')[0] || '/';
@@ -73,12 +99,65 @@ function serveStatic(req, res) {
         service: 'dune2v',
         protocol: PROTOCOL,
         rooms: rooms.size,
+        feedback: feedbackLog.length,
       }),
       {
         'Content-Type': 'application/json; charset=utf-8',
         'Cache-Control': 'no-store',
       }
     );
+  }
+
+  if (urlPath === '/api/feedback' && req.method === 'POST') {
+    return readJsonBody(req)
+      .then((body) => {
+        const text = String(body.text || body.message || '')
+          .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '')
+          .trim()
+          .slice(0, 2000);
+        const contact = String(body.contact || '')
+          .replace(/[\u0000-\u001f]/g, '')
+          .trim()
+          .slice(0, 120);
+        if (text.length < 3) {
+          return send(
+            res,
+            400,
+            JSON.stringify({ ok: false, error: 'empty' }),
+            { 'Content-Type': 'application/json; charset=utf-8' }
+          );
+        }
+        const entry = {
+          at: Date.now(),
+          text,
+          contact,
+          ua: String(req.headers['user-agent'] || '').slice(0, 200),
+          ip: String(req.headers['fly-client-ip'] || req.socket.remoteAddress || '').slice(0, 80),
+        };
+        feedbackLog.push(entry);
+        if (feedbackLog.length > FEEDBACK_MAX) feedbackLog.shift();
+        console.log(
+          `[feedback] ${new Date(entry.at).toISOString()} contact=${contact || '-'} ${text.slice(0, 120)}`
+        );
+        return send(
+          res,
+          200,
+          JSON.stringify({ ok: true }),
+          {
+            'Content-Type': 'application/json; charset=utf-8',
+            'Cache-Control': 'no-store',
+          }
+        );
+      })
+      .catch((err) => {
+        const code = err && err.message === 'too_large' ? 413 : 400;
+        return send(
+          res,
+          code,
+          JSON.stringify({ ok: false, error: String(err.message || err) }),
+          { 'Content-Type': 'application/json; charset=utf-8' }
+        );
+      });
   }
 
   if (urlPath.startsWith('/ws')) {
@@ -663,13 +742,22 @@ function setupWs(server) {
       }
 
       if (msg.type === 'chat') {
+        const text = String(msg.text || '')
+          .replace(/[\u0000-\u001f\u007f]/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim()
+          .slice(0, 200);
+        if (!text) return;
+        const slot = ws.seat && room.slots.get(ws.seat);
         broadcastRoom(
           room,
           {
             type: 'chat',
             from: ws.playerId,
             seat: ws.seat,
-            text: String(msg.text || '').slice(0, 200),
+            name: (slot && slot.name) || ws.displayName || 'Commander',
+            text,
+            ts: Date.now(),
           },
           null
         );

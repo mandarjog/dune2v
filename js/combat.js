@@ -53,8 +53,9 @@
       y0: from.y,
       x1: tc.x,
       y1: tc.y,
-      life: 0.08,
+      life: 0.14,
       color: attacker.owner === 'player' ? '#9cf' : '#f96',
+      owner: attacker.owner,
     });
   }
 
@@ -67,6 +68,7 @@
       target.tileW != null
         ? D.Entities.buildingCenter(target)
         : { x: target.x, y: target.y };
+    const isTurret = attacker.tileW != null && attacker.type === 'gunTurret';
     game.projectiles.push({
       id: D.Entities.nextId(),
       x: from.x,
@@ -74,10 +76,26 @@
       tx: tc.x,
       ty: tc.y,
       targetId: target.id,
-      speed: D.config.projectileSpeed,
+      // Slightly slower shells = longer on-screen travel (esp. turrets)
+      speed: isTurret
+        ? (D.config.projectileSpeed || 8) * 0.75
+        : D.config.projectileSpeed || 8,
       weapon,
       owner: attacker.owner,
       life: 3,
+      kind: isTurret ? 'shell' : weapon.kind || 'shell',
+      fromTurret: isTurret,
+    });
+    // Muzzle flash so fire is obvious even between net snapshots
+    game.fx = game.fx || [];
+    game.fx.push({
+      type: 'muzzle',
+      x: from.x,
+      y: from.y,
+      life: 0.12,
+      r: isTurret ? 0.35 : 0.22,
+      owner: attacker.owner,
+      color: attacker.owner === 'player' ? '#9cf' : '#f96',
     });
   }
 

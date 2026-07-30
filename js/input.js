@@ -134,6 +134,13 @@
     },
 
     onKeyDown(game, e) {
+      // Don't steal typing from chat / feedback / name fields
+      const tag = (e.target && e.target.tagName) || '';
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target?.isContentEditable) {
+        if (e.code === 'Escape' && e.target.blur) e.target.blur();
+        return;
+      }
+
       if (e.code === 'ArrowLeft' || e.code === 'KeyA') panKeys.left = true;
       if (e.code === 'ArrowRight' || e.code === 'KeyD') panKeys.right = true;
       if (e.code === 'ArrowUp' || e.code === 'KeyW') panKeys.up = true;
