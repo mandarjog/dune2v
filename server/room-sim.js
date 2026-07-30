@@ -5,13 +5,14 @@ const recordings = require('./recordings');
 
 const BASE_DT = 0.05; // 20 Hz — must match D.config.DT_SEC
 const STATE_EVERY = 2;
-/** Record a keyframe every N sim ticks (~0.5s at 1x). */
-const RECORD_EVERY = 10;
+/** Record keyframe every N sim ticks (~1s at 1×). */
+const RECORD_EVERY = 20;
 const SPEED_OPTIONS = [0.5, 1, 1.5, 2, 3];
+/** Hard cap frames per match to protect disk/load. */
+const MAX_FRAMES = 900;
 
 /**
  * Server-authoritative skirmish for one room.
- * Both browser clients only send commands and render snapshots.
  */
 class RoomSim {
   constructor(roomId, meta) {
@@ -22,10 +23,11 @@ class RoomSim {
     this.timer = null;
     this.running = false;
     this.speed = 1;
-    this.onState = null; // (payload, tick, extra) => void
-    this.onEnd = null; // (phase, recordingMeta) => void
-    this._recording = null;
+    this.onState = null;
+    this.onEnd = null;
+    this._rec = null;
     this._lastRecordTick = -999;
+    this._frameCount = 0;
   }
 
   start() {
@@ -43,18 +45,13 @@ class RoomSim {
     this.game._serverSim = true;
     this.running = true;
     this.speed = 1;
+    this._frameCount = 0;
 
-    this._recording = {
-      id: recordings.newId(),
+    this._rec = recordings.begin({
       room: this.roomId,
       names: this.meta.names || {},
-      startedAt: Date.now(),
-      endedAt: 0,
-      durationTicks: 0,
-      phase: 'playing',
       baseDt: BASE_DT,
-      frames: [],
-    };
+    });
     this._lastRecordTick = -999;
     this._recordFrame(true);
 
@@ -68,13 +65,10 @@ class RoomSim {
       this.timer = null;
     }
     if (!this.running) return;
-    const ms = Math.max(8, (BASE_DT * 1000) / this.speed);
+    const ms = Math.max(10, (BASE_DT * 1000) / this.speed);
     this.timer = setInterval(() => this._tick(), ms);
   }
 
-  /**
-   * @param {number} mult 0.5 | 1 | 1.5 | 2 | 3
-   */
   setSpeed(mult) {
     const s = Number(mult);
     if (!SPEED_OPTIONS.includes(s)) return false;
@@ -89,25 +83,22 @@ class RoomSim {
       clearInterval(this.timer);
       this.timer = null;
     }
-    // Finalize recording before dropping game
-    if (this._recording && this.game) {
-      this._recordFrame(true);
-      this._recording.endedAt = Date.now();
-      this._recording.durationTicks = this.game.tick;
-      this._recording.phase = this.game.phase || 'unknown';
-      try {
-        recordings.save(this._recording);
-      } catch (e) {
-        console.warn('[room-sim] record save failed', e.message);
-      }
+    let info = null;
+    if (this._rec) {
+      info = recordings.finish(
+        this._rec,
+        this.game ? this.game.phase : 'unknown',
+        this.game ? this.game.tick : 0
+      );
+      this._rec = null;
     }
     this.game = null;
+    return info;
   }
 
-  /** Current snapshot for reconnecting clients (null if not running). */
   snapshot() {
     if (!this.running || !this.game) return null;
-    return this._serialize(false);
+    return this._serializeLive();
   }
 
   get tick() {
@@ -119,7 +110,7 @@ class RoomSim {
   }
 
   get recordingId() {
-    return this._recording ? this._recording.id : null;
+    return this._rec ? this._rec.id : null;
   }
 
   _tick() {
@@ -129,45 +120,38 @@ class RoomSim {
       this._broadcast(true);
       this._recordFrame(true);
       const phase = this.game.phase;
-      const recId = this._recording && this._recording.id;
+      const recId = this.recordingId;
       if (this.onEnd) this.onEnd(phase, { recordingId: recId });
       this.stop();
       return;
     }
-    // Always advance one fixed sim step; wall-clock rate comes from timer
     D.Game.tick(this.game, BASE_DT);
     this._recordFrame(false);
     this._broadcast(false);
   }
 
   _recordFrame(force) {
-    if (!this._recording || !this.game) return;
+    if (!this._rec || !this.game) return;
+    if (this._frameCount >= MAX_FRAMES && !force) return;
     const t = this.game.tick;
     if (!force && t - this._lastRecordTick < RECORD_EVERY) return;
     this._lastRecordTick = t;
-    const full = force || t === 0 || this._recording.frames.length === 0;
-    const payload = this._serialize(!full);
+    const full = force || this._frameCount === 0;
+    const payload = this._serializeRecord(full);
     if (!payload) return;
-    this._recording.frames.push({ tick: t, full: !!full, state: payload });
-    // Cap runaway size (~30 min at 2 frames/s)
-    if (this._recording.frames.length > 4000) {
-      this._recording.frames.splice(1, 200); // drop early middles, keep start
-    }
+    recordings.appendFrame(this._rec, { tick: t, full: !!full, state: payload });
+    this._frameCount++;
   }
 
   _broadcast(force) {
     if (!this.game || !this.onState) return;
     if (!force && this.game.tick % STATE_EVERY !== 0) return;
-    const payload = this._serialize(false);
-    if (payload) {
-      this.onState(payload, this.game.tick, { speed: this.speed });
-    }
+    const payload = this._serializeLive();
+    if (payload) this.onState(payload, this.game.tick, { speed: this.speed });
   }
 
-  /**
-   * @param {boolean} thin - omit static map tiles (keep spice/blocked)
-   */
-  _serialize(thin) {
+  /** Live net snapshot — keep lean (no fog; client recomputes). */
+  _serializeLive() {
     const D = this.D;
     const data = D.Save.serialize(this.game);
     if (!data) return null;
@@ -175,14 +159,32 @@ class RoomSim {
     delete data.selection;
     delete data.controlGroups;
     delete data.messages;
-    if (thin && data.map) {
-      // Replay keeps tiles from last full frame
-      delete data.map.tiles;
+    delete data.fog;
+    // Paths bloat JSON; clients don't need them for rendering
+    if (data.units) {
+      for (const u of data.units) {
+        delete u.path;
+        delete u.orders;
+      }
     }
-    // Fog is large; recompute on client from units
-    if (data.fog) {
-      // keep explored sticky only on full frames
-      if (thin) delete data.fog;
+    return data;
+  }
+
+  /**
+   * Recording snapshot — even leaner on thin frames.
+   * @param {boolean} full include map tiles
+   */
+  _serializeRecord(full) {
+    const data = this._serializeLive();
+    if (!data) return null;
+    if (!full && data.map) {
+      delete data.map.tiles;
+      // spice still useful for visual
+    }
+    // Drop projectiles/fx on thin frames to save space (optional keep)
+    if (!full) {
+      data.projectiles = [];
+      data.fx = [];
     }
     return data;
   }

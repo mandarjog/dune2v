@@ -17,6 +17,7 @@ const path = require('path');
 const { WebSocketServer } = require('ws');
 const { RoomSim, SPEED_OPTIONS } = require('./room-sim');
 const recordings = require('./recordings');
+const feedbackStore = require('./feedback-store');
 
 const PORT = Number(process.env.PORT || 8080);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -62,10 +63,6 @@ function send(res, status, body, headers = {}) {
   res.end(body);
 }
 
-/** @type {{ at: number, text: string, contact: string, ua: string, ip: string }[]} */
-const feedbackLog = [];
-const FEEDBACK_MAX = 200;
-
 function readJsonBody(req, limit = 8000) {
   return new Promise((resolve, reject) => {
     let raw = '';
@@ -100,7 +97,7 @@ function serveStatic(req, res) {
         service: 'dune2v',
         protocol: PROTOCOL,
         rooms: rooms.size,
-        feedback: feedbackLog.length,
+        feedback: feedbackStore.count(),
       }),
       {
         'Content-Type': 'application/json; charset=utf-8',
@@ -114,6 +111,16 @@ function serveStatic(req, res) {
       'Content-Type': 'application/json; charset=utf-8',
       'Cache-Control': 'no-store',
     });
+  }
+
+  // Optional: dump recent feedback (not linked in UI; for ops)
+  if (urlPath === '/api/feedback' && req.method === 'GET') {
+    return send(
+      res,
+      200,
+      JSON.stringify({ ok: true, count: feedbackStore.count(), path: feedbackStore.feedbackPath() }),
+      { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }
+    );
   }
 
   if (urlPath.startsWith('/api/recordings/') && req.method === 'GET') {
@@ -158,16 +165,17 @@ function serveStatic(req, res) {
           contact,
           ua: String(req.headers['user-agent'] || '').slice(0, 200),
           ip: String(req.headers['fly-client-ip'] || req.socket.remoteAddress || '').slice(0, 80),
+          room: body.room ? String(body.room).slice(0, 32) : null,
+          href: body.href ? String(body.href).slice(0, 300) : null,
         };
-        feedbackLog.push(entry);
-        if (feedbackLog.length > FEEDBACK_MAX) feedbackLog.shift();
+        const saved = feedbackStore.append(entry);
         console.log(
-          `[feedback] ${new Date(entry.at).toISOString()} contact=${contact || '-'} ${text.slice(0, 120)}`
+          `[feedback] ${new Date(entry.at).toISOString()} disk=${saved} contact=${contact || '-'} ${text.slice(0, 120)}`
         );
         return send(
           res,
           200,
-          JSON.stringify({ ok: true }),
+          JSON.stringify({ ok: true, saved }),
           {
             'Content-Type': 'application/json; charset=utf-8',
             'Cache-Control': 'no-store',
