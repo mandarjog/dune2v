@@ -6,3 +6,4 @@ npm-debug.log*
 !.env.example
 .fly/
 dist/index.html
+data/recordings/

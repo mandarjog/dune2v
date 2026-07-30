@@ -92,6 +92,16 @@
         feedbackText: $('feedback-text'),
         feedbackContact: $('feedback-contact'),
         feedbackStatus: $('feedback-status'),
+        helpModal: $('help-modal'),
+        speedModal: $('speed-modal'),
+        speedModalText: $('speed-modal-text'),
+        speedHud: $('speed-hud'),
+        mpSpeedWrap: $('mp-speed-wrap'),
+        mpSpeedSelect: $('mp-speed-select'),
+        replaysModal: $('replays-modal'),
+        replaysList: $('replays-list'),
+        replaysStatus: $('replays-status'),
+        replayBar: $('replay-bar'),
       };
 
       D.UI._pendingJoinRoom = null;
@@ -223,6 +233,54 @@
       };
       $('btn-feedback')?.addEventListener('click', openFeedback);
       $('btn-feedback-corner')?.addEventListener('click', openFeedback);
+
+      const openHelp = (e) => {
+        e?.preventDefault?.();
+        D.UI.showHelp();
+      };
+      $('btn-help-corner')?.addEventListener('click', openHelp);
+      $('btn-help-menu')?.addEventListener('click', openHelp);
+      $('btn-help-sidebar')?.addEventListener('click', openHelp);
+      $('btn-help-close')?.addEventListener('click', () => D.UI.hideHelp());
+
+      $('btn-speed-accept')?.addEventListener('click', () => {
+        if (D.Net) D.Net.respondSpeed(true);
+        D.UI.hideSpeedModal();
+      });
+      $('btn-speed-reject')?.addEventListener('click', () => {
+        if (D.Net) D.Net.respondSpeed(false);
+        D.UI.hideSpeedModal();
+      });
+
+      els.mpSpeedSelect?.addEventListener('change', () => {
+        const v = Number(els.mpSpeedSelect.value);
+        if (D.Net && boundGame && boundGame.multiplayer) {
+          D.Net.requestSpeed(v);
+          D.Game.pushMessage(boundGame, 'Requested ' + v + '× speed — waiting for opponent…');
+        }
+      });
+
+      $('btn-replays')?.addEventListener('click', () => D.UI.showReplays());
+      $('btn-replays-close')?.addEventListener('click', () => D.UI.hideReplays());
+      $('btn-replays-refresh')?.addEventListener('click', () => D.UI.loadReplaysList());
+
+      $('btn-replay-pause')?.addEventListener('click', () => {
+        if (!D.Replay) return;
+        const on = D.Replay.togglePause();
+        const b = $('btn-replay-pause');
+        if (b) b.textContent = on ? 'Pause' : 'Play';
+      });
+      $('btn-replay-exit')?.addEventListener('click', () => {
+        if (D.Replay && boundGame) D.Replay.stop(boundGame);
+        D.UI.showMenu();
+      });
+      document.querySelectorAll('[data-replay-speed]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          if (!D.Replay) return;
+          D.Replay.setSpeed(Number(btn.getAttribute('data-replay-speed')));
+          D.Game.pushMessage(boundGame, 'Replay ' + D.Replay.speed + '×');
+        });
+      });
       $('btn-feedback-cancel')?.addEventListener('click', () => {
         D.UI.hideFeedback();
       });
@@ -350,15 +408,23 @@
 
       $('btn-end-restart')?.addEventListener('click', () => {
         els.endModal.classList.add('hidden');
+        if (game.replay && D.Replay) {
+          D.Replay.stop(game);
+          D.UI.showMenu();
+          return;
+        }
         if (game.multiplayer) {
           if (D.Net) D.Net.leave();
           game.multiplayer = false;
           game.localOwner = 'player';
           D.config.features.ai = true;
+          D.UI.setChatVisible(false);
+          D.UI.setMpSpeedVisible(false);
           D.UI.showMenu();
           return;
         }
         if (D.Save) D.Save.clear();
+        game.speedMult = 1;
         D.Game.startSkirmish(game, D.MAPS.skirmish1);
         lastSelSig = '';
         D.UI.refresh(game);
@@ -396,17 +462,47 @@
             D.UI.hideMenu();
             lastSelSig = '';
             D.UI.setChatVisible(true);
+            D.UI.setMpSpeedVisible(true);
             D.UI.refreshMatchup(game);
+            D.UI.refreshSpeedHud(game);
             D.UI.refresh(game);
           }
           if (ev === 'joined') {
             D.UI.setChatVisible(!!(game && game.multiplayer));
+            D.UI.setMpSpeedVisible(!!(game && game.multiplayer && game.phase === 'playing'));
           }
           if (ev === 'left' || ev === 'disconnect') {
             D.UI.setChatVisible(false);
+            D.UI.setMpSpeedVisible(false);
+            D.UI.hideSpeedModal();
           }
           if (ev === 'chat') {
             D.UI.appendChat(data);
+          }
+          if (ev === 'speed_request') {
+            D.UI.showSpeedRequest(data);
+          }
+          if (ev === 'speed') {
+            if (game) game.netSpeed = data.speed;
+            D.UI.hideSpeedModal();
+            D.UI.refreshSpeedHud(game);
+            if (els.mpSpeedSelect) els.mpSpeedSelect.value = String(data.speed);
+            D.Game.pushMessage(game, 'Speed set to ' + data.speed + '×');
+          }
+          if (ev === 'speed_rejected') {
+            D.UI.hideSpeedModal();
+            D.Game.pushMessage(
+              game,
+              (data.byName || 'Opponent') + ' declined ' + data.speed + '× speed.'
+            );
+          }
+          if (ev === 'match_end') {
+            if (data.recordingId) {
+              D.Game.pushMessage(
+                game,
+                'Match recorded — open Watch replays (id ' + data.recordingId + ').'
+              );
+            }
           }
           if (ev === 'error') {
             const err = (data && data.error) || D.Net.lastError || 'error';
@@ -557,6 +653,153 @@
       if (!D.Net.sendChat(text)) return;
       input.value = '';
       input.focus();
+    },
+
+    showHelp() {
+      const modal = els.helpModal || $('help-modal');
+      modal?.classList.remove('hidden');
+    },
+
+    hideHelp() {
+      const modal = els.helpModal || $('help-modal');
+      modal?.classList.add('hidden');
+    },
+
+    setMpSpeedVisible(show) {
+      const wrap = els.mpSpeedWrap || $('mp-speed-wrap');
+      if (wrap) wrap.classList.toggle('hidden', !show);
+    },
+
+    showSpeedRequest(msg) {
+      if (!boundGame || !msg) return;
+      // Requester already knows
+      if (msg.fromSeat && msg.fromSeat === D.Game.me(boundGame)) {
+        D.Game.pushMessage(
+          boundGame,
+          'Waiting for opponent to accept ' + msg.speed + '×…'
+        );
+        return;
+      }
+      const modal = els.speedModal || $('speed-modal');
+      const text = els.speedModalText || $('speed-modal-text');
+      if (text) {
+        text.textContent =
+          (msg.fromName || 'Opponent') +
+          ' requests ' +
+          msg.speed +
+          '× game speed. Accept?';
+      }
+      modal?.classList.remove('hidden');
+    },
+
+    hideSpeedModal() {
+      const modal = els.speedModal || $('speed-modal');
+      modal?.classList.add('hidden');
+    },
+
+    refreshSpeedHud(game) {
+      const hud = els.speedHud || $('speed-hud');
+      if (!hud || !game) return;
+      let s = 1;
+      let label = '';
+      if (game.replay && D.Replay) {
+        s = D.Replay.speed;
+        label = 'REPLAY ' + s + '×';
+      } else if (game.multiplayer) {
+        s = game.netSpeed || 1;
+        label = s === 1 ? '' : s + '×';
+      } else {
+        s = game.speedMult || 1;
+        label = s === 1 ? '' : 'SP ' + s + '×';
+      }
+      if (!label) {
+        hud.classList.add('hidden');
+        hud.textContent = '';
+      } else {
+        hud.classList.remove('hidden');
+        hud.textContent = label;
+      }
+    },
+
+    showReplayBar(show) {
+      const bar = els.replayBar || $('replay-bar');
+      if (!bar) return;
+      bar.classList.toggle('hidden', !show);
+      D.UI.setMpSpeedVisible(false);
+      D.UI.setChatVisible(false);
+    },
+
+    async showReplays() {
+      const modal = els.replaysModal || $('replays-modal');
+      modal?.classList.remove('hidden');
+      await D.UI.loadReplaysList();
+    },
+
+    hideReplays() {
+      const modal = els.replaysModal || $('replays-modal');
+      modal?.classList.add('hidden');
+    },
+
+    async loadReplaysList() {
+      const list = els.replaysList || $('replays-list');
+      const status = els.replaysStatus || $('replays-status');
+      if (!list) return;
+      list.innerHTML = '';
+      if (status) status.textContent = 'Loading…';
+      try {
+        if (!D.Replay) throw new Error('no_replay');
+        const items = await D.Replay.list();
+        if (status) {
+          status.textContent = items.length
+            ? items.length + ' recording(s) on this server'
+            : 'No recordings yet — finish a multiplayer match.';
+        }
+        for (const it of items) {
+          const row = document.createElement('div');
+          row.className = 'replay-row';
+          const names = it.names || {};
+          const left = document.createElement('div');
+          const mins = Math.max(1, Math.round((it.durationTicks || 0) / 20 / 60));
+          left.innerHTML =
+            '<strong>' +
+            escapeHtml(names.player || 'Atreides') +
+            '</strong> vs <strong>' +
+            escapeHtml(names.enemy || 'Harkonnen') +
+            '</strong><br/><span class="meta">' +
+            escapeHtml(it.phase || '') +
+            ' · ~' +
+            mins +
+            ' min · ' +
+            (it.frames || 0) +
+            ' frames · ' +
+            escapeHtml(it.id) +
+            '</span>';
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.textContent = 'Watch';
+          btn.addEventListener('click', async () => {
+            if (status) status.textContent = 'Loading ' + it.id + '…';
+            try {
+              const rec = await D.Replay.load(it.id);
+              D.UI.hideReplays();
+              D.UI.hideMenu();
+              if (!D.Replay.start(boundGame, rec)) {
+                throw new Error('start_failed');
+              }
+            } catch (err) {
+              if (status) status.textContent = 'Failed to load replay.';
+            }
+          });
+          row.appendChild(left);
+          row.appendChild(btn);
+          list.appendChild(row);
+        }
+      } catch (err) {
+        if (status) {
+          status.textContent =
+            'Could not list replays (need the live game server).';
+        }
+      }
     },
 
     showFeedback() {
@@ -818,6 +1061,10 @@
       if (!els.credits) return;
       const o = me(game);
       D.UI.refreshMatchup(game);
+      D.UI.refreshSpeedHud(game);
+      if (game.multiplayer && game.phase === 'playing') {
+        D.UI.setMpSpeedVisible(true);
+      }
 
       const c = Math.floor(game.credits[o] || 0);
       const cap = game.spiceCap[o] || 0;

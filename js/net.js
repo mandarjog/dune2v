@@ -461,12 +461,8 @@
       }
 
       if (msg.type === 'state') {
+        if (msg.speed != null && D.Net.game) D.Net.game.netSpeed = msg.speed;
         D.Net._handleState(msg);
-        return;
-      }
-
-      if (msg.type === 'match_end') {
-        // phase arrives via state snapshots too
         return;
       }
 
@@ -477,6 +473,26 @@
 
       if (msg.type === 'chat') {
         D.Net._emit('chat', msg);
+        return;
+      }
+
+      if (msg.type === 'speed_request') {
+        D.Net._emit('speed_request', msg);
+        return;
+      }
+      if (msg.type === 'speed' || msg.type === 'speed_rejected') {
+        if (msg.type === 'speed' && D.Net.game && msg.speed != null) {
+          D.Net.game.netSpeed = msg.speed;
+        }
+        D.Net._emit(msg.type, msg);
+        return;
+      }
+
+      if (msg.type === 'match_end') {
+        if (msg.recordingId) {
+          D.Net.lastRecordingId = msg.recordingId;
+        }
+        D.Net._emit('match_end', msg);
         return;
       }
 
@@ -704,6 +720,15 @@
       if (!t) return false;
       if (!D.Net.game || !D.Net.game.multiplayer) return false;
       return D.Net._send({ type: 'chat', text: t });
+    },
+
+    requestSpeed(speed) {
+      if (!D.Net.game || !D.Net.game.multiplayer) return false;
+      return D.Net._send({ type: 'speed_request', speed: Number(speed) });
+    },
+
+    respondSpeed(accept) {
+      return D.Net._send({ type: 'speed_response', accept: !!accept });
     },
   };
 })(typeof window !== 'undefined' ? window : globalThis);

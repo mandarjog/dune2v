@@ -15,7 +15,8 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { WebSocketServer } = require('ws');
-const { RoomSim } = require('./room-sim');
+const { RoomSim, SPEED_OPTIONS } = require('./room-sim');
+const recordings = require('./recordings');
 
 const PORT = Number(process.env.PORT || 8080);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -23,7 +24,7 @@ const ROOT = process.env.STATIC_ROOT
   ? path.resolve(process.env.STATIC_ROOT)
   : path.resolve(__dirname, '..');
 
-const PROTOCOL = 4; // server-auth + reconnect
+const PROTOCOL = 5; // speed + recordings
 const MAX_SEATS = 2;
 const ROOM_CODE_LEN = 6;
 const ROOM_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -106,6 +107,30 @@ function serveStatic(req, res) {
         'Cache-Control': 'no-store',
       }
     );
+  }
+
+  if (urlPath === '/api/recordings' && req.method === 'GET') {
+    return send(res, 200, JSON.stringify({ ok: true, recordings: recordings.list() }), {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': 'no-store',
+    });
+  }
+
+  if (urlPath.startsWith('/api/recordings/') && req.method === 'GET') {
+    const id = decodeURIComponent(urlPath.slice('/api/recordings/'.length)).replace(
+      /[^a-zA-Z0-9_-]/g,
+      ''
+    );
+    const rec = recordings.get(id);
+    if (!rec) {
+      return send(res, 404, JSON.stringify({ ok: false, error: 'not_found' }), {
+        'Content-Type': 'application/json; charset=utf-8',
+      });
+    }
+    return send(res, 200, JSON.stringify({ ok: true, recording: rec }), {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': 'no-store',
+    });
   }
 
   if (urlPath === '/api/feedback' && req.method === 'POST') {
@@ -477,34 +502,47 @@ function maybeStartMatch(room) {
   touch(room);
 
   const snap = roomSnapshot(room);
+  const names = {
+    player: (snap.seats.player && snap.seats.player.name) || 'Atreides',
+    enemy: (snap.seats.enemy && snap.seats.enemy.name) || 'Harkonnen',
+  };
   const startMsg = {
     type: 'start',
     seed: 42,
     map: 'skirmish1',
     authority: 'server',
+    speed: 1,
+    speedOptions: SPEED_OPTIONS,
     ...snap,
-    names: {
-      player: (snap.seats.player && snap.seats.player.name) || 'Atreides',
-      enemy: (snap.seats.enemy && snap.seats.enemy.name) || 'Harkonnen',
-    },
+    names,
   };
   broadcastRoom(room, startMsg, null);
 
-  const sim = new RoomSim(room.id);
+  room.speedPending = null;
+  const sim = new RoomSim(room.id, { names });
   room.sim = sim;
-  sim.onState = (payload, tick) => {
+  sim.onState = (payload, tick, extra) => {
     const wire = JSON.stringify({
       type: 'state',
       tick,
       payload,
+      speed: (extra && extra.speed) || sim.speed,
       ts: Date.now(),
     });
     for (const slot of room.slots.values()) {
       if (slot.ws && slot.ws.readyState === 1) slot.ws.send(wire);
     }
   };
-  sim.onEnd = (phase) => {
-    broadcastRoom(room, { type: 'match_end', phase }, null);
+  sim.onEnd = (phase, info) => {
+    broadcastRoom(
+      room,
+      {
+        type: 'match_end',
+        phase,
+        recordingId: (info && info.recordingId) || sim.recordingId || null,
+      },
+      null
+    );
   };
   try {
     sim.start();
@@ -734,6 +772,85 @@ function setupWs(server) {
           info: result.info || null,
           op: payload.op || null,
         });
+        return;
+      }
+
+      // Speed change: one player requests, other must accept
+      if (msg.type === 'speed_request') {
+        if (!room.sim || !room.started) {
+          sendJson(ws, { type: 'error', error: 'not_started' });
+          return;
+        }
+        const speed = Number(msg.speed);
+        if (!SPEED_OPTIONS.includes(speed)) {
+          sendJson(ws, { type: 'error', error: 'bad_speed' });
+          return;
+        }
+        if (speed === room.sim.speed) {
+          sendJson(ws, { type: 'speed', speed, note: 'already' });
+          return;
+        }
+        room.speedPending = {
+          speed,
+          fromSeat: ws.seat,
+          fromName: ws.displayName,
+          at: Date.now(),
+        };
+        broadcastRoom(
+          room,
+          {
+            type: 'speed_request',
+            speed,
+            fromSeat: ws.seat,
+            fromName: ws.displayName,
+            from: ws.playerId,
+          },
+          null
+        );
+        return;
+      }
+
+      if (msg.type === 'speed_response') {
+        if (!room.sim || !room.started || !room.speedPending) {
+          sendJson(ws, { type: 'error', error: 'no_pending_speed' });
+          return;
+        }
+        const pend = room.speedPending;
+        if (ws.seat === pend.fromSeat) {
+          sendJson(ws, { type: 'error', error: 'cannot_answer_own' });
+          return;
+        }
+        const accept = msg.accept !== false && msg.accept !== 'false';
+        if (!accept) {
+          room.speedPending = null;
+          broadcastRoom(
+            room,
+            {
+              type: 'speed_rejected',
+              speed: pend.speed,
+              bySeat: ws.seat,
+              byName: ws.displayName,
+            },
+            null
+          );
+          return;
+        }
+        const ok = room.sim.setSpeed(pend.speed);
+        room.speedPending = null;
+        if (!ok) {
+          sendJson(ws, { type: 'error', error: 'bad_speed' });
+          return;
+        }
+        broadcastRoom(
+          room,
+          {
+            type: 'speed',
+            speed: room.sim.speed,
+            bySeat: ws.seat,
+            byName: ws.displayName,
+          },
+          null
+        );
         return;
       }
 

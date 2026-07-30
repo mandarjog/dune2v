@@ -52,19 +52,29 @@
 
       const dtSec = D.config.DT_SEC;
       const stepMs = dtSec * 1000;
+      // SP speed multiplier only (MP speed is server-side wall clock)
+      const speed =
+        game.replay || game.multiplayer
+          ? 1
+          : Math.max(0.25, Math.min(4, Number(game.speedMult) || 1));
 
       // input poll uses real dt for smooth camera
-      if (D.Input) D.Input.poll(game, frameMs / 1000);
+      if (D.Input && !game.replay) D.Input.poll(game, frameMs / 1000);
 
-      if (game.phase === 'playing') {
+      if (game.replay && D.Replay) {
+        D.Replay.tick(game, frameMs);
+        D.Loop._accMs = 0;
+      } else if (game.phase === 'playing') {
+        // frameMs already added once; scale remaining for speed
+        if (speed !== 1) D.Loop._accMs += frameMs * (speed - 1);
         let guard = 0;
-        while (D.Loop._accMs >= stepMs && guard < 5) {
+        const maxCatch = speed > 1 ? 12 : 5;
+        while (D.Loop._accMs >= stepMs && guard < maxCatch) {
           D.Game.tick(game, dtSec);
           D.Loop._accMs -= stepMs;
           guard++;
         }
-        // avoid spiral: dump excess
-        if (D.Loop._accMs > stepMs * 3) D.Loop._accMs = 0;
+        if (D.Loop._accMs > stepMs * 6) D.Loop._accMs = 0;
       } else {
         D.Loop._accMs = 0;
       }

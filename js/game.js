@@ -64,6 +64,9 @@
         netRole: null,
         roomCode: null,
         playerNames: null, // { player, enemy } display names when MP
+        speedMult: 1, // single-player sim speed
+        replay: false,
+        netSpeed: 1, // multiplayer server speed (display)
       };
     },
 

@@ -14,14 +14,29 @@
         <div id="chat-hud" class="chat-hud hidden" aria-live="polite">
           <div id="chat-hud-log" class="chat-hud-log"></div>
         </div>
-        <button
-          id="btn-feedback-corner"
-          type="button"
-          class="feedback-corner"
-          title="Send feedback"
-        >
-          Feedback
-        </button>
+        <div class="corner-actions">
+          <button id="btn-help-corner" type="button" class="corner-btn" title="Help (?)">
+            Help
+          </button>
+          <button
+            id="btn-feedback-corner"
+            type="button"
+            class="corner-btn"
+            title="Send feedback"
+          >
+            Feedback
+          </button>
+        </div>
+        <div id="speed-hud" class="speed-hud hidden" title="Game speed"></div>
+        <div id="replay-bar" class="replay-bar hidden">
+          <span id="replay-status">Replay</span>
+          <button type="button" id="btn-replay-pause">Pause</button>
+          <button type="button" data-replay-speed="0.5">0.5×</button>
+          <button type="button" data-replay-speed="1">1×</button>
+          <button type="button" data-replay-speed="2">2×</button>
+          <button type="button" data-replay-speed="4">4×</button>
+          <button type="button" id="btn-replay-exit">Exit</button>
+        </div>
         <div id="debug-overlay"></div>
       </div>
       <aside id="sidebar">
@@ -47,10 +62,18 @@
         <div id="build-menu"></div>
 
         <div class="hint">
-          Click select · drag box-select<br />
-          <b>Move:</b> right-click or <b>Ctrl/⌘+click</b> (trackpad)<br />
-          Alt+click attack-move · E deploy · H harvest<br />
-          Ctrl+1-9 groups · Enter chat · F3 debug
+          Click select · <b>Ctrl/⌘+click</b> move (trackpad)<br />
+          <button type="button" id="btn-help-sidebar" class="linkish">Full controls help (?)</button>
+          <span id="mp-speed-wrap" class="hidden">
+            · Speed
+            <select id="mp-speed-select" title="Request speed change (opponent must accept)">
+              <option value="0.5">0.5×</option>
+              <option value="1" selected>1×</option>
+              <option value="1.5">1.5×</option>
+              <option value="2">2×</option>
+              <option value="3">3×</option>
+            </select>
+          </span>
         </div>
         <div id="messages"></div>
 
@@ -84,6 +107,8 @@
         <div class="actions">
           <button id="btn-continue" type="button" style="display: none">Continue</button>
           <button id="btn-start" type="button">New Skirmish (vs AI)</button>
+          <button id="btn-replays" type="button">Watch replays</button>
+          <button id="btn-help-menu" type="button">Controls help</button>
         </div>
         <div class="mp-block">
           <div class="section-title" style="margin-top: 14px">Multiplayer 1v1</div>
@@ -120,6 +145,74 @@
         </p>
         <div class="actions" style="margin-top: 12px">
           <button id="btn-feedback" type="button">Send feedback</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Controls help -->
+    <div id="help-modal" class="modal-backdrop hidden">
+      <div class="modal modal-wide help-modal">
+        <h2>Controls</h2>
+        <div class="help-body">
+          <h3>Mouse / trackpad</h3>
+          <table class="help-table">
+            <tr><td>Click</td><td>Select unit / building</td></tr>
+            <tr><td>Drag</td><td>Box-select units</td></tr>
+            <tr><td><b>Right-click</b></td><td>Move / attack / harvest</td></tr>
+            <tr><td><b>Ctrl+click</b> or <b>⌘+click</b></td><td>Same as right-click (trackpad)</td></tr>
+            <tr><td>Alt+click</td><td>Attack-move</td></tr>
+            <tr><td>Minimap click</td><td>Pan camera</td></tr>
+          </table>
+          <h3>Keyboard</h3>
+          <table class="help-table">
+            <tr><td><b>WASD</b> / arrows</td><td>Pan camera</td></tr>
+            <tr><td><b>E</b></td><td>Deploy selected MCV</td></tr>
+            <tr><td><b>H</b></td><td>Harvest (selected harvesters)</td></tr>
+            <tr><td><b>X</b> / <b>.</b></td><td>Stop selected units</td></tr>
+            <tr><td><b>Ctrl+1–9</b></td><td>Assign control group</td></tr>
+            <tr><td><b>1–9</b></td><td>Recall control group</td></tr>
+            <tr><td><b>Enter</b></td><td>Focus multiplayer chat</td></tr>
+            <tr><td><b>Esc</b></td><td>Pause (SP) / cancel placement</td></tr>
+            <tr><td><b>F5</b></td><td>Quicksave (SP)</td></tr>
+            <tr><td><b>F3</b></td><td>Debug overlay</td></tr>
+            <tr><td><b>?</b> or <b>/</b></td><td>This help</td></tr>
+            <tr><td><b>+</b> / <b>-</b></td><td>SP game speed up / down</td></tr>
+          </table>
+          <h3>Multiplayer</h3>
+          <p>
+            Speed changes must be <b>requested</b> then <b>accepted</b> by the opponent
+            (both clients share the server clock). Matches are recorded for
+            <b>Watch replays</b> on the main menu.
+          </p>
+        </div>
+        <div class="actions">
+          <button type="button" id="btn-help-close" class="primary">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Speed request toast -->
+    <div id="speed-modal" class="modal-backdrop hidden">
+      <div class="modal">
+        <h2>Speed change</h2>
+        <p id="speed-modal-text">Opponent requests 2× speed.</p>
+        <div class="actions">
+          <button type="button" id="btn-speed-accept" class="primary">Accept</button>
+          <button type="button" id="btn-speed-reject">Decline</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Replays browser -->
+    <div id="replays-modal" class="modal-backdrop hidden">
+      <div class="modal modal-wide">
+        <h2>Saved replays</h2>
+        <p class="hint">Server recordings from finished multiplayer matches on this host.</p>
+        <div id="replays-list" class="replays-list"></div>
+        <p id="replays-status" class="hint"></p>
+        <div class="actions">
+          <button type="button" id="btn-replays-refresh">Refresh</button>
+          <button type="button" id="btn-replays-close">Close</button>
         </div>
       </div>
     </div>
@@ -242,6 +335,7 @@
     <script src="js/loop.js"></script>
     <script src="js/save.js"></script>
     <script src="js/net.js"></script>
+    <script src="js/replay.js"></script>
     <script src="maps/skirmish1.js"></script>
     <script src="js/main.js"></script>
   </body>

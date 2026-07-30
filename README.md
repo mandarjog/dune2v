@@ -51,9 +51,15 @@ Health check: `GET /health` → `{ "ok": true }`.
 
 **Reconnect:** if you drop mid-match, reopen the same room link within ~15 minutes with the same browser (stable `playerId` in localStorage) to reclaim your seat; the sim keeps running. Intentional **Cancel/Leave** frees the seat. Keep a single Fly machine so both players share the same room process.
 
-**Chat:** in multiplayer, use the sidebar chat box (or press Enter) to message your opponent.
+**Chat:** in multiplayer, use the sidebar chat box (or press Enter) to message your opponent. Chat appears top-left on the map.
 
-**Feedback:** main menu → **Send feedback** posts to `POST /api/feedback` (logged on the server).
+**Speed:** single-player `+` / `-` keys. Multiplayer: speed dropdown requests a change; opponent must Accept (server clock).
+
+**Replays:** multiplayer matches are recorded on the server. Main menu → **Watch replays**.
+
+**Help:** `?` or Help button (top-right / menu).
+
+**Feedback:** top-right **Feedback** or main menu → posts to `POST /api/feedback` (logged on the server).
 
 Config: [`fly.toml`](./fly.toml) — `min_machines_running = 1`, `auto_stop_machines = off` so multiplayer rooms are not cold-stopped mid-match. Tweak region/size there.
 

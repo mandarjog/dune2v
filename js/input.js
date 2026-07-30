@@ -175,6 +175,63 @@
 
       if (game.phase !== 'playing') return;
 
+      // Help
+      if (e.key === '?' || (e.code === 'Slash' && e.shiftKey) || e.code === 'Slash') {
+        // bare / also opens help when not chatting
+        e.preventDefault();
+        if (D.UI) D.UI.showHelp();
+        return;
+      }
+
+      // SP speed ±
+      if (!game.multiplayer && !game.replay) {
+        const steps = [0.5, 1, 2, 4];
+        if (e.key === '+' || e.code === 'Equal' || e.code === 'NumpadAdd') {
+          let i = steps.indexOf(game.speedMult || 1);
+          if (i < 0) i = 1;
+          game.speedMult = steps[Math.min(steps.length - 1, i + 1)];
+          D.Game.pushMessage(game, 'Speed ' + game.speedMult + '×');
+          if (D.UI) D.UI.refreshSpeedHud(game);
+          e.preventDefault();
+          return;
+        }
+        if (e.key === '-' || e.code === 'Minus' || e.code === 'NumpadSubtract') {
+          let i = steps.indexOf(game.speedMult || 1);
+          if (i < 0) i = 1;
+          game.speedMult = steps[Math.max(0, i - 1)];
+          D.Game.pushMessage(game, 'Speed ' + game.speedMult + '×');
+          if (D.UI) D.UI.refreshSpeedHud(game);
+          e.preventDefault();
+          return;
+        }
+      }
+
+      // Replay controls
+      if (game.replay && D.Replay) {
+        if (e.code === 'Space') {
+          e.preventDefault();
+          const on = D.Replay.togglePause();
+          D.Game.pushMessage(game, on ? 'Replay playing' : 'Replay paused');
+          return;
+        }
+        if (e.code === 'BracketLeft') {
+          D.Replay.setSpeed(Math.max(0.25, D.Replay.speed / 2));
+          D.Game.pushMessage(game, 'Replay ' + D.Replay.speed + '×');
+          return;
+        }
+        if (e.code === 'BracketRight') {
+          D.Replay.setSpeed(Math.min(8, D.Replay.speed * 2));
+          D.Game.pushMessage(game, 'Replay ' + D.Replay.speed + '×');
+          return;
+        }
+        if (e.code === 'Escape') {
+          e.preventDefault();
+          D.Replay.stop(game);
+          if (D.UI) D.UI.showMenu();
+          return;
+        }
+      }
+
       // F3 debug
       if (e.code === 'F3') {
         e.preventDefault();

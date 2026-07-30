@@ -312,12 +312,17 @@ button.game-btn.icon-btn .btn-label .meta.cant-afford {
   color: #ffe8e4;
 }
 
-/* Always-available feedback control (in-game + menu) */
-.feedback-corner {
+.corner-actions {
   position: absolute;
   top: 10px;
   right: 10px;
   z-index: 40;
+  display: flex;
+  gap: 6px;
+  pointer-events: auto;
+}
+
+.corner-btn {
   background: rgba(18, 16, 12, 0.88);
   color: var(--accent);
   border: 1px solid var(--accent);
@@ -327,17 +332,159 @@ button.game-btn.icon-btn .btn-label .meta.cant-afford {
   letter-spacing: 0.04em;
   cursor: pointer;
   border-radius: 2px;
-  pointer-events: auto;
 }
 
-.feedback-corner:hover {
+.corner-btn:hover {
   background: #3a3220;
   color: #f0d878;
 }
 
+.speed-hud {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 25;
+  background: rgba(0, 0, 0, 0.55);
+  color: #9cf;
+  font: 600 13px/1 system-ui, sans-serif;
+  padding: 4px 12px;
+  border-radius: 2px;
+  border: 1px solid rgba(120, 180, 255, 0.35);
+  pointer-events: none;
+}
+
+.speed-hud.hidden {
+  display: none;
+}
+
+.replay-bar {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(12, 10, 8, 0.92);
+  border: 1px solid var(--accent);
+  padding: 8px 12px;
+  border-radius: 3px;
+}
+
+.replay-bar.hidden {
+  display: none;
+}
+
+.replay-bar button {
+  background: #2c261e;
+  color: var(--text);
+  border: 1px solid var(--panel-border);
+  padding: 4px 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.replay-bar button:hover {
+  border-color: var(--accent);
+}
+
+#replay-status {
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 12px;
+  margin-right: 6px;
+}
+
+.help-modal {
+  text-align: left;
+  max-width: 520px;
+  max-height: 85vh;
+  overflow-y: auto;
+}
+
+.help-body h3 {
+  color: var(--accent);
+  font-size: 13px;
+  margin: 12px 0 6px;
+}
+
+.help-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.help-table td {
+  padding: 4px 8px 4px 0;
+  vertical-align: top;
+  border-bottom: 1px solid #2a241c;
+}
+
+.help-table td:first-child {
+  white-space: nowrap;
+  color: #e8dcc8;
+  font-weight: 600;
+  width: 42%;
+}
+
+.help-body p {
+  font-size: 13px;
+  color: var(--muted);
+  margin: 8px 0 0;
+}
+
+button.linkish {
+  background: none;
+  border: none;
+  color: var(--accent);
+  text-decoration: underline;
+  cursor: pointer;
+  font-size: inherit;
+  padding: 0;
+}
+
+#mp-speed-wrap select {
+  background: #12100c;
+  color: var(--text);
+  border: 1px solid var(--panel-border);
+  font-size: 11px;
+  padding: 2px 4px;
+}
+
+.replays-list {
+  text-align: left;
+  max-height: 280px;
+  overflow-y: auto;
+  margin: 10px 0;
+}
+
+.replay-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: center;
+  padding: 8px;
+  border: 1px solid var(--panel-border);
+  margin-bottom: 6px;
+  background: #12100c;
+  font-size: 12px;
+}
+
+.replay-row button {
+  flex-shrink: 0;
+  background: #2c261e;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
 #debug-overlay {
   position: absolute;
-  top: 44px;
+  top: 48px;
   right: 8px;
   left: auto;
   background: rgba(0, 0, 0, 0.65);

@@ -1,23 +1,31 @@
 'use strict';
 
 const { loadGame } = require('./game-loader');
+const recordings = require('./recordings');
 
-const DT = 0.05; // 20 Hz — must match D.config.DT_SEC
+const BASE_DT = 0.05; // 20 Hz — must match D.config.DT_SEC
 const STATE_EVERY = 2;
+/** Record a keyframe every N sim ticks (~0.5s at 1x). */
+const RECORD_EVERY = 10;
+const SPEED_OPTIONS = [0.5, 1, 1.5, 2, 3];
 
 /**
  * Server-authoritative skirmish for one room.
  * Both browser clients only send commands and render snapshots.
  */
 class RoomSim {
-  constructor(roomId) {
+  constructor(roomId, meta) {
     this.roomId = roomId;
+    this.meta = meta || {};
     this.D = loadGame();
     this.game = null;
     this.timer = null;
     this.running = false;
-    this.onState = null; // (payload, tick) => void
-    this.onEnd = null; // (phase) => void
+    this.speed = 1;
+    this.onState = null; // (payload, tick, extra) => void
+    this.onEnd = null; // (phase, recordingMeta) => void
+    this._recording = null;
+    this._lastRecordTick = -999;
   }
 
   start() {
@@ -28,16 +36,51 @@ class RoomSim {
 
     this.game = D.Game.create();
     this.game.multiplayer = true;
-    this.game._serverSim = true; // allow Game.tick under multiplayer
-    this.game.localOwner = 'player'; // irrelevant on server
+    this.game._serverSim = true;
+    this.game.localOwner = 'player';
     D.Game.startSkirmish(this.game, D.MAPS.skirmish1);
     this.game.multiplayer = true;
     this.game._serverSim = true;
     this.running = true;
+    this.speed = 1;
 
-    this.timer = setInterval(() => this._tick(), DT * 1000);
-    // Immediate snapshot so clients can paint
+    this._recording = {
+      id: recordings.newId(),
+      room: this.roomId,
+      names: this.meta.names || {},
+      startedAt: Date.now(),
+      endedAt: 0,
+      durationTicks: 0,
+      phase: 'playing',
+      baseDt: BASE_DT,
+      frames: [],
+    };
+    this._lastRecordTick = -999;
+    this._recordFrame(true);
+
+    this._armTimer();
     this._broadcast(true);
+  }
+
+  _armTimer() {
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = null;
+    }
+    if (!this.running) return;
+    const ms = Math.max(8, (BASE_DT * 1000) / this.speed);
+    this.timer = setInterval(() => this._tick(), ms);
+  }
+
+  /**
+   * @param {number} mult 0.5 | 1 | 1.5 | 2 | 3
+   */
+  setSpeed(mult) {
+    const s = Number(mult);
+    if (!SPEED_OPTIONS.includes(s)) return false;
+    this.speed = s;
+    this._armTimer();
+    return true;
   }
 
   stop() {
@@ -46,13 +89,25 @@ class RoomSim {
       clearInterval(this.timer);
       this.timer = null;
     }
+    // Finalize recording before dropping game
+    if (this._recording && this.game) {
+      this._recordFrame(true);
+      this._recording.endedAt = Date.now();
+      this._recording.durationTicks = this.game.tick;
+      this._recording.phase = this.game.phase || 'unknown';
+      try {
+        recordings.save(this._recording);
+      } catch (e) {
+        console.warn('[room-sim] record save failed', e.message);
+      }
+    }
     this.game = null;
   }
 
   /** Current snapshot for reconnecting clients (null if not running). */
   snapshot() {
     if (!this.running || !this.game) return null;
-    return this._serialize();
+    return this._serialize(false);
   }
 
   get tick() {
@@ -63,30 +118,56 @@ class RoomSim {
     return this.game ? this.game.phase : null;
   }
 
+  get recordingId() {
+    return this._recording ? this._recording.id : null;
+  }
+
   _tick() {
     if (!this.running || !this.game) return;
     const D = this.D;
     if (this.game.phase !== 'playing') {
-      // still broadcast terminal state a few times then stop ticking orders
       this._broadcast(true);
-      if (this.onEnd) this.onEnd(this.game.phase);
+      this._recordFrame(true);
+      const phase = this.game.phase;
+      const recId = this._recording && this._recording.id;
+      if (this.onEnd) this.onEnd(phase, { recordingId: recId });
       this.stop();
       return;
     }
-    D.Game.tick(this.game, DT);
-    // Game.tick skips MP guest; server game has multiplayer true and netRole null
-    // — ensure tick actually runs (see game.js). We set netRole undefined.
+    // Always advance one fixed sim step; wall-clock rate comes from timer
+    D.Game.tick(this.game, BASE_DT);
+    this._recordFrame(false);
     this._broadcast(false);
+  }
+
+  _recordFrame(force) {
+    if (!this._recording || !this.game) return;
+    const t = this.game.tick;
+    if (!force && t - this._lastRecordTick < RECORD_EVERY) return;
+    this._lastRecordTick = t;
+    const full = force || t === 0 || this._recording.frames.length === 0;
+    const payload = this._serialize(!full);
+    if (!payload) return;
+    this._recording.frames.push({ tick: t, full: !!full, state: payload });
+    // Cap runaway size (~30 min at 2 frames/s)
+    if (this._recording.frames.length > 4000) {
+      this._recording.frames.splice(1, 200); // drop early middles, keep start
+    }
   }
 
   _broadcast(force) {
     if (!this.game || !this.onState) return;
     if (!force && this.game.tick % STATE_EVERY !== 0) return;
-    const payload = this._serialize();
-    if (payload) this.onState(payload, this.game.tick);
+    const payload = this._serialize(false);
+    if (payload) {
+      this.onState(payload, this.game.tick, { speed: this.speed });
+    }
   }
 
-  _serialize() {
+  /**
+   * @param {boolean} thin - omit static map tiles (keep spice/blocked)
+   */
+  _serialize(thin) {
     const D = this.D;
     const data = D.Save.serialize(this.game);
     if (!data) return null;
@@ -94,6 +175,15 @@ class RoomSim {
     delete data.selection;
     delete data.controlGroups;
     delete data.messages;
+    if (thin && data.map) {
+      // Replay keeps tiles from last full frame
+      delete data.map.tiles;
+    }
+    // Fog is large; recompute on client from units
+    if (data.fog) {
+      // keep explored sticky only on full frames
+      if (thin) delete data.fog;
+    }
     return data;
   }
 
@@ -122,7 +212,6 @@ class RoomSim {
         if (!ids.length) return { ok: false, reason: 'ids' };
         const order = payload.order || { type: 'stop' };
         D.Orders.issue(game, ids, order);
-        // Immediate deploy attempt so clients get fast feedback
         if (order.type === 'deploy') {
           let any = false;
           let fail = false;
@@ -178,4 +267,5 @@ class RoomSim {
   }
 }
 
-module.exports = { RoomSim };
+RoomSim.SPEED_OPTIONS = SPEED_OPTIONS;
+module.exports = { RoomSim, SPEED_OPTIONS };
