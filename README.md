@@ -55,7 +55,7 @@ Health check: `GET /health` → `{ "ok": true }`.
 
 **Speed:** single-player `+` / `-` keys. Multiplayer: speed dropdown requests a change; opponent must Accept (server clock).
 
-**Replays:** multiplayer matches are recorded on the server. Main menu → **Watch replays**.
+**Replays:** multiplayer matches are recorded on the server (`RECORDINGS_DIR`, Fly volume `/data`). Main menu → **Watch replays**.
 
 **Help:** `?` or Help button (top-right / menu).
 

@@ -15,10 +15,45 @@
     u.order = order;
     u.path = [];
     u.repathQueued = false;
+    u.stuck = false;
+    u.stuckReason = null;
+    u._stuckSince = 0;
     if (u.harvest && order.type !== 'harvest') {
       u.harvest.state = 'idle';
       u.harvest.refineryId = null;
     }
+  }
+
+  function clearStuck(u) {
+    u.stuck = false;
+    u.stuckReason = null;
+    u._stuckSince = 0;
+  }
+
+  /** Flag unit stuck + throttle a sidebar message for local/friendly units. */
+  function markStuck(game, u, reason, dt) {
+    u._stuckSince = (u._stuckSince || 0) + (dt || 0);
+    // Require ~1.5s of continuous stuck before flashing/message
+    if (u._stuckSince < 1.5) return;
+    const was = u.stuck;
+    u.stuck = true;
+    u.stuckReason = reason || 'blocked';
+    if (was && u._stuckMsgAt && game.tick - u._stuckMsgAt < 100) return;
+    // Message only for units the local player owns (SP player / MP localOwner)
+    const local = D.Game && D.Game.me ? D.Game.me(game) : 'player';
+    if (u.owner !== local && u.owner !== 'player') return;
+    // On MP server both owners get messages in snapshots via stuck flag; message once
+    if (game.multiplayer && !game._serverSim && u.owner !== local) return;
+    u._stuckMsgAt = game.tick;
+    if (!D.Game || !D.Game.pushMessage) return;
+    const name = (D.config.units[u.type] && D.config.units[u.type].name) || u.type;
+    const tips = {
+      path: name + ' is stuck — no path (clear walls/units or re-order).',
+      dock: name + ' waiting at busy refinery dock…',
+      silos: name + ' cannot unload — silos full (build silos / spend credits).',
+      blocked: name + ' is stuck.',
+    };
+    D.Game.pushMessage(game, tips[u.stuckReason] || tips.blocked);
   }
 
   D.Orders = {
@@ -147,11 +182,26 @@
         }
 
         if (order.type === 'move' || order.type === 'attack-move') {
+          const prevX = u.x;
+          const prevY = u.y;
           D.Orders.ensurePath(game, u, order.x, order.y, () => repaths++ < maxRepaths);
           D.Orders.followPath(game, u, dt);
-          if (!u.path.length && u.order && (u.order.type === 'move')) {
-            const d = Math.hypot(u.x - order.x, u.y - order.y);
-            if (d < D.config.path.arrivalDist + 0.2) clearOrder(u);
+          const d = Math.hypot(u.x - order.x, u.y - order.y);
+          if (!u.path.length && u.order && u.order.type === 'move') {
+            if (d < D.config.path.arrivalDist + 0.2) {
+              clearStuck(u);
+              clearOrder(u);
+            } else {
+              markStuck(game, u, 'path', dt);
+            }
+          } else if (
+            d > 0.6 &&
+            Math.hypot(u.x - prevX, u.y - prevY) < 0.001 &&
+            (!u.path || !u.path.length)
+          ) {
+            markStuck(game, u, 'path', dt);
+          } else {
+            clearStuck(u);
           }
           continue;
         }
@@ -159,6 +209,7 @@
         if (order.type === 'attack') {
           const target = D.Entities.getById(game, order.targetId);
           if (!target || target.hp <= 0) {
+            clearStuck(u);
             clearOrder(u);
             continue;
           }
@@ -170,10 +221,21 @@
           const range = def && def.weapon ? def.weapon.range : 1;
           const dist = Math.hypot(u.x - tc.x, u.y - tc.y);
           if (dist > range) {
+            const prevX = u.x;
+            const prevY = u.y;
             D.Orders.ensurePath(game, u, tc.x, tc.y, () => repaths++ < maxRepaths);
             D.Orders.followPath(game, u, dt);
+            if (
+              (!u.path || !u.path.length) &&
+              Math.hypot(u.x - prevX, u.y - prevY) < 0.001
+            ) {
+              markStuck(game, u, 'path', dt);
+            } else {
+              clearStuck(u);
+            }
           } else {
             u.path = [];
+            clearStuck(u);
           }
           continue;
         }
@@ -230,6 +292,8 @@
       function pathTo(x, y) {
         // Recover from dead paths (stuck harvesters)
         const dist = Math.hypot(u.x - x, u.y - y);
+        const prevX = u.x;
+        const prevY = u.y;
         if ((!u.path || !u.path.length) && dist > 0.5) {
           h.stuckT = (h.stuckT || 0) + dt;
           // Force a repath every ~1.2s even if repath budget is exhausted
@@ -257,6 +321,12 @@
           D.Orders.ensurePath(game, u, x, y, allowRepath);
         }
         D.Orders.followPath(game, u, dt);
+        const moved = Math.hypot(u.x - prevX, u.y - prevY);
+        if (dist > 0.55 && moved < 0.001 && (!u.path || !u.path.length)) {
+          markStuck(game, u, 'path', dt);
+        } else if (moved > 0.001 || dist < 0.5) {
+          clearStuck(u);
+        }
       }
 
       if (h.state === 'idle') {
@@ -319,6 +389,7 @@
       }
 
       if (h.state === 'harvest') {
+        clearStuck(u);
         const amt = D.Map.spiceAt(game.map, h.tileX, h.tileY);
         if (amt <= 0 || u.cargo >= u.cargoMax) {
           h.state = 'moveToRefinery';
@@ -367,6 +438,7 @@
             // Queue at dock: wait, then circle nearby so we don't freeze forever
             h.wait = (h.wait || 0) + dt;
             u.path = [];
+            markStuck(game, u, 'dock', dt);
             if (h.wait > 1.2) {
               h.wait = 0;
               const ang = (game.tick * 0.15 + u.id) % (Math.PI * 2);
@@ -377,6 +449,7 @@
           h.state = 'unload';
           h.wait = 0;
           h.stuckT = 0;
+          clearStuck(u);
           u.path = [];
         } else {
           pathTo(dx, dy);
@@ -389,18 +462,17 @@
         if (!ref || ref.hp <= 0) {
           h.state = 'seekRefinery';
           h.stuckT = 0;
+          clearStuck(u);
           return;
         }
         const owner = u.owner;
         const cap = game.spiceCap[owner];
         const credits = game.credits[owner];
         if (credits >= cap) {
-          // Cap full — keep trying each tick once silos free room
-          if ((owner === 'player' || owner === D.Game.me(game)) && game.tick % 60 === 0) {
-            D.Game.pushMessage(game, 'Silos full — build silos or spend credits.');
-          }
+          markStuck(game, u, 'silos', dt);
           return;
         }
+        clearStuck(u);
         const room = cap - credits;
         const give = Math.min(eco.unloadRate * dt, u.cargo, room / eco.spiceToCredit);
         u.cargo -= give;

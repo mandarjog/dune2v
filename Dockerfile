@@ -20,11 +20,13 @@ RUN chown -R node:node /app
 ENV NODE_ENV=production
 ENV PORT=8080
 ENV HOST=0.0.0.0
+ENV RECORDINGS_DIR=/data/recordings
 
 EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=8s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
-USER node
-CMD ["node", "server/index.js"]
+# Root so Fly volume at /data is writable; app binds 8080 only.
+USER root
+CMD ["sh", "-c", "mkdir -p \"${RECORDINGS_DIR:-/data/recordings}\" && exec node server/index.js"]

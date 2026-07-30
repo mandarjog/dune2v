@@ -106,6 +106,8 @@
           cargoMax: u.cargoMax,
           harvest: u.harvest,
           sight: u.sight,
+          stuck: !!u.stuck,
+          stuckReason: u.stuckReason || null,
         })),
         buildings: game.buildings.map((b) => ({
           id: b.id,
@@ -361,6 +363,8 @@
           sight: raw.sight || (def && def.sight) || 3,
           selected: false,
           repathQueued: false,
+          stuck: !!raw.stuck,
+          stuckReason: raw.stuckReason || null,
         };
         if (u.weapon && u.weapon.cooldownLeft == null) u.weapon.cooldownLeft = 0;
         game.units.push(u);
@@ -485,6 +489,8 @@
           sight: raw.sight || (def && def.sight) || 3,
           selected: false,
           repathQueued: false,
+          stuck: !!raw.stuck,
+          stuckReason: raw.stuckReason || null,
         };
         if (u.weapon && u.weapon.cooldownLeft == null) u.weapon.cooldownLeft = 0;
         game.units.push(u);

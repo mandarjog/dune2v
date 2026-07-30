@@ -406,6 +406,29 @@
         ctx.stroke();
       }
 
+      // Flashing alert when pathing/dock/silos stuck
+      if (u.stuck) {
+        const pulse = 0.45 + 0.55 * Math.abs(Math.sin((game.tick || 0) * 0.35));
+        ctx.save();
+        ctx.globalAlpha = pulse;
+        ctx.fillStyle = u.stuckReason === 'silos' ? '#e0c040' : '#ff4040';
+        ctx.beginPath();
+        ctx.arc(s.x + half * 0.55, s.y - half * 0.55, 5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#fff';
+        ctx.globalAlpha = Math.min(1, pulse + 0.2);
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        // Outer ring pulse
+        ctx.globalAlpha = pulse * 0.5;
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, half + 6 + pulse * 3, 0, Math.PI * 2);
+        ctx.strokeStyle = u.stuckReason === 'silos' ? '#e0c040' : '#ff4040';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.restore();
+      }
+
       if (u.hp < u.hpMax) {
         D.Renderer.drawHpBar(s.x - half, s.y - half - 6, size, u.hp / u.hpMax);
       }

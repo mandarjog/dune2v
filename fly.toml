@@ -6,6 +6,14 @@ primary_region = 'sjc'
 
 [build]
 
+# Persistent MP replays / data (1GB volume dune2v_data in sjc)
+[mounts]
+  source = 'dune2v_data'
+  destination = '/data'
+
+[env]
+  RECORDINGS_DIR = '/data/recordings'
+
 [http_service]
   internal_port = 8080
   force_https = true
