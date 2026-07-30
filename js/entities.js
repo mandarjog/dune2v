@@ -4,10 +4,13 @@
   const D = (global.Dune2 = global.Dune2 || {});
 
   let nextId = 1;
+  /** Projectiles/fx use a separate counter so they cannot desync unit/building ids. */
+  let nextFxId = 1;
 
   D.Entities = {
     resetIds() {
       nextId = 1;
+      nextFxId = 1;
     },
 
     setNextId(n) {
@@ -20,6 +23,11 @@
 
     nextId() {
       return nextId++;
+    },
+
+    /** Ids for projectiles / transient effects (not used in cmd payloads). */
+    nextFxId() {
+      return nextFxId++;
     },
 
     createUnit(game, type, owner, x, y) {

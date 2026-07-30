@@ -413,18 +413,65 @@
       }
     },
 
+    /**
+     * Resolve unit ids for an order. Old recordings have desynced ids (serialize
+     * nextId burns + projectiles sharing the counter). Fall back by role so the
+     * army still moves/fights in spectator view.
+     */
+    _resolveOrderIds(game, owner, ids, order) {
+      const wanted = ids || [];
+      const direct = [];
+      for (const id of wanted) {
+        const e = D.Entities.getById(game, id);
+        if (e && e.owner === owner && e.hp > 0 && e.tileW == null) direct.push(id);
+      }
+      if (direct.length === wanted.length && wanted.length > 0) return direct;
+
+      const ot = (order && order.type) || 'move';
+      const units = game.units.filter((u) => u.owner === owner && u.hp > 0);
+      const harvs = units.filter((u) => u.type === 'harvester');
+      const mcvs = units.filter((u) => u.type === 'mcv');
+      const army = units.filter((u) => u.type !== 'harvester' && u.type !== 'mcv');
+
+      if (ot === 'deploy') return mcvs.map((u) => u.id);
+      if (ot === 'harvest') {
+        // Prefer direct hits; else all harvesters
+        if (direct.length) return direct;
+        return harvs.map((u) => u.id);
+      }
+      if (ot === 'stop') {
+        if (direct.length) return direct;
+        if (wanted.length >= 2) return units.map((u) => u.id);
+        return direct;
+      }
+      // move / attack-move / attack
+      if (direct.length && direct.length >= Math.ceil(wanted.length * 0.5)) {
+        return direct;
+      }
+      if (wanted.length >= 2) {
+        // Group order: send the combat force (and harvesters if selection was large)
+        const out = army.map((u) => u.id);
+        if (wanted.length > army.length) {
+          for (const h of harvs) out.push(h.id);
+        }
+        return out;
+      }
+      // Single-unit order with unknown id
+      if (direct.length) return direct;
+      if (army.length === 1) return [army[0].id];
+      if (army.length === 0 && harvs.length === 1) return [harvs[0].id];
+      return [];
+    },
+
     _applyCmd(game, seat, payload) {
       if (!payload || !payload.op) return;
       const owner = seat === 'enemy' ? 'enemy' : 'player';
       // Mirror server applyCommand lightly
       try {
         if (payload.op === 'order') {
-          const ids = (payload.ids || []).filter((id) => {
-            const e = D.Entities.getById(game, id);
-            return e && e.owner === owner && e.hp > 0;
-          });
-          if (!ids.length) return;
           const order = payload.order || { type: 'stop' };
+          const ids = D.Replay._resolveOrderIds(game, owner, payload.ids || [], order);
+          if (!ids.length) return;
           D.Orders.issue(game, ids, order);
           if (order.type === 'deploy') {
             let any = false;
@@ -436,11 +483,10 @@
             if (any) D.Replay._burnSnapshotId();
           }
         } else if (payload.op === 'stop') {
-          const ids = (payload.ids || []).filter((id) => {
-            const e = D.Entities.getById(game, id);
-            return e && e.owner === owner;
+          const ids = D.Replay._resolveOrderIds(game, owner, payload.ids || [], {
+            type: 'stop',
           });
-          D.Orders.stop(game, ids);
+          if (ids.length) D.Orders.stop(game, ids);
         } else if (payload.op === 'build') {
           D.Economy.beginStructure(
             game,

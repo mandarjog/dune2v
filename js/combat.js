@@ -70,7 +70,7 @@
         : { x: target.x, y: target.y };
     const isTurret = attacker.tileW != null && attacker.type === 'gunTurret';
     game.projectiles.push({
-      id: D.Entities.nextId(),
+      id: D.Entities.nextFxId ? D.Entities.nextFxId() : D.Entities.nextId(),
       x: from.x,
       y: from.y,
       tx: tc.x,

@@ -74,12 +74,21 @@ describe('replay entity ids', () => {
         if (!payload || !payload.op) return;
         const owner = seat === 'enemy' ? 'enemy' : 'player';
         if (payload.op === 'order') {
-          const ids = (payload.ids || []).filter((id) => {
-            const e = D.Entities.getById(game, id);
-            return e && e.owner === owner && e.hp > 0;
-          });
-          if (!ids.length) return;
           const order = payload.order || { type: 'stop' };
+          let ids = (payload.ids || []).filter((id) => {
+            const e = D.Entities.getById(game, id);
+            return e && e.owner === owner && e.hp > 0 && e.tileW == null;
+          });
+          if (ids.length !== (payload.ids || []).length) {
+            const units = game.units.filter((u) => u.owner === owner && u.hp > 0);
+            const army = units.filter((u) => u.type !== 'harvester' && u.type !== 'mcv');
+            const harvs = units.filter((u) => u.type === 'harvester');
+            if (order.type === 'harvest') ids = harvs.map((u) => u.id);
+            else if (order.type === 'deploy')
+              ids = units.filter((u) => u.type === 'mcv').map((u) => u.id);
+            else if ((payload.ids || []).length >= 2) ids = army.map((u) => u.id);
+          }
+          if (!ids.length) return;
           D.Orders.issue(game, ids, order);
           if (order.type === 'deploy') {
             let any = false;
