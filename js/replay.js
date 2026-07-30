@@ -85,6 +85,7 @@
       game.selection = game.selection || { ids: [], box: null };
       game.selection.ids = [];
       game.selection.box = null;
+      // Spectator: renderer skips FOW via game.replay (sim FOW stays on for accuracy)
 
       if (isCmd) {
         if (!D.Replay._bootCmd(game, events)) {
@@ -129,7 +130,7 @@
           ' vs ' +
           b +
           (isCmd ? ' (cmd stream)' : ' (legacy)') +
-          ' — Space pause, +/− speed, Esc exit' +
+          ' — FOW off · Space pause, +/− speed, Esc exit' +
           (recording.id ? ' · link ?replay=' + recording.id : '')
       );
       return true;

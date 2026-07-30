@@ -162,7 +162,8 @@
 
       // FOW on terrain only — entities draw above so your buildings never
       // disappear under "explored but not visible" dimming when a harvester leaves.
-      if (D.config.features.fog && game.fog) {
+      // Replay: spectator view (no FOW overlay; both houses drawn).
+      if (D.Map.fogVisible(game) && game.fog) {
         D.Renderer.drawFog(game);
       }
 
@@ -182,7 +183,7 @@
       // projectiles — show if shell tile or path endpoint is visible to local player
       const local = me(game);
       for (const p of game.projectiles || []) {
-        if (D.config.features.fog && p.owner !== local) {
+        if (D.Map.fogVisible(game) && p.owner !== local) {
           const visHere = D.Map.isVisible(game, local, Math.floor(p.x), Math.floor(p.y));
           const visTgt =
             p.tx != null && D.Map.isVisible(game, local, Math.floor(p.tx), Math.floor(p.ty));
@@ -223,7 +224,7 @@
           const fx = f.x != null ? f.x : f.x0;
           const fy = f.y != null ? f.y : f.y0;
           if (
-            D.config.features.fog &&
+            D.Map.fogVisible(game) &&
             fx != null &&
             !D.Map.isVisible(game, local, Math.floor(fx), Math.floor(fy)) &&
             !D.Map.isExplored(game, local, Math.floor(fx), Math.floor(fy))
@@ -288,16 +289,16 @@
     },
 
     shouldDrawUnit(game, u) {
+      if (!D.Map.fogVisible(game)) return true;
       const o = me(game);
       if (u.owner === o) return true;
-      if (!D.config.features.fog) return true;
       return D.Map.isVisible(game, o, Math.floor(u.x), Math.floor(u.y));
     },
 
     shouldDrawBuilding(game, b) {
+      if (!D.Map.fogVisible(game)) return true;
       const o = me(game);
       if (b.owner === o) return true;
-      if (!D.config.features.fog) return true;
       // explored buildings remain visible (classic)
       const c = D.Entities.buildingCenter(b);
       return (
@@ -307,6 +308,7 @@
     },
 
     drawFog(game) {
+      if (!D.Map.fogVisible(game)) return;
       const map = game.map;
       const fog = game.fog[me(game)];
       const t = ts();
@@ -487,20 +489,17 @@
       for (let ty = 0; ty < map.height; ty++) {
         for (let tx = 0; tx < map.width; tx++) {
           const i = ty * map.width + tx;
-          if (D.config.features.fog && game.fog && !game.fog[me(game)].explored[i]) {
+          if (D.Map.fogVisible(game) && game.fog && !game.fog[me(game)].explored[i]) {
             mctx.fillStyle = '#000';
           } else {
             mctx.fillStyle = terrainColor(map.tiles[i]);
-            if (D.config.features.fog && game.fog && !game.fog[me(game)].visible[i]) {
-              // dim explored
-            }
           }
           mctx.fillRect(tx * sx, ty * sy, Math.ceil(sx), Math.ceil(sy));
         }
       }
 
       // dim unexplored overlay already black; dim explored not visible
-      if (D.config.features.fog && game.fog) {
+      if (D.Map.fogVisible(game) && game.fog) {
         mctx.fillStyle = 'rgba(0,0,0,0.35)';
         for (let ty = 0; ty < map.height; ty++) {
           for (let tx = 0; tx < map.width; tx++) {
@@ -512,28 +511,17 @@
         }
       }
 
-      // buildings
+      // buildings — both sides in replay
       for (const b of game.buildings) {
         if (b.type === 'concrete') continue;
-        if (b.owner !== me(game) && !D.Renderer.shouldDrawBuilding(game, b)) continue;
+        if (!D.Renderer.shouldDrawBuilding(game, b)) continue;
         mctx.fillStyle = ownerColor(b.owner);
         mctx.fillRect(b.tileX * sx, b.tileY * sy, Math.max(1, b.tileW * sx), Math.max(1, b.tileH * sy));
       }
 
-      // units — player always; enemy if visible (or radar)
-      const hasRadar = game.buildings.some(
-        (b) =>
-          b.owner === me(game) &&
-          b.type === 'radar' &&
-          b.buildProgress >= 1 &&
-          b.hp > 0
-      );
+      // units — both sides when FOW off / replay
       for (const u of game.units) {
-        if (u.owner !== me(game)) {
-          const vis = D.Map.isVisible(game, me(game), Math.floor(u.x), Math.floor(u.y));
-          if (!vis) continue;
-          if (!hasRadar && !vis) continue;
-        }
+        if (!D.Renderer.shouldDrawUnit(game, u)) continue;
         mctx.fillStyle = ownerColor(u.owner);
         mctx.fillRect(u.x * sx - 1, u.y * sy - 1, 2, 2);
       }

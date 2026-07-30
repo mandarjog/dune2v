@@ -135,15 +135,25 @@
       }
     },
 
+    /** Sim FOW (combat/AI). Replay keeps this on for accurate re-sim. */
+    fogEnabled(game) {
+      return !!D.config.features.fog;
+    },
+
+    /**
+     * View FOW (renderer/minimap). Off during replay so both houses are visible.
+     */
+    fogVisible(game) {
+      if (game && game.replay) return false;
+      return !!D.config.features.fog;
+    },
+
     recomputeFog(game, owner) {
-      if (!D.config.features.fog && owner === 'player') {
-        // still stamp for consistency when fog off — full reveal
-      }
       const fog = game.fog[owner];
       if (!fog) return;
       fog.visible.fill(0);
 
-      if (!D.config.features.fog) {
+      if (!D.Map.fogEnabled(game)) {
         fog.visible.fill(1);
         fog.explored.fill(1);
         return;
@@ -177,17 +187,18 @@
     },
 
     isVisible(game, owner, tx, ty) {
-      if (!D.config.features.fog) return true;
+      // Callers that need spectator/full view should use fogVisible / shouldDraw*
+      if (!D.Map.fogEnabled(game)) return true;
       const map = game.map;
       if (!inBounds(map, tx, ty)) return false;
-      return game.fog[owner].visible[idx(map, tx, ty)] === 1;
+      return !!(game.fog[owner] && game.fog[owner].visible[idx(map, tx, ty)] === 1);
     },
 
     isExplored(game, owner, tx, ty) {
-      if (!D.config.features.fog) return true;
+      if (!D.Map.fogEnabled(game)) return true;
       const map = game.map;
       if (!inBounds(map, tx, ty)) return false;
-      return game.fog[owner].explored[idx(map, tx, ty)] === 1;
+      return !!(game.fog[owner] && game.fog[owner].explored[idx(map, tx, ty)] === 1);
     },
 
     /** Building footprint entirely on rock (or concrete tiles). */

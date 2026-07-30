@@ -189,7 +189,8 @@
       D.Orders.tick(game, dt);
       D.Economy.tick(game, dt);
       D.Combat.tick(game, dt);
-      if (!game.multiplayer) D.AI.tick(game, dt);
+      // Replay is pure cmd re-sim — never run AI (would invent extra orders)
+      if (!game.multiplayer && !game.replay) D.AI.tick(game, dt);
       D.Map.recomputeFog(game, 'player');
       D.Map.recomputeFog(game, 'enemy');
       D.Game.checkWinLoss(game);
