@@ -106,6 +106,14 @@
       canvas.addEventListener('mousedown', (e) => D.Input.onMouseDown(game, e));
       canvas.addEventListener('mousemove', (e) => D.Input.onMouseMove(game, e));
       canvas.addEventListener('mouseup', (e) => D.Input.onMouseUp(game, e));
+      // Middle-click / some trackpads
+      canvas.addEventListener('auxclick', (e) => {
+        if (game.phase !== 'playing') return;
+        if (e.button === 1) {
+          e.preventDefault();
+          D.Input.rightClick(game, canvasPos(e, canvas), e);
+        }
+      });
       canvas.addEventListener('mouseleave', () => {
         dragging = false;
         game.selection.box = null;
@@ -272,10 +280,22 @@
       }
     },
 
+    /** Trackpad / no-right-button: Ctrl or ⌘ + click issues orders (like RMB). */
+    isOrderModifier(e) {
+      return !!(e && (e.ctrlKey || e.metaKey));
+    },
+
     onMouseDown(game, e) {
       if (game.phase !== 'playing') return;
       const pos = canvasPos(e, canvas);
       const o = me(game);
+
+      // Right-click OR Ctrl/⌘+left-click = issue order (trackpad-friendly)
+      if (e.button === 2 || (e.button === 0 && D.Input.isOrderModifier(e) && !game.placement)) {
+        e.preventDefault();
+        D.Input.rightClick(game, pos, e);
+        return;
+      }
 
       if (e.button === 0) {
         // placement
@@ -297,9 +317,6 @@
           if (r && r.ok) {
             if (!e.shiftKey) game.placement = null;
             if (D.UI) D.UI.refresh(game);
-            if (r.deferred) {
-              // Guest: optimistic clear; host state will confirm
-            }
           } else if (r && !r.deferred) {
             D.Game.pushMessage(game, 'Cannot place: ' + (r.reason || 'invalid'));
           }
@@ -309,10 +326,6 @@
         dragging = true;
         dragStart = pos;
         game.selection.box = { x0: pos.x, y0: pos.y, x1: pos.x, y1: pos.y };
-      }
-
-      if (e.button === 2) {
-        D.Input.rightClick(game, pos, e);
       }
     },
 
@@ -340,6 +353,12 @@
     onMouseUp(game, e) {
       if (game.phase !== 'playing') return;
       if (e.button !== 0) return;
+      // Order clicks (Ctrl/⌘) were handled on mousedown
+      if (D.Input.isOrderModifier(e)) {
+        dragging = false;
+        game.selection.box = null;
+        return;
+      }
       const pos = canvasPos(e, canvas);
       const box = game.selection.box;
       dragging = false;
@@ -473,11 +492,13 @@
         return;
       }
 
+      // Alt = attack-move; plain RMB / Ctrl+click = move
+      const attackMove = !!(e.altKey && !e.ctrlKey && !e.metaKey);
       issueOrder(
         game,
         units.map((u) => u.id),
         {
-          type: e.ctrlKey || e.altKey ? 'attack-move' : 'move',
+          type: attackMove ? 'attack-move' : 'move',
           x: world.x,
           y: world.y,
         }

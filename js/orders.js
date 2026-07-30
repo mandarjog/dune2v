@@ -228,7 +228,34 @@
       const eco = D.config.economy;
 
       function pathTo(x, y) {
-        D.Orders.ensurePath(game, u, x, y, allowRepath);
+        // Recover from dead paths (stuck harvesters)
+        const dist = Math.hypot(u.x - x, u.y - y);
+        if ((!u.path || !u.path.length) && dist > 0.5) {
+          h.stuckT = (h.stuckT || 0) + dt;
+          // Force a repath every ~1.2s even if repath budget is exhausted
+          if (h.stuckT >= 1.2) {
+            h.stuckT = 0;
+            const path = D.Path.find(game.map, u.x, u.y, x, y);
+            u.path = path || [];
+            if (!u.path.length) {
+              // Nudge goal slightly and try again next cycle
+              h.nudge = ((h.nudge || 0) + 1) % 4;
+              const off = [
+                [0.7, 0],
+                [-0.7, 0],
+                [0, 0.7],
+                [0, -0.7],
+              ][h.nudge];
+              const path2 = D.Path.find(game.map, u.x, u.y, x + off[0], y + off[1]);
+              u.path = path2 || [];
+            }
+          } else {
+            D.Orders.ensurePath(game, u, x, y, allowRepath);
+          }
+        } else {
+          h.stuckT = 0;
+          D.Orders.ensurePath(game, u, x, y, allowRepath);
+        }
         D.Orders.followPath(game, u, dt);
       }
 
@@ -236,6 +263,12 @@
         // auto-seek spice if empty cargo and no order? only if harvest order
         if (u.order && u.order.type === 'harvest') {
           h.state = 'moveToSpice';
+          h.stuckT = 0;
+        } else if (u.cargo > 0.5) {
+          // Full-ish cargo but idle — go unload
+          h.state = 'moveToRefinery';
+          h.refineryId = null;
+          h.stuckT = 0;
         }
         return;
       }
@@ -243,22 +276,41 @@
       if (h.state === 'moveToSpice') {
         let tx = h.tileX;
         let ty = h.tileY;
+        if (u.order && u.order.type === 'harvest' && u.order.tileX != null) {
+          // Prefer ordered tile while it still has spice
+          if (D.Map.spiceAt(game.map, u.order.tileX, u.order.tileY) > 0) {
+            tx = u.order.tileX;
+            ty = u.order.tileY;
+            h.tileX = tx;
+            h.tileY = ty;
+          }
+        }
         if (D.Map.spiceAt(game.map, tx, ty) <= 0) {
           const n = D.Map.findNearestSpice(game.map, u.x, u.y);
           if (!n) {
-            h.state = 'idle';
-            clearOrder(u);
+            if (u.cargo > 0.5) {
+              h.state = 'moveToRefinery';
+              h.refineryId = null;
+            } else {
+              h.state = 'idle';
+              clearOrder(u);
+            }
             return;
           }
           h.tileX = n.tx;
           h.tileY = n.ty;
           tx = n.tx;
           ty = n.ty;
+          if (u.order && u.order.type === 'harvest') {
+            u.order.tileX = tx;
+            u.order.tileY = ty;
+          }
         }
         const txc = tx + 0.5;
         const tyc = ty + 0.5;
         if (Math.hypot(u.x - txc, u.y - tyc) < 0.4) {
           h.state = 'harvest';
+          h.stuckT = 0;
           u.path = [];
         } else {
           pathTo(txc, tyc);
@@ -271,6 +323,7 @@
         if (amt <= 0 || u.cargo >= u.cargoMax) {
           h.state = 'moveToRefinery';
           h.refineryId = null;
+          h.stuckT = 0;
           return;
         }
         const take = Math.min(eco.harvestRate * dt, amt, u.cargoMax - u.cargo);
@@ -279,6 +332,7 @@
         if (u.cargo >= u.cargoMax) {
           h.state = 'moveToRefinery';
           h.refineryId = null;
+          h.stuckT = 0;
         }
         return;
       }
@@ -292,7 +346,9 @@
           h.refineryId = ref ? ref.id : null;
         }
         if (!ref) {
+          // No refinery — hold cargo and idle (player may build one)
           h.state = 'idle';
+          h.stuckT = 0;
           return;
         }
         const dx = (ref.dockTileX ?? ref.tileX) + 0.5;
@@ -308,15 +364,19 @@
               o.harvest.refineryId === ref.id
           );
           if (busy) {
+            // Queue at dock: wait, then circle nearby so we don't freeze forever
             h.wait = (h.wait || 0) + dt;
-            if (h.wait > 0.5) {
+            u.path = [];
+            if (h.wait > 1.2) {
               h.wait = 0;
-              // stay nearby
+              const ang = (game.tick * 0.15 + u.id) % (Math.PI * 2);
+              pathTo(dx + Math.cos(ang) * 1.8, dy + Math.sin(ang) * 1.8);
             }
             return;
           }
           h.state = 'unload';
           h.wait = 0;
+          h.stuckT = 0;
           u.path = [];
         } else {
           pathTo(dx, dy);
@@ -328,15 +388,16 @@
         const ref = game.buildings.find((b) => b.id === h.refineryId);
         if (!ref || ref.hp <= 0) {
           h.state = 'seekRefinery';
+          h.stuckT = 0;
           return;
         }
         const owner = u.owner;
         const cap = game.spiceCap[owner];
         const credits = game.credits[owner];
         if (credits >= cap) {
-          // stall
-          if (u.owner === 'player' && game.tick % 40 === 0) {
-            D.Game.pushMessage(game, 'Silos needed!');
+          // Cap full — keep trying each tick once silos free room
+          if ((owner === 'player' || owner === D.Game.me(game)) && game.tick % 60 === 0) {
+            D.Game.pushMessage(game, 'Silos full — build silos or spend credits.');
           }
           return;
         }
@@ -352,9 +413,13 @@
             h.tileX = n.tx;
             h.tileY = n.ty;
             h.state = 'moveToSpice';
+            h.stuckT = 0;
             if (!u.order || u.order.type !== 'harvest') {
               u.order = { type: 'harvest', tileX: n.tx, tileY: n.ty };
               u.orders = [u.order];
+            } else {
+              u.order.tileX = n.tx;
+              u.order.tileY = n.ty;
             }
           } else {
             h.state = 'idle';
