@@ -40,55 +40,63 @@
         <div id="debug-overlay"></div>
       </div>
       <aside id="sidebar">
-        <h1>Dune II</h1>
-        <div id="mp-matchup" class="mp-matchup hidden"></div>
-        <div class="stat-row">
-          <span class="label">Credits</span>
-          <span class="value" id="stat-credits">0 / 1000</span>
+        <!-- Always visible: header / economy -->
+        <div class="sidebar-top">
+          <h1>Dune II</h1>
+          <div id="mp-matchup" class="mp-matchup hidden"></div>
+          <div class="stat-row">
+            <span class="label">Credits</span>
+            <span class="value" id="stat-credits">0 / 1000</span>
+          </div>
+          <div class="stat-row">
+            <span class="label">Power</span>
+            <span class="value" id="stat-power">0 / 0</span>
+          </div>
+          <div id="power-bar"><div id="power-fill"></div></div>
+          <div class="section-title">Minimap</div>
+          <canvas id="minimap" width="200" height="200"></canvas>
         </div>
-        <div class="stat-row">
-          <span class="label">Power</span>
-          <span class="value" id="stat-power">0 / 0</span>
+
+        <!-- Scrolls: selection, produce, structures -->
+        <div class="sidebar-scroll">
+          <div id="selection-info">
+            <div class="meta">No selection</div>
+          </div>
+          <div id="unit-menu"></div>
+          <div id="build-menu"></div>
+          <div class="hint">
+            Click select · <b>Ctrl/⌘+click</b> move<br />
+            <button type="button" id="btn-help-sidebar" class="linkish">Controls (?)</button>
+            <span id="mp-speed-wrap" class="hidden">
+              · Speed
+              <select id="mp-speed-select" title="Request speed change (opponent must accept)">
+                <option value="0.5">0.5×</option>
+                <option value="1" selected>1×</option>
+                <option value="1.5">1.5×</option>
+                <option value="2">2×</option>
+                <option value="3">3×</option>
+              </select>
+            </span>
+          </div>
         </div>
-        <div id="power-bar"><div id="power-fill"></div></div>
 
-        <div class="section-title">Minimap</div>
-        <canvas id="minimap" width="200" height="200"></canvas>
-
-        <div id="selection-info">
-          <div class="meta">No selection</div>
-        </div>
-        <div id="unit-menu"></div>
-        <div id="build-menu"></div>
-
-        <div class="hint">
-          Click select · <b>Ctrl/⌘+click</b> move (trackpad)<br />
-          <button type="button" id="btn-help-sidebar" class="linkish">Full controls help (?)</button>
-          <span id="mp-speed-wrap" class="hidden">
-            · Speed
-            <select id="mp-speed-select" title="Request speed change (opponent must accept)">
-              <option value="0.5">0.5×</option>
-              <option value="1" selected>1×</option>
-              <option value="1.5">1.5×</option>
-              <option value="2">2×</option>
-              <option value="3">3×</option>
-            </select>
-          </span>
-        </div>
-        <div id="messages"></div>
-
-        <div id="chat-panel" class="chat-panel hidden">
-          <div class="section-title">Say (Enter)</div>
-          <form id="chat-form" class="chat-form" autocomplete="off">
-            <input
-              id="chat-input"
-              type="text"
-              maxlength="200"
-              placeholder="Chat appears top-left…"
-              spellcheck="true"
-            />
-            <button type="submit" id="btn-chat-send">Send</button>
-          </form>
+        <!-- Always visible: system log + chat compose -->
+        <div class="sidebar-bottom">
+          <div class="section-title">Messages</div>
+          <div id="messages"></div>
+          <div id="chat-panel" class="chat-panel hidden">
+            <div class="section-title">Chat (Enter)</div>
+            <form id="chat-form" class="chat-form" autocomplete="off">
+              <input
+                id="chat-input"
+                type="text"
+                maxlength="200"
+                placeholder="Message opponent…"
+                spellcheck="true"
+              />
+              <button type="submit" id="btn-chat-send">Send</button>
+            </form>
+          </div>
         </div>
       </aside>
     </div>
