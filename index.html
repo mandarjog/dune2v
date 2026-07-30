@@ -42,7 +42,19 @@
       <aside id="sidebar">
         <!-- Always visible: header / economy -->
         <div class="sidebar-top">
-          <h1>Dune II</h1>
+          <div class="sidebar-title-row">
+            <h1>Dune II</h1>
+            <span id="mp-speed-wrap" class="mp-speed-wrap hidden">
+              <label for="mp-speed-select">Speed</label>
+              <select id="mp-speed-select" title="Request speed change (opponent must accept)">
+                <option value="0.5">0.5×</option>
+                <option value="1" selected>1×</option>
+                <option value="1.5">1.5×</option>
+                <option value="2">2×</option>
+                <option value="3">3×</option>
+              </select>
+            </span>
+          </div>
           <div id="mp-matchup" class="mp-matchup hidden"></div>
           <div class="stat-row">
             <span class="label">Credits</span>
@@ -67,16 +79,6 @@
           <div class="hint">
             Click select · <b>M</b>/<b>G</b> move to cursor · Ctrl+click<br />
             <button type="button" id="btn-help-sidebar" class="linkish">Controls (?)</button>
-            <span id="mp-speed-wrap" class="hidden">
-              · Speed
-              <select id="mp-speed-select" title="Request speed change (opponent must accept)">
-                <option value="0.5">0.5×</option>
-                <option value="1" selected>1×</option>
-                <option value="1.5">1.5×</option>
-                <option value="2">2×</option>
-                <option value="3">3×</option>
-              </select>
-            </span>
           </div>
         </div>
 
