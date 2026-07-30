@@ -245,6 +245,12 @@
       game.placement = keepPlacement;
       game.hoverTile = keepHover;
 
+      // Live MP snapshots omit fog arrays (bandwidth). Always rebuild vision
+      // from current units/buildings so CY deploy + moving units lift FOW.
+      if (!game.fog) D.Map.initFog(game);
+      D.Map.recomputeFog(game, 'player');
+      D.Map.recomputeFog(game, 'enemy');
+
       return true;
     },
 
