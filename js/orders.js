@@ -41,6 +41,58 @@
     return tips[u.stuckReason] || tips.blocked;
   }
 
+  function dockCenter(ref) {
+    return {
+      x: (ref.dockTileX != null ? ref.dockTileX : ref.tileX) + 0.5,
+      y:
+        (ref.dockTileY != null ? ref.dockTileY : ref.tileY + (ref.tileH || 1)) +
+        0.5,
+    };
+  }
+
+  /** Who is currently unloading at this refinery (one pad). */
+  function dockUnloader(game, refId, except) {
+    for (const o of game.units) {
+      if (o === except || o.type !== 'harvester' || !o.harvest) continue;
+      if (o.harvest.state === 'unload' && o.harvest.refineryId === refId) return o;
+    }
+    return null;
+  }
+
+  /** Stable queue index among harvesters inbound to the same refinery. */
+  function dockQueueIndex(game, u, refId) {
+    let i = 0;
+    for (const o of game.units) {
+      if (o === u || o.type !== 'harvester' || !o.harvest) continue;
+      if (o.harvest.refineryId !== refId) continue;
+      const st = o.harvest.state;
+      if (st !== 'moveToRefinery' && st !== 'seekRefinery') continue;
+      if (o.id < u.id) i++;
+    }
+    return i;
+  }
+
+  /** Holding pad next to the dock so waiters don't stack on the unloader. */
+  function dockHoldPoint(ref, queueIndex) {
+    const c = dockCenter(ref);
+    const n = queueIndex + 1;
+    const side = n % 2 === 0 ? 1 : -1;
+    const ring = Math.ceil(n / 2);
+    const ang = Math.PI * 0.5 + side * ring * 0.65;
+    const rad = 1.7 + Math.floor(queueIndex / 4) * 0.85;
+    return { x: c.x + Math.cos(ang) * rad, y: c.y + Math.sin(ang) * rad };
+  }
+
+  /** Count harvesters already assigned to a refinery (for load balance). */
+  function refineryLoad(game, refId) {
+    let n = 0;
+    for (const o of game.units) {
+      if (o.type !== 'harvester' || !o.harvest) continue;
+      if (o.harvest.refineryId === refId && o.harvest.state !== 'idle') n++;
+    }
+    return n;
+  }
+
   /** Flag unit stuck + throttle a sidebar message (SP / local sim only). */
   function markStuck(game, u, reason, dt) {
     u._stuckSince = (u._stuckSince || 0) + (dt || 0);
@@ -439,6 +491,7 @@
         if (!ref || ref.hp <= 0 || ref.buildProgress < 1 || ref.type !== 'refinery') {
           ref = D.Orders.findBestRefinery(game, u);
           h.refineryId = ref ? ref.id : null;
+          h.wait = 0;
         }
         if (!ref) {
           // No refinery — hold cargo and idle (player may build one)
@@ -446,38 +499,61 @@
           h.stuckT = 0;
           return;
         }
-        const dx = (ref.dockTileX ?? ref.tileX) + 0.5;
-        const dy = (ref.dockTileY ?? ref.tileY + ref.tileH) + 0.5;
-        if (Math.hypot(u.x - dx, u.y - dy) < 0.45) {
-          // dock free?
-          const busy = game.units.some(
-            (o) =>
-              o !== u &&
-              o.type === 'harvester' &&
-              o.harvest &&
-              o.harvest.state === 'unload' &&
-              o.harvest.refineryId === ref.id
-          );
-          if (busy) {
-            // Queue at dock: wait, then circle nearby so we don't freeze forever
-            h.wait = (h.wait || 0) + dt;
-            u.path = [];
-            markStuck(game, u, 'dock', dt);
-            if (h.wait > 1.2) {
+        let unloader = dockUnloader(game, ref.id, u);
+        let busy = !!unloader;
+
+        // After a long queue wait, try another refinery if one exists
+        if (busy) {
+          h.wait = (h.wait || 0) + dt;
+          if (h.wait > 4.5) {
+            const alt = D.Orders.findBestRefinery(game, u, ref.id);
+            if (alt && alt.id !== ref.id) {
+              h.refineryId = alt.id;
               h.wait = 0;
-              const ang = (game.tick * 0.15 + u.id) % (Math.PI * 2);
-              pathTo(dx + Math.cos(ang) * 1.8, dy + Math.sin(ang) * 1.8);
+              clearStuck(u);
+              ref = alt;
+              unloader = dockUnloader(game, ref.id, u);
+              busy = !!unloader;
+            } else {
+              h.wait = 2; // retry again after a bit
             }
-            return;
           }
+        } else {
+          h.wait = 0;
+        }
+
+        const dock = dockCenter(ref);
+        const distDock = Math.hypot(u.x - dock.x, u.y - dock.y);
+
+        if (!busy && distDock < 0.5) {
+          // Claim pad (only one unloader — others still busy-check next tick)
           h.state = 'unload';
           h.wait = 0;
           h.stuckT = 0;
           clearStuck(u);
           u.path = [];
-        } else {
-          pathTo(dx, dy);
+          return;
         }
+
+        if (busy) {
+          // Hold off the pad so we don't stack on the unloader / freeze path
+          const qIdx = dockQueueIndex(game, u, ref.id);
+          const hold = dockHoldPoint(ref, qIdx);
+          const distHold = Math.hypot(u.x - hold.x, u.y - hold.y);
+          if (distDock < 0.85 || distHold > 0.4) {
+            pathTo(hold.x, hold.y);
+          } else {
+            u.path = [];
+            // Normal queue — no stuck flash. Only alert if pad blocked a long time.
+            if ((h.wait || 0) > 12) markStuck(game, u, 'dock', dt);
+            else clearStuck(u);
+          }
+          return;
+        }
+
+        // Pad free — drive in
+        clearStuck(u);
+        pathTo(dock.x, dock.y);
         return;
       }
 
@@ -487,6 +563,13 @@
           h.state = 'seekRefinery';
           h.stuckT = 0;
           clearStuck(u);
+          return;
+        }
+        // If somehow two entered unload, yield to lower id
+        const other = dockUnloader(game, ref.id, u);
+        if (other && other.id < u.id) {
+          h.state = 'moveToRefinery';
+          h.wait = 0;
           return;
         }
         const owner = u.owner;
@@ -503,6 +586,7 @@
         game.credits[owner] = Math.min(cap, credits + give * eco.spiceToCredit);
         if (u.cargo <= 0.01) {
           u.cargo = 0;
+          h.refineryId = null;
           // resume spice
           const n = D.Map.findNearestSpice(game.map, u.x, u.y);
           if (n) {
@@ -525,23 +609,29 @@
       }
     },
 
-    findBestRefinery(game, u) {
+    /**
+     * Pick a refinery: prefer free pad, lighter inbound load, closer dock.
+     * @param {number|null} excludeId skip this building (re-pick while queued)
+     */
+    findBestRefinery(game, u, excludeId) {
       let best = null;
-      let bestD = Infinity;
-      let primary = null;
+      let bestScore = Infinity;
       for (const b of game.buildings) {
         if (b.owner !== u.owner || b.type !== 'refinery' || b.buildProgress < 1 || b.hp <= 0)
           continue;
-        if (b.primary) primary = b;
-        const dx = (b.dockTileX ?? b.tileX) + 0.5;
-        const dy = (b.dockTileY ?? b.tileY) + 0.5;
-        const d = Math.hypot(u.x - dx, u.y - dy);
-        if (d < bestD) {
-          bestD = d;
+        if (excludeId != null && b.id === excludeId) continue;
+        const c = dockCenter(b);
+        const d = Math.hypot(u.x - c.x, u.y - c.y);
+        const load = refineryLoad(game, b.id);
+        const unloading = dockUnloader(game, b.id) ? 1 : 0;
+        // Distance + congestion; mild bias toward primary
+        let score = d + load * 5 + unloading * 3;
+        if (b.primary) score -= 1.5;
+        if (score < bestScore) {
+          bestScore = score;
           best = b;
         }
       }
-      if (primary) return primary;
       return best;
     },
   };
