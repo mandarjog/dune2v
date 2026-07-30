@@ -216,9 +216,13 @@
         D.Game.pushMessage(game, 'Game restored.');
       });
 
-      $('btn-feedback')?.addEventListener('click', () => {
+      const openFeedback = (e) => {
+        e?.preventDefault?.();
+        e?.stopPropagation?.();
         D.UI.showFeedback();
-      });
+      };
+      $('btn-feedback')?.addEventListener('click', openFeedback);
+      $('btn-feedback-corner')?.addEventListener('click', openFeedback);
       $('btn-feedback-cancel')?.addEventListener('click', () => {
         D.UI.hideFeedback();
       });
@@ -559,9 +563,14 @@
       const modal = els.feedbackModal || $('feedback-modal');
       if (!modal) return;
       if (els.feedbackStatus) els.feedbackStatus.textContent = '';
-      if (els.feedbackText) els.feedbackText.value = '';
+      // Keep prior draft if they re-open quickly; only clear status
       modal.classList.remove('hidden');
-      setTimeout(() => els.feedbackText?.focus(), 0);
+      // Above other modals while open
+      modal.style.zIndex = '200';
+      setTimeout(() => {
+        const t = els.feedbackText || $('feedback-text');
+        t?.focus();
+      }, 0);
     },
 
     hideFeedback() {

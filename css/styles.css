@@ -312,9 +312,32 @@ button.game-btn.icon-btn .btn-label .meta.cant-afford {
   color: #ffe8e4;
 }
 
+/* Always-available feedback control (in-game + menu) */
+.feedback-corner {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 40;
+  background: rgba(18, 16, 12, 0.88);
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  border-radius: 2px;
+  pointer-events: auto;
+}
+
+.feedback-corner:hover {
+  background: #3a3220;
+  color: #f0d878;
+}
+
 #debug-overlay {
   position: absolute;
-  top: 8px;
+  top: 44px;
   right: 8px;
   left: auto;
   background: rgba(0, 0, 0, 0.65);
