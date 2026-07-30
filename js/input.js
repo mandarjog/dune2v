@@ -436,8 +436,18 @@
           if (r && r.ok) {
             if (!e.shiftKey) game.placement = null;
             if (D.UI) D.UI.refresh(game);
+            if (r.queue != null && r.maxQueue != null && r.queue > 1) {
+              D.Game.pushMessage(
+                game,
+                'Construction ' + r.queue + '/' + r.maxQueue
+              );
+            }
           } else if (r && !r.deferred) {
-            D.Game.pushMessage(game, 'Cannot place: ' + (r.reason || 'invalid'));
+            const why =
+              r.reason === 'busy'
+                ? 'queue full (' + D.Economy.structureQueueMax() + ' max)'
+                : r.reason || 'invalid';
+            D.Game.pushMessage(game, 'Cannot place: ' + why);
           }
           return;
         }

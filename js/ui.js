@@ -996,6 +996,7 @@
       root.innerHTML = '';
       const title = document.createElement('div');
       title.className = 'section-title';
+      title.id = 'structure-queue-status';
       title.textContent = 'Structures';
       root.appendChild(title);
 
@@ -1046,15 +1047,17 @@
             D.Game.pushMessage(game, 'Requires ' + (def.requires || 'tech'));
             return;
           }
-          if (game.structureBuilder?.[o] != null) {
-            const busy = game.buildings.find((b) => b.id === game.structureBuilder[o]);
-            if (busy && busy.buildProgress < 1) {
-              D.Game.pushMessage(game, 'Already constructing…');
-              return;
-            }
+          const n = D.Economy.structureQueueCount(game, o);
+          const maxQ = D.Economy.structureQueueMax();
+          if (n >= maxQ) {
+            D.Game.pushMessage(game, 'Construction queue full (' + maxQ + ' max).');
+            return;
           }
           D.Input.startPlacement(game, type);
-          D.Game.pushMessage(game, 'Place ' + def.name);
+          D.Game.pushMessage(
+            game,
+            'Place ' + def.name + (n > 0 ? ' (' + (n + 1) + '/' + maxQ + ')' : '')
+          );
         });
         grid.appendChild(btn);
       }
@@ -1084,6 +1087,13 @@
 
       // structure buttons enable/disable only
       const grid = $('structure-btns');
+      const maxQ = D.Economy.structureQueueMax();
+      const qCount = D.Economy.structureQueueCount(game, o);
+      const qTitle = $('structure-queue-status');
+      if (qTitle) {
+        qTitle.textContent =
+          qCount > 0 ? 'Building ' + qCount + '/' + maxQ : 'Structures';
+      }
       if (grid) {
         for (const btn of grid.querySelectorAll('button')) {
           const type = btn.dataset.type;
@@ -1095,13 +1105,12 @@
               b.type === 'constructionYard' &&
               b.buildProgress >= 1
           );
-          const busy =
-            game.structureBuilder?.[o] != null &&
-            game.buildings.some(
-              (b) => b.id === game.structureBuilder[o] && b.buildProgress < 1
-            );
-          btn.disabled = !tech || !hasCY || busy || game.phase !== 'playing';
+          const queueFull = qCount >= maxQ;
+          btn.disabled = !tech || !hasCY || queueFull || game.phase !== 'playing';
           btn.classList.toggle('active', game.placement && game.placement.type === type);
+          if (queueFull) {
+            btn.title = (def.name || type) + ' — queue full (' + maxQ + ' max)';
+          }
         }
       }
 

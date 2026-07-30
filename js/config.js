@@ -38,6 +38,8 @@
       harvestRate: 40,
       unloadRate: 350,
       cancelRefund: 0.5,
+      /** Max structures under construction at once per side (was 1). */
+      maxStructureQueue: 3,
     },
 
     colors: {

@@ -57,19 +57,33 @@
       return D.Economy.canAfford(game, owner, def.cost);
     },
 
+    /** Incomplete structures for this owner (active construction slots). */
+    underConstruction(game, owner) {
+      return game.buildings.filter(
+        (b) => b.owner === owner && b.buildProgress < 1 && b.hp > 0
+      );
+    },
+
+    structureQueueMax() {
+      const n = D.config.economy && D.config.economy.maxStructureQueue;
+      return n != null ? n : 3;
+    },
+
+    structureQueueCount(game, owner) {
+      return D.Economy.underConstruction(game, owner).length;
+    },
+
     beginStructure(game, owner, type, tileX, tileY) {
       const def = D.config.buildings[type];
       if (!def || !def.buildable) return { ok: false, reason: 'invalid' };
       if (!D.Economy.hasTech(game, owner, def.requires)) {
         return { ok: false, reason: 'tech' };
       }
-      // One structure at a time per owner (design KD #32)
-      if (game.structureBuilder && game.structureBuilder[owner] != null) {
-        const busy = game.buildings.find((b) => b.id === game.structureBuilder[owner]);
-        if (busy && busy.buildProgress < 1) {
-          return { ok: false, reason: 'busy' };
-        }
-        game.structureBuilder[owner] = null;
+      // Up to N concurrent constructions per side
+      const maxQ = D.Economy.structureQueueMax();
+      const nBuild = D.Economy.structureQueueCount(game, owner);
+      if (nBuild >= maxQ) {
+        return { ok: false, reason: 'busy' };
       }
       // Need a completed CY to start new structures (MCV deploy is separate)
       const hasCY = game.buildings.some(
@@ -91,8 +105,9 @@
         progress: 0,
         costPaid: def.cost,
       });
+      // Legacy single-id field: point at newest (UI uses counts now)
       if (game.structureBuilder) game.structureBuilder[owner] = b.id;
-      return { ok: true, building: b };
+      return { ok: true, building: b, queue: nBuild + 1, maxQueue: maxQ };
     },
 
     enqueueUnit(game, buildingId, unitType) {

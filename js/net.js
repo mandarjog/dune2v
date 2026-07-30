@@ -593,7 +593,7 @@
         building: 'Factory not ready.',
         credits: 'Not enough credits.',
         tech: 'Missing required building.',
-        busy: 'Already constructing.',
+        busy: 'Construction queue full (3 max).',
         not_started: 'Match not started yet.',
         not_running: 'Server sim not running.',
       };
