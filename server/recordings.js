@@ -1,15 +1,20 @@
 'use strict';
 
 /**
- * Match recordings — stream frames to disk (Fly volume), not RAM.
- * Format:
- *   /data/recordings/{id}.meta.json  — list metadata
- *   /data/recordings/{id}.jsonl      — one JSON object per line (frames)
+ * Match recordings as an event stream (TSDB-style), not full-state dumps.
+ *
+ *   /data/recordings/{id}.meta.json
+ *   /data/recordings/{id}.jsonl   — one event per line:
+ *     { "t":0, "type":"init", "state":{...} }     // map + starting entities once
+ *     { "t":42, "type":"cmd", "seat":"player", "payload":{...} }
+ *     { "t":900, "type":"end", "phase":"victory" }
+ *
+ * Replay re-simulates from init + cmds (tiny on disk).
  */
 const fs = require('fs');
 const path = require('path');
 
-const MAX_RECORDINGS = 30;
+const MAX_RECORDINGS = 40;
 
 const DISK_DIR = process.env.RECORDINGS_DIR
   ? path.resolve(process.env.RECORDINGS_DIR)
@@ -36,13 +41,10 @@ function newId() {
 function metaPath(id) {
   return path.join(DISK_DIR, id + '.meta.json');
 }
-function framesPath(id) {
+function eventsPath(id) {
   return path.join(DISK_DIR, id + '.jsonl');
 }
 
-/**
- * Start a streaming recording. Caller pushes frames; finish() closes files.
- */
 function begin(meta) {
   ensureDir();
   const id = newId();
@@ -55,12 +57,15 @@ function begin(meta) {
     durationTicks: 0,
     phase: 'playing',
     baseDt: meta.baseDt || 0.05,
-    frames: 0,
+    seed: meta.seed != null ? meta.seed : 42,
+    format: 'cmd-v1',
+    events: 0,
+    cmds: 0,
     _fd: null,
     _closed: false,
   };
   try {
-    rec._fd = fs.openSync(framesPath(id), 'w');
+    rec._fd = fs.openSync(eventsPath(id), 'w');
   } catch (e) {
     console.warn('[recordings] open failed', e.message);
     rec._fd = null;
@@ -80,7 +85,10 @@ function writeMeta(rec) {
     durationTicks: rec.durationTicks,
     phase: rec.phase,
     baseDt: rec.baseDt,
-    frames: rec.frames,
+    seed: rec.seed,
+    format: rec.format || 'cmd-v1',
+    events: rec.events,
+    cmds: rec.cmds || 0,
   };
   try {
     fs.writeFileSync(metaPath(rec.id), JSON.stringify(meta));
@@ -89,14 +97,14 @@ function writeMeta(rec) {
   }
 }
 
-/** Append one frame (already a plain object). */
-function appendFrame(rec, frame) {
+function appendEvent(rec, ev) {
   if (!rec || rec._closed || !rec._fd) return;
   try {
-    fs.writeSync(rec._fd, JSON.stringify(frame) + '\n');
-    rec.frames++;
+    fs.writeSync(rec._fd, JSON.stringify(ev) + '\n');
+    rec.events++;
+    if (ev.type === 'cmd') rec.cmds = (rec.cmds || 0) + 1;
   } catch (e) {
-    console.warn('[recordings] frame write failed', e.message);
+    console.warn('[recordings] event write failed', e.message);
   }
 }
 
@@ -117,9 +125,14 @@ function finish(rec, phase, durationTicks) {
   writeMeta(rec);
   pruneOld();
   console.log(
-    `[recordings] saved ${rec.id} frames=${rec.frames} ticks=${rec.durationTicks} phase=${rec.phase}`
+    `[recordings] saved ${rec.id} format=${rec.format} events=${rec.events} cmds=${rec.cmds || 0} ticks=${rec.durationTicks} phase=${rec.phase}`
   );
-  return { id: rec.id, frames: rec.frames, phase: rec.phase };
+  return {
+    id: rec.id,
+    events: rec.events,
+    cmds: rec.cmds || 0,
+    phase: rec.phase,
+  };
 }
 
 function pruneOld() {
@@ -140,15 +153,12 @@ function pruneOld() {
     while (metas.length > MAX_RECORDINGS) {
       const old = metas.pop();
       if (!old || !old.id) continue;
-      try {
-        fs.unlinkSync(metaPath(old.id));
-      } catch {
-        /* ignore */
-      }
-      try {
-        fs.unlinkSync(framesPath(old.id));
-      } catch {
-        /* ignore */
+      for (const p of [metaPath(old.id), eventsPath(old.id)]) {
+        try {
+          fs.unlinkSync(p);
+        } catch {
+          /* ignore */
+        }
       }
     }
   } catch (e) {
@@ -182,20 +192,20 @@ function get(id) {
   const safe = String(id || '').replace(/[^a-zA-Z0-9_-]/g, '');
   if (!safe) return null;
   const mp = metaPath(safe);
-  const fp = framesPath(safe);
-  if (!fs.existsSync(mp) || !fs.existsSync(fp)) return null;
+  const ep = eventsPath(safe);
+  if (!fs.existsSync(mp) || !fs.existsSync(ep)) return null;
   try {
     const meta = JSON.parse(fs.readFileSync(mp, 'utf8'));
-    const lines = fs.readFileSync(fp, 'utf8').split('\n').filter(Boolean);
-    const frames = [];
+    const lines = fs.readFileSync(ep, 'utf8').split('\n').filter(Boolean);
+    const events = [];
     for (const line of lines) {
       try {
-        frames.push(JSON.parse(line));
+        events.push(JSON.parse(line));
       } catch {
         /* skip */
       }
     }
-    return { ...meta, frames };
+    return { ...meta, events, frames: events }; // frames alias for older client list UI
   } catch (e) {
     console.warn('[recordings] get failed', e.message);
     return null;
@@ -206,7 +216,7 @@ module.exports = {
   DISK_DIR,
   newId,
   begin,
-  appendFrame,
+  appendEvent,
   finish,
   list,
   get,

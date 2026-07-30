@@ -760,6 +760,8 @@
           const names = it.names || {};
           const left = document.createElement('div');
           const mins = Math.max(1, Math.round((it.durationTicks || 0) / 20 / 60));
+          const nEv = it.cmds != null ? it.cmds + ' cmds' : (it.events || it.frames || 0) + ' events';
+          const fmt = it.format === 'cmd-v1' ? 'cmd stream' : 'legacy';
           left.innerHTML =
             '<strong>' +
             escapeHtml(names.player || 'Atreides') +
@@ -770,8 +772,10 @@
             ' · ~' +
             mins +
             ' min · ' +
-            (it.frames || 0) +
-            ' frames · ' +
+            nEv +
+            ' · ' +
+            fmt +
+            ' · ' +
             escapeHtml(it.id) +
             '</span>';
           const btn = document.createElement('button');

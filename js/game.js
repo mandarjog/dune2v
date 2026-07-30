@@ -180,8 +180,8 @@
     tick(game, dt) {
       if (game.phase !== 'playing') return;
       // Multiplayer: server runs the sim; browsers only render + send cmds.
-      // (Server process sets game._serverSim so it still ticks.)
-      if (game.multiplayer && !game._serverSim) return;
+      // Replay sets _serverSim (or replay flag) to re-simulate command logs.
+      if (game.multiplayer && !game._serverSim && !game.replay) return;
 
       const t0 = typeof performance !== 'undefined' ? performance.now() : 0;
 

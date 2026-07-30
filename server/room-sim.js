@@ -5,14 +5,11 @@ const recordings = require('./recordings');
 
 const BASE_DT = 0.05; // 20 Hz — must match D.config.DT_SEC
 const STATE_EVERY = 2;
-/** Record keyframe every N sim ticks (~1s at 1×). */
-const RECORD_EVERY = 20;
 const SPEED_OPTIONS = [0.5, 1, 1.5, 2, 3];
-/** Hard cap frames per match to protect disk/load. */
-const MAX_FRAMES = 900;
 
 /**
- * Server-authoritative skirmish for one room.
+ * Server-authoritative skirmish.
+ * Recordings = init map/state once + command stream (tiny).
  */
 class RoomSim {
   constructor(roomId, meta) {
@@ -26,8 +23,6 @@ class RoomSim {
     this.onState = null;
     this.onEnd = null;
     this._rec = null;
-    this._lastRecordTick = -999;
-    this._frameCount = 0;
   }
 
   start() {
@@ -35,6 +30,8 @@ class RoomSim {
     const D = this.D;
     D.config.features.ai = false;
     D.config.features.debugCheats = false;
+    // Fixed seed for deterministic re-sim replay
+    if (D.config.seed == null) D.config.seed = 42;
 
     this.game = D.Game.create();
     this.game.multiplayer = true;
@@ -45,15 +42,19 @@ class RoomSim {
     this.game._serverSim = true;
     this.running = true;
     this.speed = 1;
-    this._frameCount = 0;
 
     this._rec = recordings.begin({
       room: this.roomId,
       names: this.meta.names || {},
       baseDt: BASE_DT,
+      seed: D.config.seed,
     });
-    this._lastRecordTick = -999;
-    this._recordFrame(true);
+    // One full init snapshot (map + starting units) — not per-frame dumps
+    recordings.appendEvent(this._rec, {
+      t: 0,
+      type: 'init',
+      state: this._serializeInit(),
+    });
 
     this._armTimer();
     this._broadcast(true);
@@ -73,6 +74,13 @@ class RoomSim {
     const s = Number(mult);
     if (!SPEED_OPTIONS.includes(s)) return false;
     this.speed = s;
+    if (this._rec) {
+      recordings.appendEvent(this._rec, {
+        t: this.game ? this.game.tick : 0,
+        type: 'speed',
+        speed: s,
+      });
+    }
     this._armTimer();
     return true;
   }
@@ -85,6 +93,13 @@ class RoomSim {
     }
     let info = null;
     if (this._rec) {
+      if (this.game) {
+        recordings.appendEvent(this._rec, {
+          t: this.game.tick,
+          type: 'end',
+          phase: this.game.phase || 'unknown',
+        });
+      }
       info = recordings.finish(
         this._rec,
         this.game ? this.game.phase : 'unknown',
@@ -118,7 +133,6 @@ class RoomSim {
     const D = this.D;
     if (this.game.phase !== 'playing') {
       this._broadcast(true);
-      this._recordFrame(true);
       const phase = this.game.phase;
       const recId = this.recordingId;
       if (this.onEnd) this.onEnd(phase, { recordingId: recId });
@@ -126,21 +140,7 @@ class RoomSim {
       return;
     }
     D.Game.tick(this.game, BASE_DT);
-    this._recordFrame(false);
     this._broadcast(false);
-  }
-
-  _recordFrame(force) {
-    if (!this._rec || !this.game) return;
-    if (this._frameCount >= MAX_FRAMES && !force) return;
-    const t = this.game.tick;
-    if (!force && t - this._lastRecordTick < RECORD_EVERY) return;
-    this._lastRecordTick = t;
-    const full = force || this._frameCount === 0;
-    const payload = this._serializeRecord(full);
-    if (!payload) return;
-    recordings.appendFrame(this._rec, { tick: t, full: !!full, state: payload });
-    this._frameCount++;
   }
 
   _broadcast(force) {
@@ -150,8 +150,8 @@ class RoomSim {
     if (payload) this.onState(payload, this.game.tick, { speed: this.speed });
   }
 
-  /** Live net snapshot — keep lean (no fog; client recomputes). */
-  _serializeLive() {
+  /** Init blob for recording — map once + entities. */
+  _serializeInit() {
     const D = this.D;
     const data = D.Save.serialize(this.game);
     if (!data) return null;
@@ -160,33 +160,20 @@ class RoomSim {
     delete data.controlGroups;
     delete data.messages;
     delete data.fog;
-    // Paths bloat JSON; clients don't need them for rendering
     if (data.units) {
       for (const u of data.units) {
         delete u.path;
         delete u.orders;
       }
     }
+    data.projectiles = [];
+    data.fx = [];
     return data;
   }
 
-  /**
-   * Recording snapshot — even leaner on thin frames.
-   * @param {boolean} full include map tiles
-   */
-  _serializeRecord(full) {
-    const data = this._serializeLive();
-    if (!data) return null;
-    if (!full && data.map) {
-      delete data.map.tiles;
-      // spice still useful for visual
-    }
-    // Drop projectiles/fx on thin frames to save space (optional keep)
-    if (!full) {
-      data.projectiles = [];
-      data.fx = [];
-    }
-    return data;
+  /** Live net snapshot (lean). */
+  _serializeLive() {
+    return this._serializeInit(); // same lean shape; live still sends spice/units each push
   }
 
   applyCommand(seat, payload) {
@@ -198,6 +185,7 @@ class RoomSim {
     const D = this.D;
     const game = this.game;
     const owner = seat === 'enemy' ? 'enemy' : 'player';
+    const tickAt = game.tick;
 
     function ownedIds(ids) {
       const out = [];
@@ -208,10 +196,15 @@ class RoomSim {
       return out;
     }
 
+    let result = { ok: false, reason: 'unknown' };
+
     switch (payload.op) {
       case 'order': {
         const ids = ownedIds(payload.ids);
-        if (!ids.length) return { ok: false, reason: 'ids' };
+        if (!ids.length) {
+          result = { ok: false, reason: 'ids' };
+          break;
+        }
         const order = payload.order || { type: 'stop' };
         D.Orders.issue(game, ids, order);
         if (order.type === 'deploy') {
@@ -225,47 +218,83 @@ class RoomSim {
           }
           if (any) {
             this._broadcast(true);
-            return { ok: true, info: 'Construction Yard deployed.' };
+            result = { ok: true, info: 'Construction Yard deployed.' };
+            break;
           }
-          if (fail) return { ok: false, reason: 'deploy' };
+          if (fail) {
+            result = { ok: false, reason: 'deploy' };
+            break;
+          }
         }
-        return { ok: true };
+        result = { ok: true };
+        break;
       }
       case 'stop': {
         const ids = ownedIds(payload.ids);
-        if (!ids.length) return { ok: false, reason: 'ids' };
+        if (!ids.length) {
+          result = { ok: false, reason: 'ids' };
+          break;
+        }
         D.Orders.stop(game, ids);
-        return { ok: true };
+        result = { ok: true };
+        break;
       }
       case 'build': {
-        return D.Economy.beginStructure(
+        result = D.Economy.beginStructure(
           game,
           owner,
           payload.type,
           payload.tileX | 0,
           payload.tileY | 0
         );
+        break;
       }
       case 'produce': {
         const b = game.buildings.find((x) => x.id === payload.buildingId);
-        if (!b || b.owner !== owner) return { ok: false, reason: 'building' };
-        return D.Economy.enqueueUnit(game, payload.buildingId, payload.unitType);
+        if (!b || b.owner !== owner) {
+          result = { ok: false, reason: 'building' };
+          break;
+        }
+        result = D.Economy.enqueueUnit(game, payload.buildingId, payload.unitType);
+        break;
       }
       case 'cancelQueue': {
         const b = game.buildings.find((x) => x.id === payload.buildingId);
-        if (!b || b.owner !== owner) return { ok: false, reason: 'building' };
+        if (!b || b.owner !== owner) {
+          result = { ok: false, reason: 'building' };
+          break;
+        }
         D.Economy.cancelQueue(game, payload.buildingId, payload.index | 0);
-        return { ok: true };
+        result = { ok: true };
+        break;
       }
       case 'rally': {
         const b = game.buildings.find((x) => x.id === payload.buildingId);
-        if (!b || b.owner !== owner) return { ok: false, reason: 'building' };
+        if (!b || b.owner !== owner) {
+          result = { ok: false, reason: 'building' };
+          break;
+        }
         D.Orders.setRally(game, payload.buildingId, payload.x, payload.y);
-        return { ok: true };
+        result = { ok: true };
+        break;
       }
       default:
-        return { ok: false, reason: 'unknown_op' };
+        result = { ok: false, reason: 'unknown_op' };
     }
+
+    // Log successful cmds (and deploy attempts that applied an order)
+    if (this._rec && result && result.ok) {
+      // Strip heavy fields; keep op payload only
+      const slim = JSON.parse(JSON.stringify(payload));
+      recordings.appendEvent(this._rec, {
+        t: tickAt,
+        type: 'cmd',
+        seat,
+        payload: slim,
+      });
+    }
+
+    return result;
   }
 }
 
