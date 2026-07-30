@@ -59,15 +59,18 @@
             </span>
           </div>
           <div id="mp-matchup" class="mp-matchup hidden"></div>
-          <div class="stat-row">
-            <span class="label">Credits</span>
-            <span class="value" id="stat-credits">0 / 1000</span>
+          <div id="replay-scoreboard" class="replay-scoreboard hidden" aria-live="polite"></div>
+          <div id="live-economy">
+            <div class="stat-row">
+              <span class="label">Credits</span>
+              <span class="value" id="stat-credits">0 / 1000</span>
+            </div>
+            <div class="stat-row">
+              <span class="label">Power</span>
+              <span class="value" id="stat-power">0 / 0</span>
+            </div>
+            <div id="power-bar"><div id="power-fill"></div></div>
           </div>
-          <div class="stat-row">
-            <span class="label">Power</span>
-            <span class="value" id="stat-power">0 / 0</span>
-          </div>
-          <div id="power-bar"><div id="power-fill"></div></div>
           <div class="section-title">Minimap</div>
           <canvas id="minimap" width="200" height="200"></canvas>
         </div>

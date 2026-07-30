@@ -912,7 +912,109 @@ button.linkish {
   font-weight: 600;
 }
 
+.mp-matchup .atreides {
+  color: var(--player);
+  font-weight: 600;
+}
+
+.mp-matchup .harkonnen {
+  color: var(--enemy);
+  font-weight: 600;
+}
+
 .mp-matchup.hidden {
+  display: none;
+}
+
+/* Both houses economy during replay */
+.replay-scoreboard {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 0 4px;
+  border-bottom: 1px solid var(--panel-border);
+  margin-bottom: 2px;
+  font-size: 11px;
+}
+
+.replay-scoreboard.hidden {
+  display: none;
+}
+
+.replay-score-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.replay-score-card {
+  background: #14110e;
+  border: 1px solid var(--panel-border);
+  border-radius: 3px;
+  padding: 5px 6px;
+  min-width: 0;
+}
+
+.replay-score-card.atreides {
+  border-color: color-mix(in srgb, var(--player) 55%, var(--panel-border));
+}
+
+.replay-score-card.harkonnen {
+  border-color: color-mix(in srgb, var(--enemy) 55%, var(--panel-border));
+}
+
+.replay-score-card .house {
+  font-weight: 700;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.replay-score-card.atreides .house {
+  color: var(--player);
+}
+
+.replay-score-card.harkonnen .house {
+  color: var(--enemy);
+}
+
+.replay-score-card .line {
+  display: flex;
+  justify-content: space-between;
+  gap: 4px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.35;
+}
+
+.replay-score-card .line .k {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.replay-score-card .line .v {
+  font-weight: 600;
+  font-size: 11px;
+}
+
+.replay-score-card .pwr-bar {
+  height: 4px;
+  background: #2a241c;
+  border-radius: 1px;
+  margin-top: 4px;
+  overflow: hidden;
+}
+
+.replay-score-card .pwr-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--ok);
+}
+
+#live-economy.hidden {
   display: none;
 }
 

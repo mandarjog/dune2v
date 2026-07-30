@@ -1050,7 +1050,7 @@
     refreshMatchup(game) {
       const el = els.mpMatchup || $('mp-matchup');
       if (!el) return;
-      if (!game.multiplayer) {
+      if (!game.multiplayer && !game.replay) {
         el.classList.add('hidden');
         el.textContent = '';
         return;
@@ -1062,11 +1062,75 @@
       const local = me(game);
       const a = escapeHtml(names.player || 'Atreides');
       const h = escapeHtml(names.enemy || 'Harkonnen');
-      el.innerHTML =
-        `<span class="${local === 'player' ? 'you' : ''}">${a}</span>` +
-        ` <span style="opacity:.5">vs</span> ` +
-        `<span class="${local === 'enemy' ? 'you' : ''}">${h}</span>`;
+      if (game.replay) {
+        el.innerHTML =
+          `<span class="atreides">${a}</span>` +
+          ` <span style="opacity:.5">vs</span> ` +
+          `<span class="harkonnen">${h}</span>` +
+          ` <span style="opacity:.45">· REPLAY</span>`;
+      } else {
+        el.innerHTML =
+          `<span class="${local === 'player' ? 'you' : ''}">${a}</span>` +
+          ` <span style="opacity:.5">vs</span> ` +
+          `<span class="${local === 'enemy' ? 'you' : ''}">${h}</span>`;
+      }
       el.classList.remove('hidden');
+    },
+
+    /** Dual-house credits/power for spectator replay. */
+    refreshReplayScoreboard(game) {
+      const board = $('replay-scoreboard');
+      const live = $('live-economy');
+      if (!board) return;
+      if (!game.replay) {
+        board.classList.add('hidden');
+        board.innerHTML = '';
+        live?.classList.remove('hidden');
+        return;
+      }
+      live?.classList.add('hidden');
+      board.classList.remove('hidden');
+
+      const names = game.playerNames || {};
+      const sides = [
+        {
+          owner: 'player',
+          css: 'atreides',
+          label: names.player || 'Atreides',
+          house: 'Atreides',
+        },
+        {
+          owner: 'enemy',
+          css: 'harkonnen',
+          label: names.enemy || 'Harkonnen',
+          house: 'Harkonnen',
+        },
+      ];
+
+      function card(s) {
+        const c = Math.floor(game.credits[s.owner] || 0);
+        const cap = game.spiceCap[s.owner] || 0;
+        const p = game.power[s.owner] || { prod: 0, need: 0 };
+        const ratio = p.need > 0 ? Math.min(1, p.prod / p.need) : 1;
+        const barCol =
+          ratio < 0.5 ? 'var(--danger)' : ratio < 1 ? 'var(--accent)' : 'var(--ok)';
+        const units = game.units.filter((u) => u.owner === s.owner && u.hp > 0).length;
+        const blds = game.buildings.filter(
+          (b) => b.owner === s.owner && b.hp > 0 && b.type !== 'concrete'
+        ).length;
+        return (
+          `<div class="replay-score-card ${s.css}">` +
+          `<div class="house" title="${escapeHtml(s.house)}">${escapeHtml(s.label)}</div>` +
+          `<div class="line"><span class="k">Credits</span><span class="v">${c} / ${cap}</span></div>` +
+          `<div class="line"><span class="k">Power</span><span class="v">${p.prod} / ${p.need}</span></div>` +
+          `<div class="line"><span class="k">Army</span><span class="v">${units}u · ${blds}b</span></div>` +
+          `<div class="pwr-bar"><span style="width:${Math.round(ratio * 100)}%;background:${barCol}"></span></div>` +
+          `</div>`
+        );
+      }
+
+      board.innerHTML =
+        `<div class="replay-score-row">${card(sides[0])}${card(sides[1])}</div>`;
     },
 
     showPause(show) {
@@ -1203,19 +1267,23 @@
       if (!els.credits) return;
       const o = me(game);
       D.UI.refreshMatchup(game);
+      D.UI.refreshReplayScoreboard(game);
       D.UI.refreshSpeedHud(game);
       D.UI.updateSpeedControl(game);
 
-      const c = Math.floor(game.credits[o] || 0);
-      const cap = game.spiceCap[o] || 0;
-      els.credits.textContent = `${c} / ${cap}`;
-      const p = game.power[o] || { prod: 0, need: 0, ratio: 1 };
-      els.power.textContent = `${p.prod} / ${p.need}`;
-      const ratio = p.need > 0 ? Math.min(1, p.prod / p.need) : 1;
-      if (els.powerFill) {
-        els.powerFill.style.width = Math.round(ratio * 100) + '%';
-        els.powerFill.style.background =
-          ratio < 0.5 ? 'var(--danger)' : ratio < 1 ? 'var(--accent)' : 'var(--ok)';
+      // Live economy is single-seat; replay uses dual scoreboard instead
+      if (!game.replay) {
+        const c = Math.floor(game.credits[o] || 0);
+        const cap = game.spiceCap[o] || 0;
+        els.credits.textContent = `${c} / ${cap}`;
+        const p = game.power[o] || { prod: 0, need: 0, ratio: 1 };
+        els.power.textContent = `${p.prod} / ${p.need}`;
+        const ratio = p.need > 0 ? Math.min(1, p.prod / p.need) : 1;
+        if (els.powerFill) {
+          els.powerFill.style.width = Math.round(ratio * 100) + '%';
+          els.powerFill.style.background =
+            ratio < 0.5 ? 'var(--danger)' : ratio < 1 ? 'var(--accent)' : 'var(--ok)';
+        }
       }
 
       // structure buttons enable/disable only
