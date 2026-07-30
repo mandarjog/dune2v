@@ -312,8 +312,39 @@
           if (!D.Replay) return;
           D.Replay.setSpeed(Number(btn.getAttribute('data-replay-speed')));
           D.Game.pushMessage(boundGame, 'Replay ' + D.Replay.speed + '×');
+          if (D.UI) D.UI.refreshSpeedHud(boundGame);
         });
       });
+
+      // Timeline scrubber: preview while dragging, seek on release (change)
+      const scrub = $('replay-scrub');
+      if (scrub) {
+        scrub.addEventListener('pointerdown', () => {
+          if (D.Replay) D.Replay._scrubbing = true;
+        });
+        scrub.addEventListener('input', () => {
+          if (!D.Replay || !D.Replay.active || !boundGame) return;
+          D.Replay._scrubbing = true;
+          const dur = D.Replay.durationTicks() || 1;
+          const t = Math.round((Number(scrub.value) / 1000) * dur);
+          const timeEl = $('replay-time');
+          if (timeEl) {
+            timeEl.textContent =
+              D.Replay.formatClock(t) + ' / ' + D.Replay.formatClock(dur) + ' …';
+          }
+        });
+        scrub.addEventListener('change', () => {
+          if (!D.Replay || !D.Replay.active || !boundGame) return;
+          const dur = D.Replay.durationTicks() || 1;
+          const t = Math.round((Number(scrub.value) / 1000) * dur);
+          D.Replay.seekTo(boundGame, t, { pause: true });
+          D.Replay._scrubbing = false;
+          D.Game.pushMessage(
+            boundGame,
+            'Seek ' + D.Replay.formatClock(t) + ' / ' + D.Replay.formatClock(dur)
+          );
+        });
+      }
       $('btn-feedback-cancel')?.addEventListener('click', () => {
         D.UI.hideFeedback();
       });
@@ -828,6 +859,33 @@
       bar.classList.toggle('hidden', !show);
       D.UI.setMpSpeedVisible(false);
       D.UI.setChatVisible(false);
+      if (show && boundGame) D.UI.refreshReplayScrub(boundGame);
+    },
+
+    /** Update scrub slider + clock from current replay tick. */
+    refreshReplayScrub(game) {
+      if (!game || !game.replay || !D.Replay || !D.Replay.active) return;
+      if (D.Replay._scrubbing) return;
+      const scrub = $('replay-scrub');
+      const timeEl = $('replay-time');
+      const status = $('replay-status');
+      const dur = D.Replay.durationTicks() || 1;
+      const cur = Math.min(dur, game.tick | 0);
+      if (scrub) {
+        const v = Math.round((cur / dur) * 1000);
+        if (Number(scrub.value) !== v) scrub.value = String(v);
+      }
+      if (timeEl) {
+        timeEl.textContent =
+          D.Replay.formatClock(cur) + ' / ' + D.Replay.formatClock(dur);
+      }
+      if (status) {
+        status.textContent =
+          (D.Replay._playing ? 'Replay' : 'Paused') +
+          ' ' +
+          (D.Replay.speed || 1) +
+          '×';
+      }
     },
 
     async showReplays() {

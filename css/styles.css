@@ -590,16 +590,29 @@ button.sel-unit-cell .sel-unit-name {
   transform: translateX(-50%);
   z-index: 30;
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 6px;
   background: rgba(12, 10, 8, 0.92);
   border: 1px solid var(--accent);
   padding: 8px 12px;
   border-radius: 3px;
+  min-width: min(520px, 92vw);
+  max-width: 92vw;
 }
 
 .replay-bar.hidden {
   display: none;
+}
+
+.replay-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.replay-scrub-row {
+  gap: 10px;
 }
 
 .replay-bar button {
@@ -620,6 +633,22 @@ button.sel-unit-cell .sel-unit-name {
   font-weight: 600;
   font-size: 12px;
   margin-right: 6px;
+}
+
+#replay-scrub {
+  flex: 1 1 auto;
+  min-width: 140px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.replay-time {
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  min-width: 5.5rem;
+  text-align: right;
 }
 
 .help-modal {

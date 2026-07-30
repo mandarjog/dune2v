@@ -29,13 +29,28 @@
         </div>
         <div id="speed-hud" class="speed-hud hidden" title="Game speed"></div>
         <div id="replay-bar" class="replay-bar hidden">
-          <span id="replay-status">Replay</span>
-          <button type="button" id="btn-replay-pause">Pause</button>
-          <button type="button" data-replay-speed="0.5">0.5×</button>
-          <button type="button" data-replay-speed="1">1×</button>
-          <button type="button" data-replay-speed="2">2×</button>
-          <button type="button" data-replay-speed="4">4×</button>
-          <button type="button" id="btn-replay-exit">Exit</button>
+          <div class="replay-bar-row">
+            <span id="replay-status">Replay</span>
+            <button type="button" id="btn-replay-pause">Pause</button>
+            <button type="button" data-replay-speed="0.5">0.5×</button>
+            <button type="button" data-replay-speed="1">1×</button>
+            <button type="button" data-replay-speed="2">2×</button>
+            <button type="button" data-replay-speed="4">4×</button>
+            <button type="button" data-replay-speed="8">8×</button>
+            <button type="button" id="btn-replay-exit">Exit</button>
+          </div>
+          <div class="replay-bar-row replay-scrub-row">
+            <input
+              type="range"
+              id="replay-scrub"
+              min="0"
+              max="1000"
+              value="0"
+              step="1"
+              title="Scrub timeline — drag to skip quiet periods"
+            />
+            <span id="replay-time" class="replay-time">0:00 / 0:00</span>
+          </div>
         </div>
         <div id="debug-overlay"></div>
       </div>

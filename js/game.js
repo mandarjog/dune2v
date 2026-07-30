@@ -191,8 +191,11 @@
       D.Combat.tick(game, dt);
       // Replay is pure cmd re-sim — never run AI (would invent extra orders)
       if (!game.multiplayer && !game.replay) D.AI.tick(game, dt);
-      D.Map.recomputeFog(game, 'player');
-      D.Map.recomputeFog(game, 'enemy');
+      // Skip fog during bulk replay seek (recomputed once at end)
+      if (!game._replaySeeking) {
+        D.Map.recomputeFog(game, 'player');
+        D.Map.recomputeFog(game, 'enemy');
+      }
       D.Game.checkWinLoss(game);
 
       if (typeof performance !== 'undefined') {
