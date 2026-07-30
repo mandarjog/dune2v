@@ -30,33 +30,57 @@
     u._stuckSince = 0;
   }
 
-  /** Flag unit stuck + throttle a sidebar message for local/friendly units. */
+  function stuckMessage(u) {
+    const name = (D.config.units[u.type] && D.config.units[u.type].name) || u.type;
+    const tips = {
+      path: name + ' is stuck — no path (clear walls/units or re-order).',
+      dock: name + ' waiting — refinery dock is busy.',
+      silos: name + ' cannot unload — silos full (build silos or spend credits).',
+      blocked: name + ' is stuck.',
+    };
+    return tips[u.stuckReason] || tips.blocked;
+  }
+
+  /** Flag unit stuck + throttle a sidebar message (SP / local sim only). */
   function markStuck(game, u, reason, dt) {
     u._stuckSince = (u._stuckSince || 0) + (dt || 0);
     // Require ~1.5s of continuous stuck before flashing/message
     if (u._stuckSince < 1.5) return;
     const was = u.stuck;
+    const prevReason = u.stuckReason;
     u.stuck = true;
     u.stuckReason = reason || 'blocked';
-    if (was && u._stuckMsgAt && game.tick - u._stuckMsgAt < 100) return;
-    // Message only for units the local player owns (SP player / MP localOwner)
+    // MP server: only set flags (clients announce from snapshots)
+    if (game.multiplayer && game._serverSim) return;
     const local = D.Game && D.Game.me ? D.Game.me(game) : 'player';
-    if (u.owner !== local && u.owner !== 'player') return;
-    // On MP server both owners get messages in snapshots via stuck flag; message once
-    if (game.multiplayer && !game._serverSim && u.owner !== local) return;
+    if (u.owner !== local) return;
+    if (was && prevReason === u.stuckReason && u._stuckMsgAt && game.tick - u._stuckMsgAt < 80) {
+      return;
+    }
     u._stuckMsgAt = game.tick;
-    if (!D.Game || !D.Game.pushMessage) return;
-    const name = (D.config.units[u.type] && D.config.units[u.type].name) || u.type;
-    const tips = {
-      path: name + ' is stuck — no path (clear walls/units or re-order).',
-      dock: name + ' waiting at busy refinery dock…',
-      silos: name + ' cannot unload — silos full (build silos / spend credits).',
-      blocked: name + ' is stuck.',
-    };
-    D.Game.pushMessage(game, tips[u.stuckReason] || tips.blocked);
+    if (D.Game && D.Game.pushMessage) D.Game.pushMessage(game, stuckMessage(u));
   }
 
   D.Orders = {
+    stuckMessage,
+
+    /** Client: toast when local units become / stay stuck (MP snapshots). */
+    announceStuckFromNet(game, localOwner, prevById) {
+      if (!game || !game.units || !D.Game.pushMessage) return;
+      const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      game._stuckNetMsgAt = game._stuckNetMsgAt || {};
+      for (const u of game.units) {
+        if (u.owner !== localOwner || !u.stuck) continue;
+        const prev = prevById && prevById[u.id];
+        const newly = !prev || !prev.stuck || prev.reason !== u.stuckReason;
+        const last = game._stuckNetMsgAt[u.id] || 0;
+        // New stuck → always; same stuck → remind every 10s
+        if (!newly && now - last < 10000) continue;
+        game._stuckNetMsgAt[u.id] = now;
+        D.Game.pushMessage(game, stuckMessage(u));
+      }
+    },
+
     issue(game, unitIds, order) {
       for (const id of unitIds) {
         const u = game.units.find((x) => x.id === id);

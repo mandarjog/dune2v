@@ -220,6 +220,16 @@
         game.map.width !== data.map.width ||
         game.map.height !== data.map.height;
 
+      // Snapshot stuck flags before replace (for MP toast on client)
+      const prevStuck = {};
+      if (game.units) {
+        for (const u of game.units) {
+          if (u.owner === localOwner) {
+            prevStuck[u.id] = { stuck: !!u.stuck, reason: u.stuckReason || null };
+          }
+        }
+      }
+
       if (firstLoad) {
         if (!D.Save.loadInto(game, data)) return false;
       } else {
@@ -250,6 +260,11 @@
       if (!game.fog) D.Map.initFog(game);
       D.Map.recomputeFog(game, 'player');
       D.Map.recomputeFog(game, 'enemy');
+
+      // Stuck glow is on the unit; explain why in the message log (server can't toast)
+      if (D.Orders && D.Orders.announceStuckFromNet) {
+        D.Orders.announceStuckFromNet(game, localOwner, prevStuck);
+      }
 
       return true;
     },
