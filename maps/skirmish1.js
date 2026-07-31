@@ -3,9 +3,10 @@
   'use strict';
   const D = (global.Dune2 = global.Dune2 || {});
   D.MAPS = D.MAPS || {};
+  // Classic 64×64 — kept for old replays; alias skirmish_classic
   D.MAPS.skirmish1 = {
     id: 'skirmish1',
-    name: 'Arrakis Skirmish',
+    name: 'Arrakis Skirmish (Classic)',
     width: 64,
     height: 64,
     spawns: {
@@ -402,4 +403,5 @@
       0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
     ]),
   };
+  D.MAPS.skirmish_classic = D.MAPS.skirmish1;
 })(typeof window !== 'undefined' ? window : globalThis);

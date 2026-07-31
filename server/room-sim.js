@@ -37,7 +37,7 @@ class RoomSim {
     this.game.multiplayer = true;
     this.game._serverSim = true;
     this.game.localOwner = 'player';
-    D.Game.startSkirmish(this.game, D.MAPS.skirmish1);
+    D.Game.startSkirmish(this.game, D.MAPS.skirmish_large || D.MAPS.skirmish1);
     this.game.multiplayer = true;
     this.game._serverSim = true;
     this.running = true;

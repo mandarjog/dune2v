@@ -479,7 +479,7 @@ function sendMatchSync(ws, room, { reconnected }) {
   sendJson(ws, {
     type: 'start',
     seed: 42,
-    map: 'skirmish1',
+    map: 'skirmish_large',
     authority: 'server',
     reconnected: !!reconnected,
     ...snap,
@@ -517,7 +517,7 @@ function maybeStartMatch(room) {
   const startMsg = {
     type: 'start',
     seed: 42,
-    map: 'skirmish1',
+    map: 'skirmish_large',
     authority: 'server',
     speed: 1,
     speedOptions: SPEED_OPTIONS,

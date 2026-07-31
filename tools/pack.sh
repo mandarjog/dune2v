@@ -25,6 +25,7 @@ SCRIPTS=(
   "$ROOT/js/save.js"
   "$ROOT/js/net.js"
   "$ROOT/maps/skirmish1.js"
+  "$ROOT/maps/skirmish_large.js"
   "$ROOT/js/main.js"
 )
 

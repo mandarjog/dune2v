@@ -8,8 +8,9 @@
     TILE_SIZE: 32,
     SIM_HZ: 20,
     DT_SEC: 0.05,
-    MAP_W: 64,
-    MAP_H: 64,
+    // Default skirmish size (map def width/height always wins at runtime)
+    MAP_W: 96,
+    MAP_H: 96,
 
     features: {
       fog: true,
@@ -26,7 +27,7 @@
 
     path: {
       maxRepathsPerTick: 8,
-      maxNodes: 512,
+      maxNodes: 2048,
       arrivalDist: 0.15,
     },
 

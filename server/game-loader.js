@@ -21,6 +21,7 @@ const SCRIPTS = [
   'js/game.js',
   'js/save.js',
   'maps/skirmish1.js',
+  'maps/skirmish_large.js',
 ];
 
 let loaded = false;

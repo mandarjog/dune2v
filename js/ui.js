@@ -203,7 +203,7 @@
         game.netRole = null;
         D.config.features.ai = true;
         if (D.Save) D.Save.clear();
-        D.Game.startSkirmish(game, D.MAPS.skirmish1);
+        D.Game.startSkirmish(game, D.MAPS.skirmish_large || D.MAPS.skirmish1);
         lastSelSig = '';
         D.UI.hideMenu();
         D.UI.hideLobby();
@@ -452,7 +452,7 @@
         D.UI.showPause(false);
         if (game.multiplayer) return;
         if (D.Save) D.Save.clear();
-        D.Game.startSkirmish(game, D.MAPS.skirmish1);
+        D.Game.startSkirmish(game, D.MAPS.skirmish_large || D.MAPS.skirmish1);
         lastSelSig = '';
         D.UI.refresh(game);
         D.Renderer.rebuildTerrain(game);
@@ -477,7 +477,7 @@
         }
         if (D.Save) D.Save.clear();
         game.speedMult = 1;
-        D.Game.startSkirmish(game, D.MAPS.skirmish1);
+        D.Game.startSkirmish(game, D.MAPS.skirmish_large || D.MAPS.skirmish1);
         lastSelSig = '';
         D.UI.refresh(game);
         D.Renderer.rebuildTerrain(game);

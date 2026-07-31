@@ -20,6 +20,7 @@ const files = [
   'js/ai.js',
   'js/game.js',
   'maps/skirmish1.js',
+  'maps/skirmish_large.js',
 ];
 
 for (const rel of files) {
