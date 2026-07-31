@@ -212,10 +212,23 @@
       }
 
       if (e.code === 'Escape') {
-        game.placement = null;
-        // Multiplayer: no pause (desyncs host clock); cancel placement only
+        e.preventDefault();
+        // Close topmost modal first — never treat Esc-in-help as quit
+        if (D.UI && D.UI.isHelpOpen && D.UI.isHelpOpen()) {
+          D.UI.hideHelp();
+          return;
+        }
+        if (D.UI && D.UI.isFeedbackOpen && D.UI.isFeedbackOpen()) {
+          D.UI.hideFeedback();
+          return;
+        }
+        if (game.placement) {
+          game.placement = null;
+          D.Game.pushMessage(game, 'Placement cancelled.');
+          return;
+        }
+        // Multiplayer: no pause (desyncs host clock)
         if (game.multiplayer) {
-          e.preventDefault();
           return;
         }
         if (game.phase === 'playing') {
@@ -226,11 +239,20 @@
           game.phase = 'playing';
           if (D.UI) D.UI.showPause(false);
         }
-        e.preventDefault();
         return;
       }
 
       if (game.phase !== 'playing') return;
+
+      // Confirm structure placement at tile under cursor (Space / Enter / F)
+      if (
+        game.placement &&
+        (e.code === 'Space' || e.code === 'Enter' || e.code === 'KeyF')
+      ) {
+        e.preventDefault();
+        D.Input.confirmPlacement(game, e.shiftKey);
+        return;
+      }
 
       // Help
       if (e.key === '?' || (e.code === 'Slash' && e.shiftKey) || e.code === 'Slash') {
@@ -472,35 +494,10 @@
         // placement
         if (game.placement) {
           const world = D.Renderer.screenToWorld(game, pos.x, pos.y);
-          const tx = Math.floor(world.x);
-          const ty = Math.floor(world.y);
-          let r;
-          if (D.Net) {
-            r = D.Net.command(game, {
-              op: 'build',
-              type: game.placement.type,
-              tileX: tx,
-              tileY: ty,
-            });
-          } else {
-            r = D.Economy.beginStructure(game, o, game.placement.type, tx, ty);
-          }
-          if (r && r.ok) {
-            if (!e.shiftKey) game.placement = null;
-            if (D.UI) D.UI.refresh(game);
-            if (r.queue != null && r.maxQueue != null && r.queue > 1) {
-              D.Game.pushMessage(
-                game,
-                'Construction ' + r.queue + '/' + r.maxQueue
-              );
-            }
-          } else if (r && !r.deferred) {
-            const why =
-              r.reason === 'busy'
-                ? 'queue full (' + D.Economy.structureQueueMax() + ' max)'
-                : r.reason || 'invalid';
-            D.Game.pushMessage(game, 'Cannot place: ' + why);
-          }
+          game.hoverTile = { tx: Math.floor(world.x), ty: Math.floor(world.y) };
+          game.placement.tileX = game.hoverTile.tx;
+          game.placement.tileY = game.hoverTile.ty;
+          D.Input.confirmPlacement(game, e.shiftKey);
           return;
         }
 
@@ -703,11 +700,65 @@
 
     startPlacement(game, type) {
       if (game.replay) return;
-      game.placement = { type, tileX: 0, tileY: 0 };
+      const ht = game.hoverTile || { tx: 0, ty: 0 };
+      game.placement = {
+        type,
+        tileX: ht.tx | 0,
+        tileY: ht.ty | 0,
+      };
+      D.Game.pushMessage(
+        game,
+        'Place ' +
+          ((D.config.buildings[type] && D.config.buildings[type].name) || type) +
+          ' — click or Space/F under cursor (Shift keeps placing, Esc cancel)'
+      );
     },
 
     cancelPlacement(game) {
       game.placement = null;
+    },
+
+    /** Place current structure at hover / placement ghost tile. */
+    confirmPlacement(game, keepPlacing) {
+      if (!game || game.replay || !game.placement || game.phase !== 'playing') {
+        return { ok: false, reason: 'none' };
+      }
+      const o = me(game);
+      let tx = game.placement.tileX | 0;
+      let ty = game.placement.tileY | 0;
+      if (game.hoverTile) {
+        tx = game.hoverTile.tx | 0;
+        ty = game.hoverTile.ty | 0;
+        game.placement.tileX = tx;
+        game.placement.tileY = ty;
+      }
+      let r;
+      if (D.Net) {
+        r = D.Net.command(game, {
+          op: 'build',
+          type: game.placement.type,
+          tileX: tx,
+          tileY: ty,
+        });
+      } else {
+        r = D.Economy.beginStructure(game, o, game.placement.type, tx, ty);
+      }
+      if (r && r.ok) {
+        if (!keepPlacing) game.placement = null;
+        if (D.UI) D.UI.refresh(game);
+        if (r.queue != null && r.maxQueue != null && r.queue > 1) {
+          D.Game.pushMessage(game, 'Construction ' + r.queue + '/' + r.maxQueue);
+        }
+        return r;
+      }
+      if (r && !r.deferred) {
+        const why =
+          r.reason === 'busy'
+            ? 'queue full (' + D.Economy.structureQueueMax() + ' max)'
+            : r.reason || 'invalid';
+        D.Game.pushMessage(game, 'Cannot place: ' + why);
+      }
+      return r || { ok: false };
     },
   };
 })(typeof window !== 'undefined' ? window : globalThis);

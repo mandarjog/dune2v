@@ -152,7 +152,7 @@ class RoomSim {
     if (payload) this.onState(payload, this.game.tick, { speed: this.speed });
   }
 
-  /** Init blob for recording — map once + entities. */
+  /** Init blob for recording — map once + entities (no ephemeral VFX). */
   _serializeInit() {
     const D = this.D;
     const data = D.Save.serialize(this.game);
@@ -168,14 +168,39 @@ class RoomSim {
         delete u.orders;
       }
     }
+    // Cmd-stream replay re-sims combat; keep init tiny
     data.projectiles = [];
     data.fx = [];
     return data;
   }
 
-  /** Live net snapshot (lean). */
+  /**
+   * Live net snapshot for clients. Includes projectiles/fx so shells are visible
+   * in MP (clients do not run combat). Still omits fog/paths for bandwidth.
+   */
   _serializeLive() {
-    return this._serializeInit(); // same lean shape; live still sends spice/units each push
+    const D = this.D;
+    const data = D.Save.serialize(this.game);
+    if (!data) return null;
+    delete data.camera;
+    delete data.selection;
+    delete data.controlGroups;
+    delete data.messages;
+    delete data.fog;
+    if (data.units) {
+      for (const u of data.units) {
+        delete u.path;
+        delete u.orders;
+      }
+    }
+    // Cap VFX lists so a huge volley cannot bloat the wire
+    if (data.projectiles && data.projectiles.length > 80) {
+      data.projectiles = data.projectiles.slice(-80);
+    }
+    if (data.fx && data.fx.length > 40) {
+      data.fx = data.fx.slice(-40);
+    }
+    return data;
   }
 
   applyCommand(seat, payload) {

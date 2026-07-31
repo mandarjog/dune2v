@@ -212,7 +212,8 @@
         buildTime: 40,
         tileW: 2,
         tileH: 2,
-        sight: 5,
+        // Wide local vision + unlocks enemy minimap blips in explored fog
+        sight: 10,
         requires: 'lightFactory',
         buildable: true,
       },

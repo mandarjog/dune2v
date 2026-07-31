@@ -511,19 +511,49 @@
         }
       }
 
-      // buildings — both sides in replay
+      const o = me(game);
+      // Radar (powered): enemy blips on minimap in explored fog, not only active vision
+      const hasRadar = game.buildings.some(
+        (b) =>
+          b.owner === o &&
+          b.type === 'radar' &&
+          b.buildProgress >= 1 &&
+          b.hp > 0 &&
+          b.powered !== false
+      );
+
+      // buildings — both sides in replay; radar helps enemy base outlines if explored
       for (const b of game.buildings) {
         if (b.type === 'concrete') continue;
-        if (!D.Renderer.shouldDrawBuilding(game, b)) continue;
+        if (game.replay || !D.Map.fogVisible(game) || b.owner === o) {
+          /* draw */
+        } else if (hasRadar) {
+          const c = D.Entities.buildingCenter(b);
+          if (!D.Map.isExplored(game, o, Math.floor(c.x), Math.floor(c.y))) continue;
+        } else if (!D.Renderer.shouldDrawBuilding(game, b)) {
+          continue;
+        }
         mctx.fillStyle = ownerColor(b.owner);
-        mctx.fillRect(b.tileX * sx, b.tileY * sy, Math.max(1, b.tileW * sx), Math.max(1, b.tileH * sy));
+        mctx.fillRect(
+          b.tileX * sx,
+          b.tileY * sy,
+          Math.max(1, b.tileW * sx),
+          Math.max(1, b.tileH * sy)
+        );
       }
 
-      // units — both sides when FOW off / replay
+      // units — radar shows enemy in explored areas on the minimap
       for (const u of game.units) {
-        if (!D.Renderer.shouldDrawUnit(game, u)) continue;
+        if (u.owner === o || game.replay || !D.Map.fogVisible(game)) {
+          // own / spectator
+        } else if (hasRadar) {
+          if (!D.Map.isExplored(game, o, Math.floor(u.x), Math.floor(u.y))) continue;
+        } else if (!D.Map.isVisible(game, o, Math.floor(u.x), Math.floor(u.y))) {
+          continue;
+        }
         mctx.fillStyle = ownerColor(u.owner);
-        mctx.fillRect(u.x * sx - 1, u.y * sy - 1, 2, 2);
+        const r = u.owner === o ? 2 : hasRadar && u.owner !== o ? 2.5 : 2;
+        mctx.fillRect(u.x * sx - r / 2, u.y * sy - r / 2, r, r);
       }
 
       // camera rect

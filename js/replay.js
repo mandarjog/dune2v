@@ -258,14 +258,22 @@
 
     /** Absolute share URL for a recording id. */
     shareUrl(id) {
+      const rid = String(id || '')
+        .replace(/[^a-zA-Z0-9_-]/g, '')
+        .toUpperCase();
+      if (!rid) return location.origin + '/';
       try {
-        const u = new URL(location.href);
-        u.search = '';
-        u.hash = '';
-        u.searchParams.set('replay', String(id));
-        return u.toString();
+        // Build from origin+pathname only — avoid wiping path or inheriting ?room=
+        const path = location.pathname || '/';
+        return (
+          location.origin +
+          path +
+          (path.endsWith('/') ? '' : '') +
+          '?replay=' +
+          encodeURIComponent(rid)
+        );
       } catch (e) {
-        return location.origin + '/?replay=' + encodeURIComponent(id);
+        return (location.origin || '') + '/?replay=' + encodeURIComponent(rid);
       }
     },
 

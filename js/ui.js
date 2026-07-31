@@ -275,22 +275,10 @@
       });
 
       $('btn-end-watch')?.addEventListener('click', () => {
-        D.UI.watchRecording(D.Net && D.Net.lastRecordingId);
+        D.UI.watchRecording(D.UI.lastRecordingId());
       });
       $('btn-end-copy-replay')?.addEventListener('click', async () => {
-        const id = D.Net && D.Net.lastRecordingId;
-        if (!id || !D.Replay) return;
-        const url = D.Replay.shareUrl(id);
-        try {
-          if (navigator.clipboard && navigator.clipboard.writeText) {
-            await navigator.clipboard.writeText(url);
-            D.Game.pushMessage(boundGame, 'Replay link copied.');
-          } else {
-            window.prompt('Copy replay link:', url);
-          }
-        } catch (err) {
-          window.prompt('Copy replay link:', url);
-        }
+        await D.UI.copyReplayLink(D.UI.lastRecordingId());
       });
 
       $('btn-replays')?.addEventListener('click', () => D.UI.showReplays());
@@ -563,14 +551,18 @@
           if (ev === 'match_end') {
             if (data.recordingId) {
               if (D.Net) D.Net.lastRecordingId = data.recordingId;
+              if (boundGame) boundGame.lastRecordingId = data.recordingId;
               D.Game.pushMessage(
                 game,
-                'Match recorded — Watch replay on this screen, or share ?replay=' +
-                  data.recordingId
+                'Match recorded — Watch replay or Copy link (?replay=' +
+                  data.recordingId +
+                  ')'
               );
               // Refresh end modal buttons if already showing
               if (game.phase === 'victory' || game.phase === 'defeat') {
                 D.UI.showEnd(game);
+              } else {
+                D.UI.syncEndRecordingButtons(data.recordingId);
               }
             }
           }
@@ -733,6 +725,16 @@
     hideHelp() {
       const modal = els.helpModal || $('help-modal');
       modal?.classList.add('hidden');
+    },
+
+    isHelpOpen() {
+      const modal = els.helpModal || $('help-modal');
+      return !!(modal && !modal.classList.contains('hidden'));
+    },
+
+    isFeedbackOpen() {
+      const modal = els.feedbackModal || $('feedback-modal');
+      return !!(modal && !modal.classList.contains('hidden'));
     },
 
     setMpSpeedVisible(show) {
@@ -1226,25 +1228,96 @@
           ? foeName + ' triumphs over ' + myName + '. The spice must flow… elsewhere.'
           : 'Your base has fallen. The spice must flow… elsewhere.';
       }
-      const recId = (D.Net && D.Net.lastRecordingId) || null;
+      const recId = D.UI.lastRecordingId();
+      D.UI.syncEndRecordingButtons(recId);
+      if (D.Save && !game.multiplayer) D.Save.clear();
+    },
+
+    lastRecordingId() {
+      if (D.Net && D.Net.lastRecordingId) return D.Net.lastRecordingId;
+      if (boundGame && boundGame.lastRecordingId) return boundGame.lastRecordingId;
+      return null;
+    },
+
+    syncEndRecordingButtons(recId) {
       const note = $('end-recording-note');
       const btnWatch = $('btn-end-watch');
       const btnCopy = $('btn-end-copy-replay');
-      // Show for either seat whenever this client received match_end with an id
       if (recId) {
         if (note) {
           note.classList.remove('hidden');
           note.textContent =
-            'Recording ' + recId + ' — Watch here, or Copy link to share (?replay=).';
+            'Recording ' + recId + ' — Watch here, or Copy link to share.';
         }
         btnWatch?.classList.remove('hidden');
         btnCopy?.classList.remove('hidden');
+        btnCopy && (btnCopy.disabled = false);
       } else {
         note?.classList.add('hidden');
         btnWatch?.classList.add('hidden');
         btnCopy?.classList.add('hidden');
       }
-      if (D.Save && !game.multiplayer) D.Save.clear();
+    },
+
+    async copyReplayLink(id) {
+      const note = $('end-recording-note');
+      if (!id) {
+        const msg = 'No recording id yet — wait a second after the match ends.';
+        if (note) {
+          note.classList.remove('hidden');
+          note.textContent = msg;
+        }
+        if (boundGame) D.Game.pushMessage(boundGame, msg);
+        return false;
+      }
+      const url =
+        D.Replay && D.Replay.shareUrl
+          ? D.Replay.shareUrl(id)
+          : location.origin + '/?replay=' + encodeURIComponent(id);
+      let ok = false;
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(url);
+          ok = true;
+        }
+      } catch (err) {
+        ok = false;
+      }
+      if (!ok) {
+        // Fallback: selectable prompt (clipboard often blocked inside modals)
+        try {
+          ok = !!(window.prompt('Copy replay link (Ctrl/Cmd+C):', url));
+        } catch (e2) {
+          ok = false;
+        }
+      }
+      if (!ok) {
+        // Last resort: temp input + execCommand
+        try {
+          const ta = document.createElement('textarea');
+          ta.value = url;
+          ta.setAttribute('readonly', '');
+          ta.style.position = 'fixed';
+          ta.style.left = '-9999px';
+          document.body.appendChild(ta);
+          ta.select();
+          ok = document.execCommand('copy');
+          document.body.removeChild(ta);
+        } catch (e3) {
+          ok = false;
+        }
+      }
+      const msg = ok
+        ? 'Replay link copied.'
+        : 'Could not copy — link: ' + url;
+      if (note) {
+        note.classList.remove('hidden');
+        note.textContent = ok
+          ? 'Link copied: ' + url
+          : 'Copy failed. Link: ' + url;
+      }
+      if (boundGame) D.Game.pushMessage(boundGame, msg);
+      return ok;
     },
 
     buildStructureButtons(game) {
@@ -1311,10 +1384,10 @@
             return;
           }
           D.Input.startPlacement(game, type);
-          D.Game.pushMessage(
-            game,
-            'Place ' + def.name + (n > 0 ? ' (' + (n + 1) + '/' + maxQ + ')' : '')
-          );
+          // startPlacement already toasts place instructions
+          if (n > 0) {
+            D.Game.pushMessage(game, 'Queue slot ' + (n + 1) + '/' + maxQ);
+          }
         });
         grid.appendChild(btn);
       }
