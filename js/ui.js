@@ -62,6 +62,16 @@
   }
 
   D.UI = {
+    /** 'base' | 'mcv' from menu/lobby checkboxes (or config). */
+    selectedStartMode() {
+      const lobby = $('opt-lobby-mcv-start');
+      const menu = $('opt-mcv-start');
+      if (lobby && !lobby.classList.contains('hidden') && lobby.checked) return 'mcv';
+      if (menu && menu.checked) return 'mcv';
+      if (D.config.skirmish && D.config.skirmish.startMode === 'mcv') return 'mcv';
+      return 'base';
+    },
+
     init(game) {
       boundGame = game;
       els = {
@@ -212,7 +222,9 @@
         game.netRole = null;
         D.config.features.ai = true;
         if (D.Save) D.Save.clear();
-        D.Game.startSkirmish(game, D.MAPS.skirmish_large || D.MAPS.skirmish1);
+        D.Game.startSkirmish(game, D.MAPS.skirmish_large || D.MAPS.skirmish1, {
+          startMode: D.UI.selectedStartMode(),
+        });
         lastSelSig = '';
         D.UI.hideMenu();
         D.UI.hideLobby();
@@ -426,11 +438,29 @@
           D.Game.pushMessage(boundGame, 'Only the host can start the match.');
           return;
         }
-        if (!D.Net.startMatch || !D.Net.startMatch()) {
+        const mcvOnly = !!($('opt-lobby-mcv-start') && $('opt-lobby-mcv-start').checked);
+        if (!D.Net.startMatch || !D.Net.startMatch({ startMode: mcvOnly ? 'mcv' : 'base' })) {
           D.Game.pushMessage(boundGame, 'Could not start — still connecting?');
           return;
         }
-        D.Game.pushMessage(boundGame, 'Starting match…');
+        D.Game.pushMessage(
+          boundGame,
+          mcvOnly ? 'Starting (MCV-only)…' : 'Starting (base ready)…'
+        );
+      });
+
+      // Sync menu MCV checkbox → lobby (host)
+      $('opt-mcv-start')?.addEventListener('change', () => {
+        const lobby = $('opt-lobby-mcv-start');
+        const menu = $('opt-mcv-start');
+        if (lobby && menu) lobby.checked = menu.checked;
+      });
+      $('opt-lobby-mcv-start')?.addEventListener('change', () => {
+        const lobby = $('opt-lobby-mcv-start');
+        const menu = $('opt-mcv-start');
+        if (lobby && menu && D.Net && D.Net.role === 'host') {
+          menu.checked = lobby.checked;
+        }
       });
 
       $('btn-lobby-copy')?.addEventListener('click', async () => {
@@ -461,7 +491,9 @@
         D.UI.showPause(false);
         if (game.multiplayer) return;
         if (D.Save) D.Save.clear();
-        D.Game.startSkirmish(game, D.MAPS.skirmish_large || D.MAPS.skirmish1);
+        D.Game.startSkirmish(game, D.MAPS.skirmish_large || D.MAPS.skirmish1, {
+          startMode: D.UI.selectedStartMode(),
+        });
         lastSelSig = '';
         D.UI.refresh(game);
         D.Renderer.rebuildTerrain(game);
@@ -487,7 +519,9 @@
         }
         if (D.Save) D.Save.clear();
         game.speedMult = 1;
-        D.Game.startSkirmish(game, D.MAPS.skirmish_large || D.MAPS.skirmish1);
+        D.Game.startSkirmish(game, D.MAPS.skirmish_large || D.MAPS.skirmish1, {
+          startMode: D.UI.selectedStartMode(),
+        });
         lastSelSig = '';
         D.UI.refresh(game);
         D.Renderer.rebuildTerrain(game);
@@ -1233,10 +1267,20 @@
       // Host-only start button; guests see "waiting for host"
       const btnStart = $('btn-lobby-start');
       const waitHost = $('lobby-wait-host');
+      const lobbyMcvRow = $('lobby-mcv-row');
+      const lobbyMcv = $('opt-lobby-mcv-start');
       const n = D.Net.peers || 0;
       const isHost = D.Net.role === 'host';
       const inLobby = D.Net.status === 'lobby' || D.Net.status === 'connecting';
       const started = !!(D.Net.started || D.Net.status === 'playing');
+      if (lobbyMcvRow) {
+        lobbyMcvRow.classList.toggle('hidden', !isHost || started);
+      }
+      if (lobbyMcv && isHost && !lobbyMcv._syncedOnce) {
+        const menu = $('opt-mcv-start');
+        if (menu) lobbyMcv.checked = menu.checked;
+        lobbyMcv._syncedOnce = true;
+      }
       if (btnStart) {
         const showStart = isHost && inLobby && n >= 2 && !started;
         btnStart.classList.toggle('hidden', !showStart);

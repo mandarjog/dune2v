@@ -867,6 +867,28 @@ button.linkish {
   background: #1a1610;
 }
 
+.start-mode-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 12px 0 4px;
+  font-size: 12px;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  user-select: none;
+}
+
+.start-mode-row input {
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+.start-mode-row .meta {
+  color: var(--muted);
+  font-size: 11px;
+}
+
 .mp-join-row {
   display: flex;
   gap: 8px;

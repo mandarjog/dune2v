@@ -110,6 +110,7 @@
      * @param {object} [opts]
      * @param {string[]} [opts.owners] active seat ids (default player+enemy)
      * @param {object} [opts.names] seat -> display name
+     * @param {string} [opts.startMode] 'base' | 'mcv' (default from config.skirmish)
      */
     startSkirmish(game, mapDef, opts) {
       opts = opts || {};
@@ -137,6 +138,12 @@
       game.activeOwners = owners.slice();
       if (opts.names) game.playerNames = opts.names;
 
+      const startMode =
+        opts.startMode === 'mcv' || opts.startMode === 'base'
+          ? opts.startMode
+          : (D.config.skirmish && D.config.skirmish.startMode) || 'base';
+      game.startMode = startMode;
+
       D.Seats.ensureBuckets(game, owners);
       const startC = D.config.economy.startingCredits;
       const baseCap = D.config.economy.baseSpiceCap;
@@ -152,11 +159,16 @@
       game.map = D.Map.createFromDef(mapDef);
       D.Map.initFog(game);
 
-      // Spawn MCVs
-      for (const o of owners) {
-        const sp = D.Seats.spawnFor(mapDef, o);
-        if (!sp) continue;
-        D.Entities.createUnit(game, 'mcv', o, sp.x + 0.5, sp.y + 0.5);
+      if (startMode === 'mcv') {
+        for (const o of owners) {
+          const sp = D.Seats.spawnFor(mapDef, o);
+          if (!sp) continue;
+          D.Entities.createUnit(game, 'mcv', o, sp.x + 0.5, sp.y + 0.5);
+        }
+      } else {
+        for (const o of owners) {
+          D.Game.placeStarterBase(game, mapDef, o);
+        }
       }
 
       // camera on local seat spawn
@@ -169,11 +181,19 @@
       }
 
       D.Economy.tickPower(game);
+      D.Economy.recalcSpiceCap(game);
       for (const o of owners) {
         D.Map.recomputeFog(game, o);
       }
 
-      D.Game.pushMessage(game, 'Deploy your MCV on rock to begin.');
+      if (startMode === 'mcv') {
+        D.Game.pushMessage(game, 'Deploy your MCV on rock to begin (E).');
+      } else {
+        D.Game.pushMessage(
+          game,
+          'Base online — CY, Windtrap, Refinery + harvester. Expand and harvest.'
+        );
+      }
       if (game.multiplayer) {
         const label = D.Seats.label(me, game.playerNames);
         D.Game.pushMessage(
@@ -187,6 +207,137 @@
       } else {
         D.Game.pushMessage(game, 'Atreides vs Harkonnen — harvest the spice.');
       }
+    },
+
+    /**
+     * Find rock footprint near (nearX, nearY) for a building type.
+     * @returns {{tx:number,ty:number}|null}
+     */
+    findStarterFootprint(game, type, owner, nearX, nearY, maxR) {
+      maxR = maxR != null ? maxR : 12;
+      const prefer = [];
+      // Prefer tiles around the spawn first
+      for (let r = 0; r <= maxR; r++) {
+        for (let dy = -r; dy <= r; dy++) {
+          for (let dx = -r; dx <= r; dx++) {
+            if (r > 0 && Math.abs(dx) !== r && Math.abs(dy) !== r) continue;
+            const tx = nearX + dx;
+            const ty = nearY + dy;
+            if (
+              D.Map.canPlace(game, type, tx, ty, owner, { skipProximity: true })
+            ) {
+              prefer.push({ tx, ty, d: dx * dx + dy * dy });
+            }
+          }
+        }
+        if (prefer.length) break;
+      }
+      if (!prefer.length) return null;
+      prefer.sort((a, b) => a.d - b.d);
+      return { tx: prefer[0].tx, ty: prefer[0].ty };
+    },
+
+    /**
+     * CY + Windtrap + Refinery + free harvester on rock near seat spawn.
+     */
+    placeStarterBase(game, mapDef, owner) {
+      const sp = D.Seats.spawnFor(mapDef, owner);
+      if (!sp) return false;
+      const cx = sp.x;
+      const cy = sp.y;
+
+      // CY: same 2×2 math as MCV deploy (centered on spawn tile)
+      let cyPos = null;
+      const tryCy = [
+        { tx: cx - 1, ty: cy - 1 },
+        { tx: cx, ty: cy - 1 },
+        { tx: cx - 1, ty: cy },
+        { tx: cx, ty: cy },
+      ];
+      for (const p of tryCy) {
+        if (D.Map.canPlace(game, 'constructionYard', p.tx, p.ty, owner, { skipProximity: true })) {
+          cyPos = p;
+          break;
+        }
+      }
+      if (!cyPos) {
+        cyPos = D.Game.findStarterFootprint(game, 'constructionYard', owner, cx, cy, 14);
+      }
+      if (!cyPos) {
+        // Last resort: MCV so the player is not soft-locked
+        D.Entities.createUnit(game, 'mcv', owner, cx + 0.5, cy + 0.5);
+        return false;
+      }
+
+      const yard = D.Entities.createBuilding(
+        game,
+        'constructionYard',
+        owner,
+        cyPos.tx,
+        cyPos.ty,
+        { complete: true }
+      );
+      if (game.structureBuilder) game.structureBuilder[owner] = yard.id;
+
+      const anchorX = cyPos.tx + 1;
+      const anchorY = cyPos.ty + 1;
+
+      let wtPos = D.Game.findStarterFootprint(
+        game,
+        'windtrap',
+        owner,
+        anchorX + 2,
+        anchorY,
+        10
+      );
+      if (!wtPos) {
+        wtPos = D.Game.findStarterFootprint(game, 'windtrap', owner, anchorX, anchorY, 14);
+      }
+      if (wtPos) {
+        D.Entities.createBuilding(game, 'windtrap', owner, wtPos.tx, wtPos.ty, {
+          complete: true,
+        });
+      }
+
+      let refPos = D.Game.findStarterFootprint(
+        game,
+        'refinery',
+        owner,
+        anchorX,
+        anchorY + 3,
+        12
+      );
+      if (!refPos) {
+        refPos = D.Game.findStarterFootprint(game, 'refinery', owner, anchorX, anchorY, 16);
+      }
+      let ref = null;
+      if (refPos) {
+        ref = D.Entities.createBuilding(game, 'refinery', owner, refPos.tx, refPos.ty, {
+          complete: true,
+        });
+      }
+
+      // Free harvester (refinery complete normally grants one)
+      if (ref) {
+        const spawn =
+          D.Economy.spawnPoint && D.Economy.spawnPoint(game, ref)
+            ? D.Economy.spawnPoint(game, ref)
+            : {
+                x: (ref.dockTileX != null ? ref.dockTileX : ref.tileX) + 0.5,
+                y: (ref.dockTileY != null ? ref.dockTileY : ref.tileY + ref.tileH) + 0.5,
+              };
+        const h = D.Entities.createUnit(game, 'harvester', owner, spawn.x, spawn.y);
+        const spice = D.Map.findNearestSpice(game.map, h.x, h.y);
+        if (spice && D.Orders) {
+          D.Orders.issue(game, [h.id], {
+            type: 'harvest',
+            tileX: spice.tx,
+            tileY: spice.ty,
+          });
+        }
+      }
+
+      return true;
     },
 
     isDefeated(game, owner) {

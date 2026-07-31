@@ -758,13 +758,18 @@ function maybeStartMatch(room, opts) {
   const n = connectedCount(room);
   if (n < MIN_START) return false;
   if (!opts.force && n < MAX_SEATS) return false;
-  return startMatchNow(room);
+  return startMatchNow(room, opts);
 }
 
-function startMatchNow(room) {
+function startMatchNow(room, opts) {
+  opts = opts || {};
   if (!room || room.started) return false;
   const owners = orderedConnectedOwners(room);
   if (owners.length < MIN_START) return false;
+
+  const startMode =
+    opts.startMode === 'mcv' || room.startMode === 'mcv' ? 'mcv' : 'base';
+  room.startMode = startMode;
 
   room.started = true;
   touch(room);
@@ -780,6 +785,7 @@ function startMatchNow(room) {
     speedOptions: SPEED_OPTIONS,
     owners,
     maxSeats: MAX_SEATS,
+    startMode,
     ...snap,
     names,
   };
@@ -793,7 +799,7 @@ function startMatchNow(room) {
   });
 
   room.speedPending = null;
-  const sim = new RoomSim(room.id, { names, owners });
+  const sim = new RoomSim(room.id, { names, owners, startMode });
   room.sim = sim;
   sim.onState = (payload, tick, extra) => {
     const wire = JSON.stringify({
@@ -1137,7 +1143,9 @@ function setupWs(server) {
           });
           return;
         }
-        const ok = maybeStartMatch(room, { force: true });
+        const mode = msg.startMode === 'mcv' ? 'mcv' : 'base';
+        room.startMode = mode;
+        const ok = maybeStartMatch(room, { force: true, startMode: mode });
         if (!ok) {
           sendJson(ws, { type: 'error', error: 'start_failed' });
         }

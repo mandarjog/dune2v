@@ -142,11 +142,16 @@
           <button id="btn-replays" type="button">Watch replays</button>
           <button id="btn-help-menu" type="button">Controls help</button>
         </div>
+        <label class="start-mode-row" for="opt-mcv-start">
+          <input type="checkbox" id="opt-mcv-start" />
+          <span>MCV-only start <span class="meta">(classic — no free base)</span></span>
+        </label>
         <div class="mp-block">
           <div class="section-title" style="margin-top: 14px">Multiplayer (2–5 FFA)</div>
           <p class="hint" style="margin-bottom: 8px">
             Pick a name, host a room, share the link. Up to 5 commanders — houses
             cycle Atreides / Harkonnen / Ordos (labels like <b>Ordos-Alex</b>).
+            Default start: CY + Windtrap + Refinery + harvester.
           </p>
           <label class="lobby-link-label" for="mp-name-input">Your name</label>
           <input
@@ -175,7 +180,7 @@
         <p class="hint" style="margin-top: 16px">
           SP autosaves (F5 / Esc pause). MP: share <code>?room=CODE</code>.
           Spectate: <code>?spectate=CODE</code> · list <code>?live=1</code>.<br />
-          <code>?debug=1</code> · <code>?ai=0</code> · <code>?fog=0</code>
+          <code>?debug=1</code> · <code>?ai=0</code> · <code>?fog=0</code> · <code>?mcv=1</code> classic start
         </p>
         <div class="actions" style="margin-top: 12px">
           <button id="btn-feedback" type="button">Send feedback</button>
@@ -365,9 +370,13 @@
           </p>
           <button id="btn-lobby-cancel" type="button">Cancel</button>
         </div>
+        <label class="start-mode-row" id="lobby-mcv-row" for="opt-lobby-mcv-start">
+          <input type="checkbox" id="opt-lobby-mcv-start" />
+          <span>MCV-only start <span class="meta">(host sets for everyone)</span></span>
+        </label>
         <p class="hint" style="margin-top: 10px">
           2–5 players. Houses cycle Atreides → Harkonnen → Ordos (then repeat).
-          Only the <b>host</b> can start (auto-starts at 5).
+          Only the <b>host</b> can start (auto-starts at 5). Default base: CY + power + refinery.
         </p>
       </div>
     </div>

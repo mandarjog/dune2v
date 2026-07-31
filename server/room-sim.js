@@ -44,6 +44,7 @@ class RoomSim {
     D.Game.startSkirmish(this.game, D.MAPS.skirmish_large || D.MAPS.skirmish1, {
       owners,
       names: this.meta.names || null,
+      startMode: this.meta.startMode === 'mcv' ? 'mcv' : 'base',
     });
     this.game.multiplayer = true;
     this.game._serverSim = true;

@@ -78,10 +78,22 @@ describe('economy cap', () => {
 describe('win condition', () => {
   it('defeated only with no CY and no MCV', () => {
     const game = Dune2.Game.create();
-    Dune2.Game.startSkirmish(game, Dune2.MAPS.skirmish1);
+    Dune2.Game.startSkirmish(game, Dune2.MAPS.skirmish1, { startMode: 'mcv' });
     assert.equal(Dune2.Game.isDefeated(game, 'player'), false);
     // remove MCV
     game.units = game.units.filter((u) => u.owner !== 'player');
+    assert.equal(Dune2.Game.isDefeated(game, 'player'), true);
+  });
+
+  it('base start is not defeated (has CY)', () => {
+    const game = Dune2.Game.create();
+    Dune2.Game.startSkirmish(game, Dune2.MAPS.skirmish_large || Dune2.MAPS.skirmish1, {
+      startMode: 'base',
+    });
+    assert.equal(Dune2.Game.isDefeated(game, 'player'), false);
+    game.units = game.units.filter((u) => u.owner !== 'player');
+    assert.equal(Dune2.Game.isDefeated(game, 'player'), false); // still has CY
+    game.buildings = game.buildings.filter((b) => b.owner !== 'player');
     assert.equal(Dune2.Game.isDefeated(game, 'player'), true);
   });
 });

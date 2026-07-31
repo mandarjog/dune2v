@@ -49,8 +49,9 @@ describe('skirmish_large map', () => {
     assert.equal(Dune2.Map.tileAt(map, ps.x, ps.y), ROCK, 'player spawn on rock');
     assert.equal(Dune2.Map.tileAt(map, es.x, es.y), ROCK, 'enemy spawn on rock');
 
+    // MCV mode: spawn must allow immediate deploy
     const game = Dune2.Game.create();
-    Dune2.Game.startSkirmish(game, def);
+    Dune2.Game.startSkirmish(game, def, { startMode: 'mcv' });
     const pMcv = game.units.find((u) => u.owner === 'player' && u.type === 'mcv');
     const eMcv = game.units.find((u) => u.owner === 'enemy' && u.type === 'mcv');
     assert.ok(pMcv && eMcv, 'both MCVs spawned');
@@ -67,6 +68,14 @@ describe('skirmish_large map', () => {
       game.buildings.some((b) => b.owner === 'player' && b.type === 'constructionYard'),
       'player CY exists after deploy'
     );
+
+    // Default base mode: CY + WT + refinery + harvester
+    const g2 = Dune2.Game.create();
+    Dune2.Game.startSkirmish(g2, def, { startMode: 'base' });
+    assert.ok(g2.buildings.some((b) => b.owner === 'player' && b.type === 'constructionYard'));
+    assert.ok(g2.buildings.some((b) => b.owner === 'player' && b.type === 'windtrap'));
+    assert.ok(g2.buildings.some((b) => b.owner === 'player' && b.type === 'refinery'));
+    assert.ok(g2.units.some((u) => u.owner === 'player' && u.type === 'harvester'));
 
     let spiceTotal = 0;
     let spiceTiles = 0;
@@ -98,11 +107,13 @@ describe('skirmish_large map', () => {
 
   it('startSkirmish accepts skirmish_large', () => {
     const game = Dune2.Game.create();
-    Dune2.Game.startSkirmish(game, Dune2.MAPS.skirmish_large);
+    Dune2.Game.startSkirmish(game, Dune2.MAPS.skirmish_large, { startMode: 'base' });
     assert.equal(game.map.width, 96);
     assert.equal(game.map.height, 96);
     assert.equal(game.fog.player.explored.length, 96 * 96);
-    assert.ok(game.units.some((u) => u.owner === 'player' && u.type === 'mcv'));
-    assert.ok(game.units.some((u) => u.owner === 'enemy' && u.type === 'mcv'));
+    assert.ok(
+      game.buildings.some((b) => b.owner === 'player' && b.type === 'constructionYard')
+    );
+    assert.ok(game.units.some((u) => u.owner === 'player' && u.type === 'harvester'));
   });
 });

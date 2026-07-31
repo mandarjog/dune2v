@@ -161,11 +161,20 @@
       }
     },
 
-    /** Host: start match with current lobby (2–5 players). */
-    startMatch() {
+    /**
+     * Host: start match with current lobby (2–5 players).
+     * @param {{ startMode?: 'base'|'mcv' }} [opts]
+     */
+    startMatch(opts) {
       if (!D.Net.ws || D.Net.ws.readyState !== 1) return false;
+      opts = opts || {};
       try {
-        D.Net.ws.send(JSON.stringify({ type: 'start_match' }));
+        D.Net.ws.send(
+          JSON.stringify({
+            type: 'start_match',
+            startMode: opts.startMode === 'mcv' ? 'mcv' : 'base',
+          })
+        );
         return true;
       } catch (e) {
         return false;

@@ -43,6 +43,15 @@
       maxStructureQueue: 3,
     },
 
+    /**
+     * Skirmish opener.
+     * - base: CY + Windtrap + Refinery + free harvester (default)
+     * - mcv: classic MCV-only (must deploy on rock)
+     */
+    skirmish: {
+      startMode: 'base', // 'base' | 'mcv'
+    },
+
     colors: {
       sand: '#c2a05a',
       dune: '#a8843c',

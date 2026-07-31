@@ -16,6 +16,12 @@
     if (params.get('ai') === '0') {
       D.config.features.ai = false;
     }
+    if (params.get('mcv') === '1' || params.get('start') === 'mcv') {
+      if (!D.config.skirmish) D.config.skirmish = {};
+      D.config.skirmish.startMode = 'mcv';
+      const cb = document.getElementById('opt-mcv-start');
+      if (cb) cb.checked = true;
+    }
 
     const game = D.Game.create();
     const canvas = document.getElementById('game-canvas');
