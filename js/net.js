@@ -41,16 +41,18 @@
     game: null,
     status: 'idle', // idle | connecting | lobby | playing | error | reconnecting
     room: null,
-    seat: null, // 'player' | 'enemy'
-    role: null, // 'host' | 'guest' (lobby label only; sim is server)
+    seat: null, // 'player' | 'enemy' | null (spectator)
+    role: null, // 'host' | 'guest' | 'spectator'
     playerId: null,
     name: 'Commander',
     peers: 0,
     seats: {},
     names: { player: null, enemy: null },
+    spectators: 0,
     lastError: null,
     lastRecordingId: null,
     _wantRoom: null,
+    _wantSpectate: false,
     _createOnOpen: false,
     _handlers: [],
     _lastStateTick: -1,
@@ -106,6 +108,7 @@
     _applyRoster(msg) {
       if (msg.seats) D.Net.seats = msg.seats;
       if (msg.peers != null) D.Net.peers = msg.peers;
+      if (msg.spectators != null) D.Net.spectators = msg.spectators;
       const names = { player: null, enemy: null };
       if (msg.seats) {
         if (msg.seats.player && msg.seats.player.name) names.player = msg.seats.player.name;
@@ -166,6 +169,7 @@
       D.Net.loadPlayerId();
       D.Net._intentionalLeave = false;
       D.Net._createOnOpen = true;
+      D.Net._wantSpectate = false;
       D.Net._wantRoom = null;
       D.Net._connect();
     },
@@ -185,6 +189,30 @@
       D.Net.loadPlayerId();
       D.Net._intentionalLeave = false;
       D.Net._createOnOpen = false;
+      D.Net._wantSpectate = false;
+      D.Net._wantRoom = code;
+      D.Net._connect();
+    },
+
+    /**
+     * Join a room as spectator (no seat, FOW off, no orders).
+     * Receives the same state broadcasts as players.
+     */
+    spectate(roomCode, name) {
+      const code = String(roomCode || '')
+        .trim()
+        .toUpperCase();
+      if (!code) {
+        D.Net.lastError = 'Enter a room code';
+        D.Net._emit('error', { error: 'bad_room' });
+        return;
+      }
+      if (name != null) D.Net.saveName(name);
+      else D.Net.loadStoredName();
+      D.Net.loadPlayerId();
+      D.Net._intentionalLeave = false;
+      D.Net._createOnOpen = false;
+      D.Net._wantSpectate = true;
       D.Net._wantRoom = code;
       D.Net._connect();
     },
@@ -213,17 +241,21 @@
       D.Net.peers = 0;
       D.Net.seats = {};
       D.Net.names = { player: null, enemy: null };
+      D.Net.spectators = 0;
       D.Net._lastStateTick = -1;
       D.Net._focusedOnce = false;
       D.Net._reconnectAttempts = 0;
       D.Net._wantRoom = null;
+      D.Net._wantSpectate = false;
       D.Net._createOnOpen = false;
       if (D.Net.game) {
         D.Net.game.multiplayer = false;
+        D.Net.game.spectator = false;
         D.Net.game.netRole = null;
         D.Net.game.localOwner = 'player';
         D.Net.game._serverSim = false;
         D.Net.game.playerNames = null;
+        D.Net.game.roomCode = null;
       }
       D.Net._emit('left');
     },
@@ -252,6 +284,10 @@
       D.Net.status = 'reconnecting';
       D.Net._wantRoom = room;
       D.Net._createOnOpen = false;
+      // Keep spectator role across reconnect
+      if (D.Net.role === 'spectator' || (D.Net.game && D.Net.game.spectator)) {
+        D.Net._wantSpectate = true;
+      }
       const delay = Math.min(1000 * D.Net._reconnectAttempts, 5000);
       D.Game.pushMessage(
         D.Net.game,
@@ -314,6 +350,15 @@
               name,
             })
           );
+        } else if (D.Net._wantRoom && D.Net._wantSpectate) {
+          ws.send(
+            JSON.stringify({
+              type: 'spectate',
+              room: D.Net._wantRoom,
+              playerId,
+              name,
+            })
+          );
         } else if (D.Net._wantRoom) {
           ws.send(
             JSON.stringify({
@@ -368,14 +413,21 @@
         D.Net._emit('error', msg);
         if (msg.error === 'room_full') {
           D.Game.pushMessage(D.Net.game, 'Room is full (2 players max).');
+        } else if (msg.error === 'spectators_full') {
+          D.Game.pushMessage(D.Net.game, 'Too many spectators in that room.');
+        } else if (msg.error === 'no_room') {
+          D.Game.pushMessage(D.Net.game, 'Room not found.');
+        } else if (msg.error === 'spectate_off') {
+          D.Game.pushMessage(D.Net.game, 'Spectating is disabled for that room.');
         }
         return;
       }
 
       if (msg.type === 'joined') {
         D.Net.room = msg.room;
-        D.Net.seat = msg.seat;
+        D.Net.seat = msg.seat != null ? msg.seat : null;
         D.Net.role = msg.role;
+        const isSpec = msg.role === 'spectator' || msg.spectator === true;
         if (msg.playerId) {
           D.Net.playerId = msg.playerId;
           try {
@@ -386,32 +438,54 @@
         }
         if (msg.name) D.Net.name = msg.name;
         D.Net.peers = msg.peers || 1;
+        if (msg.spectators != null) D.Net.spectators = msg.spectators;
         D.Net._applyRoster(msg);
         D.Net._reconnectAttempts = 0;
-        if (msg.reconnected || msg.started) {
-          D.Net.status = 'playing';
-          D.Net._lastStateTick = -1; // accept full resync
+        if (msg.reconnected || msg.started || isSpec) {
+          D.Net.status = msg.started || isSpec ? 'playing' : 'lobby';
+          if (msg.started || msg.reconnected) D.Net._lastStateTick = -1;
+          if (isSpec && !msg.started) D.Net.status = 'lobby';
         } else {
           D.Net.status = 'lobby';
         }
         const game = D.Net.game;
         if (game) {
           game.multiplayer = true;
+          game.spectator = isSpec;
           game.netRole = D.Net.role;
-          game.localOwner = D.Net.seat || 'player';
+          // Spectators use 'player' for UI labels; FOW off via game.spectator
+          game.localOwner = isSpec ? 'player' : D.Net.seat || 'player';
           game.roomCode = D.Net.room;
         }
         try {
           const u = new URL(location.href);
-          u.searchParams.set('room', D.Net.room);
+          if (isSpec) {
+            u.searchParams.delete('room');
+            u.searchParams.set('spectate', D.Net.room);
+          } else {
+            u.searchParams.delete('spectate');
+            u.searchParams.set('room', D.Net.room);
+          }
           history.replaceState(null, '', u.pathname + u.search + u.hash);
         } catch (e) {
           /* ignore */
         }
         if (msg.reconnected) {
           D.Game.pushMessage(game, 'Reconnected to room ' + D.Net.room + '.');
+        } else if (isSpec) {
+          D.Game.pushMessage(
+            game,
+            'Spectating room ' + D.Net.room + (msg.started ? '' : ' (waiting for start)…')
+          );
         }
         D.Net._emit('joined', msg);
+        return;
+      }
+
+      if (msg.type === 'lobby_wait') {
+        D.Net._applyRoster(msg);
+        D.Net.status = 'lobby';
+        D.Net._emit('lobby_wait', msg);
         return;
       }
 
@@ -508,9 +582,16 @@
       D.config.features.ai = false;
       if (D.Save) D.Save.clear();
 
+      const isSpec =
+        D.Net.role === 'spectator' ||
+        msg.role === 'spectator' ||
+        msg.spectator === true ||
+        !!game.spectator;
+
       game.multiplayer = true;
-      game.netRole = D.Net.role;
-      game.localOwner = D.Net.seat || 'player';
+      game.spectator = isSpec;
+      game.netRole = isSpec ? 'spectator' : D.Net.role;
+      game.localOwner = isSpec ? 'player' : D.Net.seat || 'player';
       game.roomCode = D.Net.room;
       // Allow input immediately; first state fills the world
       if (game.phase === 'menu' || game.phase === 'lobby') game.phase = 'playing';
@@ -521,26 +602,46 @@
       if (D.UI) {
         D.UI.hideMenu();
         D.UI.hideLobby && D.UI.hideLobby();
+        D.UI.hideLiveMatches && D.UI.hideLiveMatches();
       }
       D.Net._applyRoster(msg);
       D.Net.status = 'playing';
       D.Net._reconnectAttempts = 0;
-      const meName = D.Net.nameFor(game.localOwner);
-      const foeSeat = game.localOwner === 'player' ? 'enemy' : 'player';
-      const foeName = D.Net.nameFor(foeSeat);
-      const house = game.localOwner === 'enemy' ? 'Harkonnen (red)' : 'Atreides (blue)';
-      if (msg.reconnected) {
+      const aName = D.Net.nameFor('player');
+      const hName = D.Net.nameFor('enemy');
+      if (isSpec) {
         D.Game.pushMessage(
           game,
-          'Back in the match as ' + meName + ' (' + house + ').'
+          'SPECTATING · ' +
+            aName +
+            ' vs ' +
+            hName +
+            ' · room ' +
+            (D.Net.room || '') +
+            ' — FOW off, view only.'
         );
       } else {
-        D.Game.pushMessage(
-          game,
-          meName + ' vs ' + foeName + ' — you are ' + house + '. Select MCV, press E to deploy.'
-        );
+        const meName = D.Net.nameFor(game.localOwner);
+        const foeSeat = game.localOwner === 'player' ? 'enemy' : 'player';
+        const foeName = D.Net.nameFor(foeSeat);
+        const house = game.localOwner === 'enemy' ? 'Harkonnen (red)' : 'Atreides (blue)';
+        if (msg.reconnected) {
+          D.Game.pushMessage(
+            game,
+            'Back in the match as ' + meName + ' (' + house + ').'
+          );
+        } else {
+          D.Game.pushMessage(
+            game,
+            meName + ' vs ' + foeName + ' — you are ' + house + '. Select MCV, press E to deploy.'
+          );
+        }
       }
-      D.Net._emit('match_started', { role: D.Net.role, reconnected: !!msg.reconnected });
+      D.Net._emit('match_started', {
+        role: D.Net.role,
+        reconnected: !!msg.reconnected,
+        spectator: isSpec,
+      });
     },
 
     _handleState(msg) {
@@ -550,9 +651,10 @@
       if (msg.tick != null && msg.tick < D.Net._lastStateTick) return;
       D.Net._lastStateTick = msg.tick != null ? msg.tick : D.Net._lastStateTick;
 
+      const isSpec = !!(game.spectator || D.Net.role === 'spectator');
       const hadMap = !!game.map;
       const ok = D.Save.applyNetState(game, msg.payload, {
-        localOwner: D.Net.seat || game.localOwner || 'player',
+        localOwner: isSpec ? 'player' : D.Net.seat || game.localOwner || 'player',
       });
       if (!ok) {
         console.warn('[net] applyNetState failed', msg.tick);
@@ -560,8 +662,9 @@
       }
 
       game.multiplayer = true;
-      game.netRole = D.Net.role;
-      game.localOwner = D.Net.seat || game.localOwner || 'player';
+      game.spectator = isSpec;
+      game.netRole = isSpec ? 'spectator' : D.Net.role;
+      game.localOwner = isSpec ? 'player' : D.Net.seat || game.localOwner || 'player';
       game._serverSim = false;
       if (game.phase === 'menu') game.phase = 'playing';
 
@@ -576,6 +679,7 @@
       if (D.UI) {
         D.UI.hideMenu();
         D.UI.hideLobby && D.UI.hideLobby();
+        D.UI.hideLiveMatches && D.UI.hideLiveMatches();
       }
     },
 
@@ -586,6 +690,7 @@
         if (msg.info) D.Game.pushMessage(game, msg.info);
         return;
       }
+      if (msg.reason === 'spectator') return; // silent for spectators
       const reasons = {
         ids: 'No valid units for that order.',
         placement: 'Cannot deploy here — need rock (move MCV onto rock first).',
@@ -597,6 +702,7 @@
         busy: 'Construction queue full (3 max).',
         not_started: 'Match not started yet.',
         not_running: 'Server sim not running.',
+        spectator: 'Spectators cannot issue orders.',
       };
       const text = msg.message || reasons[msg.reason] || 'Order failed: ' + (msg.reason || '?');
       D.Game.pushMessage(game, text);
@@ -604,6 +710,15 @@
 
     _focusSpawn(game) {
       if (!game.map) return;
+      // Spectators start at mid-map so both bases are closer to view
+      if (game.spectator) {
+        const t = D.config.TILE_SIZE;
+        game.camera.x = (game.map.width * t) / 2 - 400;
+        game.camera.y = (game.map.height * t) / 2 - 300;
+        if (D.Renderer) D.Renderer.clampCamera(game);
+        D.Net._focusedOnce = true;
+        return;
+      }
       const owner = game.localOwner || 'player';
       const sp = game.map.spawns && game.map.spawns[owner];
       if (!sp) return;
@@ -629,6 +744,9 @@
      */
     command(game, payload) {
       if (!payload || !payload.op) return { ok: false, reason: 'bad' };
+      if (game && (game.spectator || game.replay)) {
+        return { ok: false, reason: game.spectator ? 'spectator' : 'replay' };
+      }
       const owner = game.localOwner || 'player';
 
       if (game.multiplayer) {
@@ -724,7 +842,7 @@
     },
 
     requestSpeed(speed) {
-      if (!D.Net.game || !D.Net.game.multiplayer) return false;
+      if (!D.Net.game || !D.Net.game.multiplayer || D.Net.game.spectator) return false;
       return D.Net._send({ type: 'speed_request', speed: Number(speed) });
     },
 

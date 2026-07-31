@@ -61,6 +61,7 @@
         // multiplayer
         localOwner: 'player',
         multiplayer: false,
+        spectator: false, // live spectate — FOW off, no orders
         netRole: null,
         roomCode: null,
         playerNames: null, // { player, enemy } display names when MP

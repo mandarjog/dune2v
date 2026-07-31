@@ -38,14 +38,18 @@
   }
 
   function issueOrder(game, ids, order) {
-    if (game && game.replay) return { ok: false, reason: 'replay' };
+    if (game && (game.replay || game.spectator)) {
+      return { ok: false, reason: game.spectator ? 'spectator' : 'replay' };
+    }
     if (D.Net) return D.Net.command(game, { op: 'order', ids, order });
     D.Orders.issue(game, ids, order);
     return { ok: true };
   }
 
   function issueStop(game, ids) {
-    if (game && game.replay) return { ok: false, reason: 'replay' };
+    if (game && (game.replay || game.spectator)) {
+      return { ok: false, reason: game.spectator ? 'spectator' : 'replay' };
+    }
     if (D.Net) return D.Net.command(game, { op: 'stop', ids });
     D.Orders.stop(game, ids);
     return { ok: true };
@@ -53,11 +57,16 @@
 
   function pickAt(game, wx, wy) {
     const o = me(game);
+    const fullView = !!(game.replay || game.spectator || !D.Map.fogVisible(game));
     // units first (topmost by id)
     let bestU = null;
     let bestD = 0.55;
     for (const u of game.units) {
-      if (u.owner !== o && !D.Map.isVisible(game, o, Math.floor(u.x), Math.floor(u.y)))
+      if (
+        !fullView &&
+        u.owner !== o &&
+        !D.Map.isVisible(game, o, Math.floor(u.x), Math.floor(u.y))
+      )
         continue;
       const d = Math.hypot(u.x - wx, u.y - wy);
       if (d < bestD) {
@@ -70,8 +79,14 @@
     for (const b of game.buildings) {
       if (b.type === 'concrete') continue;
       if (
+        !fullView &&
         b.owner !== o &&
-        !D.Map.isExplored(game, o, Math.floor(b.tileX + b.tileW / 2), Math.floor(b.tileY + b.tileH / 2))
+        !D.Map.isExplored(
+          game,
+          o,
+          Math.floor(b.tileX + b.tileW / 2),
+          Math.floor(b.tileY + b.tileH / 2)
+        )
       )
         continue;
       if (
@@ -134,7 +149,13 @@
     },
 
     poll(game, dt) {
-      if (game.phase !== 'playing' && game.phase !== 'paused' && !game.replay) return;
+      if (
+        game.phase !== 'playing' &&
+        game.phase !== 'paused' &&
+        !game.replay &&
+        !game.spectator
+      )
+        return;
       const speed = PAN_SPEED * dt;
       if (panKeys.left || keys.ArrowLeft || keys.KeyA) game.camera.x -= speed;
       if (panKeys.right || keys.ArrowRight || keys.KeyD) game.camera.x += speed;
@@ -145,7 +166,7 @@
 
     /** True when viewer must not issue orders / place buildings. */
     isSpectator(game) {
-      return !!(game && game.replay);
+      return !!(game && (game.replay || game.spectator));
     },
 
     onKeyDown(game, e) {
@@ -160,6 +181,41 @@
       if (e.code === 'ArrowRight' || e.code === 'KeyD') panKeys.right = true;
       if (e.code === 'ArrowUp' || e.code === 'KeyW') panKeys.up = true;
       if (e.code === 'ArrowDown' || e.code === 'KeyS') panKeys.down = true;
+
+      // Live spectate: camera + leave only (no orders / build)
+      if (game.spectator && !game.replay) {
+        if (e.code === 'Escape') {
+          e.preventDefault();
+          if (D.UI && D.UI.isHelpOpen && D.UI.isHelpOpen()) {
+            D.UI.hideHelp();
+            return;
+          }
+          if (D.Net) D.Net.leave();
+          game.spectator = false;
+          game.multiplayer = false;
+          game.phase = 'menu';
+          if (D.UI) {
+            if (D.UI.hideEnd) D.UI.hideEnd();
+            D.UI.setChatVisible && D.UI.setChatVisible(false);
+            D.UI.setMpSpeedVisible && D.UI.setMpSpeedVisible(false);
+            D.UI.showMenu();
+          }
+          try {
+            const u = new URL(location.href);
+            u.searchParams.delete('spectate');
+            u.searchParams.delete('live');
+            history.replaceState(null, '', u.pathname + u.search + u.hash);
+          } catch (err) {
+            /* ignore */
+          }
+          return;
+        }
+        if (e.key === '?' || (e.code === 'Slash' && e.shiftKey) || e.code === 'Slash') {
+          e.preventDefault();
+          if (D.UI) D.UI.showHelp();
+        }
+        return;
+      }
 
       // Replay: camera + transport controls only (no orders / build)
       if (game.replay && D.Replay) {
@@ -263,7 +319,7 @@
       }
 
       // SP speed ± (same steps as sidebar dropdown)
-      if (!game.multiplayer && !game.replay) {
+      if (!game.multiplayer && !game.replay && !game.spectator) {
         const steps = [0.5, 1, 1.5, 2, 3];
         if (e.key === '+' || e.code === 'Equal' || e.code === 'NumpadAdd') {
           let i = steps.indexOf(game.speedMult || 1);
@@ -464,9 +520,9 @@
     },
 
     onMouseDown(game, e) {
-      if (game.phase !== 'playing' && !game.replay) return;
-      // Replay is view-only (camera still pans via keys / minimap)
-      if (game.replay) {
+      if (game.phase !== 'playing' && !game.replay && !game.spectator) return;
+      // Replay / live spectate is view-only (camera still pans via keys / minimap)
+      if (game.replay || game.spectator) {
         if (e.button === 0) {
           // allow box-select for looking around only — no orders
           dragging = true;
@@ -508,12 +564,13 @@
     },
 
     onMouseMove(game, e) {
-      if (!canvas || (game.phase !== 'playing' && !game.replay)) return;
+      if (!canvas || (game.phase !== 'playing' && !game.replay && !game.spectator))
+        return;
       const pos = canvasPos(e, canvas);
       const world = D.Renderer.screenToWorld(game, pos.x, pos.y);
       game.hoverTile = { tx: Math.floor(world.x), ty: Math.floor(world.y) };
 
-      if (game.placement && !game.replay) {
+      if (game.placement && !game.replay && !game.spectator) {
         game.placement.tileX = Math.floor(world.x);
         game.placement.tileY = Math.floor(world.y);
       }
@@ -529,10 +586,10 @@
     },
 
     onMouseUp(game, e) {
-      if (game.phase !== 'playing' && !game.replay) return;
+      if (game.phase !== 'playing' && !game.replay && !game.spectator) return;
       if (e.button !== 0) return;
       // Order clicks (Ctrl/⌘) were handled on mousedown
-      if (D.Input.isOrderModifier(e) && !game.replay) {
+      if (D.Input.isOrderModifier(e) && !game.replay && !game.spectator) {
         dragging = false;
         game.selection.box = null;
         return;
@@ -542,6 +599,8 @@
       dragging = false;
       game.selection.box = null;
       const o = me(game);
+      // Spectators / replay may select any house for inspection
+      const anyOwner = !!(game.replay || game.spectator);
 
       if (!box) return;
       const w = box.x1 - box.x0;
@@ -552,7 +611,7 @@
         // click select
         const world = D.Renderer.screenToWorld(game, pos.x, pos.y);
         const hit = pickAt(game, world.x, world.y);
-        if (hit && hit.entity.owner === o) {
+        if (hit && (anyOwner || hit.entity.owner === o)) {
           const id = hit.entity.id;
           const now = performance.now();
           if (
@@ -562,8 +621,14 @@
           ) {
             // double-click select-by-type
             const type = hit.entity.type;
+            const owner = hit.entity.owner;
             game.selection.ids = game.units
-              .filter((u) => u.owner === o && u.type === type && u.hp > 0)
+              .filter(
+                (u) =>
+                  (anyOwner ? u.owner === owner : u.owner === o) &&
+                  u.type === type &&
+                  u.hp > 0
+              )
               .map((u) => u.id);
           } else if (shift) {
             const i = game.selection.ids.indexOf(id);
@@ -587,7 +652,7 @@
         const ids = game.units
           .filter(
             (u) =>
-              u.owner === o &&
+              (anyOwner || u.owner === o) &&
               u.hp > 0 &&
               u.x >= minX &&
               u.x <= maxX &&
@@ -609,7 +674,7 @@
     },
 
     rightClick(game, pos, e) {
-      if (game.replay) return;
+      if (game.replay || game.spectator) return;
       const world = D.Renderer.screenToWorld(game, pos.x, pos.y);
       const units = selectedUnits(game);
       const buildings = selectedBuildings(game);
@@ -685,7 +750,13 @@
     },
 
     onMinimap(game, e) {
-      if (game.phase !== 'playing' && game.phase !== 'paused' && !game.replay) return;
+      if (
+        game.phase !== 'playing' &&
+        game.phase !== 'paused' &&
+        !game.replay &&
+        !game.spectator
+      )
+        return;
       const pos = canvasPos(e, minimap);
       const map = game.map;
       if (!map) return;
@@ -699,7 +770,7 @@
     },
 
     startPlacement(game, type) {
-      if (game.replay) return;
+      if (game.replay || game.spectator) return;
       const ht = game.hoverTile || { tx: 0, ty: 0 };
       game.placement = {
         type,
@@ -720,7 +791,13 @@
 
     /** Place current structure at hover / placement ghost tile. */
     confirmPlacement(game, keepPlacing) {
-      if (!game || game.replay || !game.placement || game.phase !== 'playing') {
+      if (
+        !game ||
+        game.replay ||
+        game.spectator ||
+        !game.placement ||
+        game.phase !== 'playing'
+      ) {
         return { ok: false, reason: 'none' };
       }
       const o = me(game);

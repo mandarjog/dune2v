@@ -37,7 +37,10 @@
     });
 
     // Shareable multiplayer room: ?room=ABC123 → name prompt, then join
+    // Spectate: ?spectate=CODE · live list: ?live=1
     const room = (params.get('room') || '').trim().toUpperCase();
+    const spectateRoom = (params.get('spectate') || '').trim().toUpperCase();
+    const showLive = params.get('live') === '1' || params.get('live') === 'true';
     const replayId = (params.get('replay') || '').trim();
     if (replayId && D.Replay && D.UI) {
       // Deep-link to a match recording
@@ -54,6 +57,13 @@
           D.UI.showMenu();
         }
       })();
+    } else if (spectateRoom && D.Net && D.UI) {
+      const qName = params.get('name');
+      if (qName) D.Net.saveName(qName);
+      D.UI.hideMenu();
+      D.Net.spectate(spectateRoom, qName || undefined);
+    } else if (showLive && D.UI) {
+      D.UI.showLiveMatches();
     } else if (room && D.Net && D.UI) {
       const qName = params.get('name');
       D.UI.showJoinPrompt(room, qName || undefined);

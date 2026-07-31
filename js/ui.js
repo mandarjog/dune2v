@@ -102,6 +102,9 @@
         replaysList: $('replays-list'),
         replaysStatus: $('replays-status'),
         replayBar: $('replay-bar'),
+        liveModal: $('live-modal'),
+        liveList: $('live-list'),
+        liveStatus: $('live-status'),
       };
 
       D.UI._pendingJoinRoom = null;
@@ -199,6 +202,7 @@
       $('btn-start')?.addEventListener('click', () => {
         if (game.multiplayer && D.Net) D.Net.leave();
         game.multiplayer = false;
+        game.spectator = false;
         game.localOwner = 'player';
         game.netRole = null;
         D.config.features.ai = true;
@@ -207,6 +211,7 @@
         lastSelSig = '';
         D.UI.hideMenu();
         D.UI.hideLobby();
+        D.UI.hideLiveMatches();
         D.UI.refresh(game);
         D.Renderer.rebuildTerrain(game);
         if (D.Save) D.Save.write(game);
@@ -263,6 +268,7 @@
           }
           return;
         }
+        if (boundGame.spectator) return;
         if (boundGame.multiplayer && D.Net) {
           D.Net.requestSpeed(v);
           D.Game.pushMessage(boundGame, 'Requested ' + v + '× speed — waiting for opponent…');
@@ -284,6 +290,10 @@
       $('btn-replays')?.addEventListener('click', () => D.UI.showReplays());
       $('btn-replays-close')?.addEventListener('click', () => D.UI.hideReplays());
       $('btn-replays-refresh')?.addEventListener('click', () => D.UI.loadReplaysList());
+
+      $('btn-live')?.addEventListener('click', () => D.UI.showLiveMatches());
+      $('btn-live-close')?.addEventListener('click', () => D.UI.hideLiveMatches());
+      $('btn-live-refresh')?.addEventListener('click', () => D.UI.loadLiveList());
 
       $('btn-replay-pause')?.addEventListener('click', () => {
         if (!D.Replay) return;
@@ -468,6 +478,7 @@
         if (game.multiplayer) {
           if (D.Net) D.Net.leave();
           game.multiplayer = false;
+          game.spectator = false;
           game.localOwner = 'player';
           D.config.features.ai = true;
           D.UI.setChatVisible(false);
@@ -488,6 +499,7 @@
         game.phase = 'menu';
         if (game.multiplayer && D.Net) D.Net.leave();
         game.multiplayer = false;
+        game.spectator = false;
         game.localOwner = 'player';
         D.config.features.ai = true;
         D.UI.setChatVisible(false);
@@ -512,16 +524,31 @@
           if (ev === 'match_started') {
             D.UI.hideLobby();
             D.UI.hideMenu();
+            D.UI.hideLiveMatches();
             lastSelSig = '';
-            D.UI.setChatVisible(true);
-            D.UI.setMpSpeedVisible(true);
+            const spec = !!(game && game.spectator);
+            D.UI.setChatVisible(!!(game && game.multiplayer));
+            D.UI.setMpSpeedVisible(!!(game && game.multiplayer && !spec && game.phase === 'playing'));
             D.UI.refreshMatchup(game);
             D.UI.refreshSpeedHud(game);
             D.UI.refresh(game);
           }
           if (ev === 'joined') {
+            const spec = !!(game && game.spectator) || (data && data.role === 'spectator');
             D.UI.setChatVisible(!!(game && game.multiplayer));
-            D.UI.setMpSpeedVisible(!!(game && game.multiplayer && game.phase === 'playing'));
+            D.UI.setMpSpeedVisible(
+              !!(game && game.multiplayer && !spec && game.phase === 'playing')
+            );
+            if (spec) {
+              D.UI.hideLiveMatches();
+              D.UI.hideMenu();
+              // Lobby wait until match starts — show thin lobby status if not started
+              if (data && data.started) {
+                D.UI.hideLobby();
+              } else {
+                D.UI.showLobby('Spectating — waiting for match to start…');
+              }
+            }
           }
           if (ev === 'left' || ev === 'disconnect') {
             D.UI.setChatVisible(false);
@@ -570,6 +597,9 @@
             const err = (data && data.error) || D.Net.lastError || 'error';
             const map = {
               room_full: 'That room is full (2 players).',
+              spectators_full: 'Too many spectators in that room.',
+              no_room: 'Room not found (may have ended).',
+              spectate_off: 'Spectating is disabled for that room.',
               no_host: 'Multiplayer needs the game server (npm start or Fly).',
               no_ws: 'WebSocket not available in this browser.',
               connect_failed: 'Could not connect to multiplayer server.',
@@ -748,7 +778,7 @@
         D.UI.setMpSpeedVisible(false);
         return;
       }
-      if (game.replay) {
+      if (game.replay || game.spectator) {
         D.UI.setMpSpeedVisible(false);
         return;
       }
@@ -839,6 +869,9 @@
       if (game.replay && D.Replay) {
         s = D.Replay.speed;
         label = 'REPLAY ' + s + '×';
+      } else if (game.spectator) {
+        s = game.netSpeed || 1;
+        label = 'SPECTATING' + (s !== 1 ? ' ' + s + '×' : '');
       } else if (game.multiplayer) {
         s = game.netSpeed || 1;
         label = s === 1 ? '' : s + '×';
@@ -899,6 +932,115 @@
     hideReplays() {
       const modal = els.replaysModal || $('replays-modal');
       modal?.classList.add('hidden');
+    },
+
+    async showLiveMatches() {
+      const modal = els.liveModal || $('live-modal');
+      modal?.classList.remove('hidden');
+      try {
+        const u = new URL(location.href);
+        u.searchParams.set('live', '1');
+        history.replaceState(null, '', u.pathname + u.search + u.hash);
+      } catch (e) {
+        /* ignore */
+      }
+      await D.UI.loadLiveList();
+    },
+
+    hideLiveMatches() {
+      const modal = els.liveModal || $('live-modal');
+      modal?.classList.add('hidden');
+      try {
+        const u = new URL(location.href);
+        if (u.searchParams.has('live')) {
+          u.searchParams.delete('live');
+          history.replaceState(null, '', u.pathname + u.search + u.hash);
+        }
+      } catch (e) {
+        /* ignore */
+      }
+    },
+
+    async loadLiveList() {
+      const list = els.liveList || $('live-list');
+      const status = els.liveStatus || $('live-status');
+      if (!list) return;
+      list.innerHTML = '';
+      if (status) status.textContent = 'Loading…';
+      try {
+        const res = await fetch('/api/live', { cache: 'no-store' });
+        if (!res.ok) throw new Error('http_' + res.status);
+        const data = await res.json();
+        if (!data || !data.ok) throw new Error('bad_response');
+        const items = data.matches || [];
+        if (status) {
+          status.textContent = items.length
+            ? items.length + ' live room(s) on this server'
+            : 'No live matches right now — host a room or refresh.';
+        }
+        for (const it of items) {
+          const row = document.createElement('div');
+          row.className = 'replay-row';
+          const names = it.names || {};
+          const left = document.createElement('div');
+          const phase = it.started
+            ? it.phase === 'playing' || !it.phase
+              ? 'in progress'
+              : String(it.phase)
+            : 'lobby';
+          const tick = it.tick != null ? it.tick : 0;
+          const mins = Math.max(0, Math.floor(tick / 20 / 60));
+          const secs = Math.floor((tick / 20) % 60);
+          const clock =
+            it.started && tick
+              ? mins + ':' + String(secs).padStart(2, '0')
+              : '—';
+          left.innerHTML =
+            '<strong>' +
+            escapeHtml(names.player || 'Atreides') +
+            '</strong> vs <strong>' +
+            escapeHtml(names.enemy || 'Harkonnen') +
+            '</strong><br/><span class="meta">' +
+            escapeHtml(it.room || '') +
+            ' · ' +
+            phase +
+            ' · ' +
+            clock +
+            ' · ' +
+            (it.players | 0) +
+            ' playing · ' +
+            (it.spectators | 0) +
+            ' watching' +
+            (it.open === false ? ' · closed' : '') +
+            '</span>';
+          const actions = document.createElement('div');
+          actions.className = 'replay-row-actions';
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'primary';
+          btn.textContent = it.open === false ? 'Full' : 'Spectate';
+          btn.disabled = it.open === false;
+          btn.addEventListener('click', () => {
+            if (!D.Net || !it.room) return;
+            const name =
+              (els.mpNameInput && els.mpNameInput.value) ||
+              D.Net.loadStoredName() ||
+              undefined;
+            D.UI.hideLiveMatches();
+            D.UI.hideMenu();
+            D.Net.spectate(it.room, name);
+          });
+          actions.appendChild(btn);
+          row.appendChild(left);
+          row.appendChild(actions);
+          list.appendChild(row);
+        }
+      } catch (err) {
+        if (status) {
+          status.textContent =
+            'Could not list live matches (need the live game server).';
+        }
+      }
     },
 
     async loadReplaysList() {
@@ -1110,7 +1252,7 @@
     refreshMatchup(game) {
       const el = els.mpMatchup || $('mp-matchup');
       if (!el) return;
-      if (!game.multiplayer && !game.replay) {
+      if (!game.multiplayer && !game.replay && !game.spectator) {
         el.classList.add('hidden');
         el.textContent = '';
         return;
@@ -1128,6 +1270,15 @@
           ` <span style="opacity:.5">vs</span> ` +
           `<span class="harkonnen">${h}</span>` +
           ` <span style="opacity:.45">· REPLAY</span>`;
+      } else if (game.spectator) {
+        const code = escapeHtml(game.roomCode || (D.Net && D.Net.room) || '');
+        el.innerHTML =
+          `<span class="atreides">${a}</span>` +
+          ` <span style="opacity:.5">vs</span> ` +
+          `<span class="harkonnen">${h}</span>` +
+          ` <span style="opacity:.55">· SPECTATING` +
+          (code ? ' · ' + code : '') +
+          `</span>`;
       } else {
         el.innerHTML =
           `<span class="${local === 'player' ? 'you' : ''}">${a}</span>` +
@@ -1137,12 +1288,12 @@
       el.classList.remove('hidden');
     },
 
-    /** Dual-house credits/power for spectator replay. */
+    /** Dual-house credits/power for spectator replay / live spectate. */
     refreshReplayScoreboard(game) {
       const board = $('replay-scoreboard');
       const live = $('live-economy');
       if (!board) return;
-      if (!game.replay) {
+      if (!game.replay && !game.spectator) {
         board.classList.add('hidden');
         board.innerHTML = '';
         live?.classList.remove('hidden');
@@ -1217,7 +1368,22 @@
         (names && names[D.Game.foe(game)]) ||
         (D.Net && D.Net.nameFor(D.Game.foe(game))) ||
         'Opponent';
-      if (local === 'victory') {
+      if (game.spectator) {
+        const a = (names && names.player) || 'Atreides';
+        const h = (names && names.enemy) || 'Harkonnen';
+        h2.textContent = 'Match over';
+        p.textContent =
+          a +
+          ' vs ' +
+          h +
+          ' — ' +
+          (game.phase === 'victory'
+            ? a + ' wins.'
+            : game.phase === 'defeat'
+              ? h + ' wins.'
+              : 'Ended.') +
+          ' Esc returns to menu.';
+      } else if (local === 'victory') {
         h2.textContent = 'Victory';
         p.textContent = game.multiplayer
           ? myName + ' defeats ' + foeName + '. The Emperor acknowledges your control of Arrakis.'
@@ -1371,7 +1537,7 @@
         btn.addEventListener('click', (e) => {
           e.preventDefault();
           e.stopPropagation();
-          if (game.phase !== 'playing' || game.replay) return;
+          if (game.phase !== 'playing' || game.replay || game.spectator) return;
           const o = me(game);
           if (!D.Economy.hasTech(game, o, def.requires)) {
             D.Game.pushMessage(game, 'Requires ' + (def.requires || 'tech'));
@@ -1402,8 +1568,8 @@
       D.UI.refreshSpeedHud(game);
       D.UI.updateSpeedControl(game);
 
-      // Live economy is single-seat; replay uses dual scoreboard instead
-      if (!game.replay) {
+      // Live economy is single-seat; replay / spectate use dual scoreboard instead
+      if (!game.replay && !game.spectator) {
         const c = Math.floor(game.credits[o] || 0);
         const cap = game.spiceCap[o] || 0;
         els.credits.textContent = `${c} / ${cap}`;
@@ -1438,15 +1604,16 @@
               b.buildProgress >= 1
           );
           const queueFull = qCount >= maxQ;
+          const viewOnly = !!(game.replay || game.spectator);
           btn.disabled =
             !tech ||
             !hasCY ||
             queueFull ||
             game.phase !== 'playing' ||
-            !!game.replay;
+            viewOnly;
           btn.classList.toggle(
             'active',
-            !!(game.placement && game.placement.type === type && !game.replay)
+            !!(game.placement && game.placement.type === type && !viewOnly)
           );
           if (queueFull) {
             btn.title = (def.name || type) + ' — queue full (' + maxQ + ' max)';
@@ -1477,7 +1644,11 @@
       const o = me(game);
       for (const btn of els.unitMenu.querySelectorAll('[data-produce]')) {
         const cost = Number(btn.dataset.cost || 0);
-        btn.disabled = game.phase !== 'playing' || !D.Economy.canAfford(game, o, cost);
+        btn.disabled =
+          game.phase !== 'playing' ||
+          !!game.replay ||
+          !!game.spectator ||
+          !D.Economy.canAfford(game, o, cost);
       }
     },
 
@@ -1539,7 +1710,7 @@
         row.appendChild(ic);
         row.appendChild(text);
         info.appendChild(row);
-        if (u.type === 'mcv' && u.owner === o) {
+        if (u.type === 'mcv' && u.owner === o && !game.spectator && !game.replay) {
           const btn = document.createElement('button');
           btn.type = 'button';
           btn.className = 'game-btn primary';
@@ -1572,7 +1743,14 @@
         row.appendChild(text);
         info.appendChild(row);
 
-        if (b.owner === o && b.buildProgress >= 1 && def?.produces && def.produces.length) {
+        if (
+          b.owner === o &&
+          b.buildProgress >= 1 &&
+          def?.produces &&
+          def.produces.length &&
+          !game.spectator &&
+          !game.replay
+        ) {
           const title = document.createElement('div');
           title.className = 'section-title';
           title.textContent = 'Produce';
@@ -1596,10 +1774,14 @@
             label.innerHTML = `<strong>${udef.name}</strong><span class="meta ${can ? '' : 'cant-afford'}">${udef.cost}¢ · ${udef.buildTime}s${can ? '' : ' — need credits'}</span>`;
             btn.appendChild(icon);
             btn.appendChild(label);
-            btn.disabled = game.phase !== 'playing' || !can;
-            btn.title = can
-              ? `Train ${udef.name} (${udef.cost} credits, ${udef.buildTime}s)`
-              : `Need ${udef.cost} credits (have ${Math.floor(game.credits[o])}, cap ${game.spiceCap[o]}). Build silos to raise cap.`;
+            btn.disabled =
+              game.phase !== 'playing' || !can || !!game.replay || !!game.spectator;
+            btn.title =
+              game.replay || game.spectator
+                ? 'View only'
+                : can
+                  ? `Train ${udef.name} (${udef.cost} credits, ${udef.buildTime}s)`
+                  : `Need ${udef.cost} credits (have ${Math.floor(game.credits[o])}, cap ${game.spiceCap[o]}). Build silos to raise cap.`;
             g.appendChild(btn);
           }
           unitMenu.appendChild(g);
@@ -1703,7 +1885,7 @@
         cell.addEventListener('click', (e) => {
           e.preventDefault();
           e.stopPropagation();
-          if (game.replay) return;
+          if (game.replay) return; // allow spectator re-select within grid
           const id = u.id;
           const ctrl = !!(e.ctrlKey || e.metaKey);
           if (ctrl) {

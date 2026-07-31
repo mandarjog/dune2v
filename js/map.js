@@ -141,10 +141,10 @@
     },
 
     /**
-     * View FOW (renderer/minimap). Off during replay so both houses are visible.
+     * View FOW (renderer/minimap). Off during replay / live spectate so both houses are visible.
      */
     fogVisible(game) {
-      if (game && game.replay) return false;
+      if (game && (game.replay || game.spectator)) return false;
       return !!D.config.features.fog;
     },
 

@@ -25,8 +25,9 @@ const ROOT = process.env.STATIC_ROOT
   ? path.resolve(process.env.STATIC_ROOT)
   : path.resolve(__dirname, '..');
 
-const PROTOCOL = 5; // speed + recordings
+const PROTOCOL = 6; // live spectate + match list
 const MAX_SEATS = 2;
+const MAX_SPECTATORS = 8;
 const ROOM_CODE_LEN = 6;
 const ROOM_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const ROOM_IDLE_MS = 60 * 60 * 1000;
@@ -108,6 +109,14 @@ function serveStatic(req, res) {
 
   if (urlPath === '/api/recordings' && req.method === 'GET') {
     return send(res, 200, JSON.stringify({ ok: true, recordings: recordings.list() }), {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': 'no-store',
+    });
+  }
+
+  // Live in-progress (or lobby) matches for spectate list
+  if (urlPath === '/api/live' && req.method === 'GET') {
+    return send(res, 200, JSON.stringify({ ok: true, matches: listLiveMatches() }), {
       'Content-Type': 'application/json; charset=utf-8',
       'Cache-Control': 'no-store',
     });
@@ -232,11 +241,20 @@ function serveStatic(req, res) {
  *   disconnectedAt: number | null,
  * }} SeatSlot
  * @typedef {{
+ *   playerId: string,
+ *   name: string,
+ *   ws: import('ws').WebSocket | null,
+ *   connected: boolean,
+ * }} SpecSlot
+ * @typedef {{
  *   id: string,
  *   slots: Map<string, SeatSlot>,
+ *   spectators: Map<string, SpecSlot>,
  *   started: boolean,
  *   touched: number,
+ *   createdAt: number,
  *   sim: import('./room-sim').RoomSim | null,
+ *   allowSpectate: 'open' | 'off',
  * }} Room
  */
 
@@ -278,6 +296,23 @@ function sanitizePlayerId(raw) {
   return s || `p_${Math.random().toString(36).slice(2, 10)}`;
 }
 
+function spectatorCount(room) {
+  if (!room || !room.spectators) return 0;
+  let n = 0;
+  for (const s of room.spectators.values()) if (s.connected && s.ws) n++;
+  return n;
+}
+
+function roomNames(room) {
+  const seats = room.slots;
+  const p = seats.get('player');
+  const e = seats.get('enemy');
+  return {
+    player: (p && p.name) || 'Atreides',
+    enemy: (e && e.name) || 'Harkonnen',
+  };
+}
+
 function roomSnapshot(room) {
   const seats = {};
   let connected = 0;
@@ -293,15 +328,94 @@ function roomSnapshot(room) {
   const reclaimable = [...room.slots.values()].some(
     (s) => !s.connected && s.disconnectedAt && Date.now() - s.disconnectedAt < RECONNECT_GRACE_MS
   );
+  const specs = spectatorCount(room);
+  const names = roomNames(room);
+  let phase = null;
+  let tick = null;
+  if (room.sim) {
+    phase = room.sim.phase || null;
+    tick = room.sim.tick;
+  } else if (room.started) {
+    phase = 'ended';
+  }
+  const spectateOpen =
+    (room.allowSpectate || 'open') !== 'off' && specs < MAX_SPECTATORS;
   return {
     room: room.id,
     peers: connected,
+    players: connected,
     seats,
+    names,
     started: room.started,
     open: room.slots.size < MAX_SEATS || reclaimable,
+    spectateOpen,
+    spectators: specs,
+    phase,
+    tick,
     authority: 'server',
     reconnectGraceMs: RECONNECT_GRACE_MS,
   };
+}
+
+/** Public list for GET /api/live — non-empty rooms (lobby or in-progress). */
+function listLiveMatches() {
+  const matches = [];
+  const now = Date.now();
+  for (const room of rooms.values()) {
+    const players = connectedCount(room);
+    const specs = spectatorCount(room);
+    // Show rooms with at least one connected client or a running match
+    if (players < 1 && specs < 1 && !room.started) continue;
+    const snap = roomSnapshot(room);
+    matches.push({
+      room: snap.room,
+      names: snap.names,
+      started: snap.started,
+      phase: snap.phase,
+      players: snap.players,
+      spectators: snap.spectators,
+      open: snap.spectateOpen,
+      tick: snap.tick,
+      ageMs: Math.max(0, now - (room.createdAt || room.touched || now)),
+    });
+  }
+  // Started matches first, then by most recent activity
+  matches.sort((a, b) => {
+    if (a.started !== b.started) return a.started ? -1 : 1;
+    return (b.tick || 0) - (a.tick || 0);
+  });
+  return matches;
+}
+
+function makeRoom(id) {
+  const now = Date.now();
+  return {
+    id,
+    slots: new Map(),
+    spectators: new Map(),
+    started: false,
+    touched: now,
+    createdAt: now,
+    sim: null,
+    allowSpectate: 'open',
+  };
+}
+
+function isSpectatorWs(ws) {
+  return !!(ws && (ws.role === 'spectator' || ws.isSpectator));
+}
+
+/** Send JSON wire to every connected player seat and spectator. */
+function forEachClient(room, fn) {
+  if (!room) return;
+  for (const slot of room.slots.values()) {
+    if (slot.ws && slot.ws.readyState === 1) fn(slot.ws);
+  }
+  if (room.spectators) {
+    for (const spec of room.spectators.values()) {
+      if (spec.ws && spec.ws.readyState === 1) fn(spec.ws);
+    }
+  }
 }
 
 function getRoom(id) {
@@ -331,11 +445,9 @@ function sendJson(ws, obj) {
 
 function broadcastRoom(room, obj, exceptWs) {
   const payload = JSON.stringify(obj);
-  for (const slot of room.slots.values()) {
-    if (slot.ws && slot.ws !== exceptWs && slot.ws.readyState === 1) {
-      slot.ws.send(payload);
-    }
-  }
+  forEachClient(room, (ws) => {
+    if (ws !== exceptWs) ws.send(payload);
+  });
 }
 
 function connectedCount(room) {
@@ -361,8 +473,8 @@ function ensureHostRole(room) {
 }
 
 /**
- * Detach a websocket from its seat.
- * @param intentional if true, free the seat; if false (drop), reserve for reconnect
+ * Detach a websocket from its seat or spectator slot.
+ * @param intentional if true, free the seat; if false (drop), reserve for reconnect (players only)
  */
 function detachWs(ws, intentional) {
   const room = ws.roomRef;
@@ -370,6 +482,58 @@ function detachWs(ws, intentional) {
   const seat = ws.seat;
   const playerId = ws.playerId;
   const name = ws.displayName;
+  const wasSpectator = isSpectatorWs(ws);
+
+  if (wasSpectator) {
+    if (room.spectators && playerId) {
+      const spec = room.spectators.get(playerId);
+      if (spec && spec.ws === ws) {
+        room.spectators.delete(playerId);
+      }
+    }
+    ws.roomRef = null;
+    ws.seat = null;
+    ws.role = null;
+    ws.isSpectator = false;
+
+    // Spectators never keep a room alive alone
+    if (room.slots.size === 0) {
+      destroyRoom(room);
+      return {
+        roomId: room.id,
+        empty: true,
+        seat: null,
+        playerId,
+        name,
+        intentional: !!intentional,
+        spectator: true,
+      };
+    }
+    if (!room.started && connectedCount(room) === 0) {
+      destroyRoom(room);
+      return {
+        roomId: room.id,
+        empty: true,
+        seat: null,
+        playerId,
+        name,
+        intentional: !!intentional,
+        spectator: true,
+      };
+    }
+    touch(room);
+    return {
+      roomId: room.id,
+      empty: false,
+      seat: null,
+      playerId,
+      name,
+      intentional: !!intentional,
+      spectator: true,
+      room,
+    };
+  }
+
   const slot = seat ? room.slots.get(seat) : null;
 
   if (slot && slot.ws === ws) {
@@ -381,13 +545,28 @@ function detachWs(ws, intentional) {
   ws.roomRef = null;
   ws.seat = null;
   ws.role = null;
+  ws.isSpectator = false;
 
   if (intentional && seat) {
     room.slots.delete(seat);
   }
 
-  // No seats left at all → destroy
+  // No player seats left → destroy (spectators dropped with room)
   if (room.slots.size === 0) {
+    if (room.spectators) {
+      for (const spec of room.spectators.values()) {
+        try {
+          if (spec.ws) {
+            sendJson(spec.ws, { type: 'left', reason: 'room_closed' });
+            spec.ws.roomRef = null;
+            spec.ws.close();
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+      room.spectators.clear();
+    }
     destroyRoom(room);
     return { roomId: room.id, empty: true, seat, playerId, name, intentional: !!intentional };
   }
@@ -416,6 +595,10 @@ function bindSeat(ws, room, seat, playerId, name, role) {
   if (ws.roomRef && ws.roomRef !== room) {
     detachWs(ws, true);
   }
+  // Leave spectator slot if switching to a player seat in same room
+  if (ws.roomRef === room && isSpectatorWs(ws)) {
+    detachWs(ws, true);
+  }
 
   const existing = room.slots.get(seat);
   if (existing && existing.ws && existing.ws !== ws && existing.ws.readyState === 1) {
@@ -435,12 +618,63 @@ function bindSeat(ws, room, seat, playerId, name, role) {
     disconnectedAt: null,
   };
   room.slots.set(seat, slot);
+  // Player seat takes priority — drop any spectator entry for this id
+  if (room.spectators && room.spectators.has(playerId)) {
+    const prev = room.spectators.get(playerId);
+    if (prev && prev.ws && prev.ws !== ws) {
+      try {
+        prev.ws.roomRef = null;
+        prev.ws.close();
+      } catch {
+        /* ignore */
+      }
+    }
+    room.spectators.delete(playerId);
+  }
 
   ws.roomRef = room;
   ws.seat = seat;
   ws.role = slot.role;
   ws.playerId = playerId;
   ws.displayName = name;
+  ws.isSpectator = false;
+  touch(room);
+  return slot;
+}
+
+function bindSpectator(ws, room, playerId, name) {
+  if (ws.roomRef && ws.roomRef !== room) {
+    detachWs(ws, true);
+  } else if (ws.roomRef === room && !isSpectatorWs(ws) && ws.seat) {
+    // Leaving a player seat to spectate (unusual) — free seat
+    detachWs(ws, true);
+  }
+
+  if (!room.spectators) room.spectators = new Map();
+
+  const existing = room.spectators.get(playerId);
+  if (existing && existing.ws && existing.ws !== ws && existing.ws.readyState === 1) {
+    try {
+      existing.ws.close();
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const slot = {
+    playerId,
+    name,
+    ws,
+    connected: true,
+  };
+  room.spectators.set(playerId, slot);
+
+  ws.roomRef = room;
+  ws.seat = null;
+  ws.role = 'spectator';
+  ws.playerId = playerId;
+  ws.displayName = name;
+  ws.isSpectator = true;
   touch(room);
   return slot;
 }
@@ -470,18 +704,16 @@ function findOpenSeat(room) {
   return null;
 }
 
-function sendMatchSync(ws, room, { reconnected }) {
+function sendMatchSync(ws, room, { reconnected, spectator }) {
   const snap = roomSnapshot(room);
-  const names = {
-    player: (snap.seats.player && snap.seats.player.name) || 'Atreides',
-    enemy: (snap.seats.enemy && snap.seats.enemy.name) || 'Harkonnen',
-  };
+  const names = snap.names || roomNames(room);
   sendJson(ws, {
     type: 'start',
     seed: 42,
     map: 'skirmish_large',
     authority: 'server',
     reconnected: !!reconnected,
+    spectator: !!spectator || isSpectatorWs(ws),
     ...snap,
     names,
   });
@@ -492,6 +724,7 @@ function sendMatchSync(ws, room, { reconnected }) {
         type: 'state',
         tick: room.sim.tick,
         payload,
+        speed: room.sim.speed,
         ts: Date.now(),
         reconnected: !!reconnected,
       });
@@ -510,10 +743,7 @@ function maybeStartMatch(room) {
   touch(room);
 
   const snap = roomSnapshot(room);
-  const names = {
-    player: (snap.seats.player && snap.seats.player.name) || 'Atreides',
-    enemy: (snap.seats.enemy && snap.seats.enemy.name) || 'Harkonnen',
-  };
+  const names = snap.names || roomNames(room);
   const startMsg = {
     type: 'start',
     seed: 42,
@@ -524,7 +754,15 @@ function maybeStartMatch(room) {
     ...snap,
     names,
   };
-  broadcastRoom(room, startMsg, null);
+  // Players get start; spectators get start with spectator flag via personal send after
+  forEachClient(room, (ws) => {
+    sendJson(ws, {
+      ...startMsg,
+      spectator: isSpectatorWs(ws),
+      seat: ws.seat,
+      role: ws.role,
+    });
+  });
 
   room.speedPending = null;
   const sim = new RoomSim(room.id, { names });
@@ -537,9 +775,9 @@ function maybeStartMatch(room) {
       speed: (extra && extra.speed) || sim.speed,
       ts: Date.now(),
     });
-    for (const slot of room.slots.values()) {
-      if (slot.ws && slot.ws.readyState === 1) slot.ws.send(wire);
-    }
+    forEachClient(room, (ws) => {
+      ws.send(wire);
+    });
   };
   sim.onEnd = (phase, info) => {
     broadcastRoom(
@@ -578,13 +816,7 @@ function joinExisting(ws, roomId, playerId, name) {
   }
   let room = getRoom(id);
   if (!room) {
-    room = {
-      id,
-      slots: new Map(),
-      started: false,
-      touched: Date.now(),
-      sim: null,
-    };
+    room = makeRoom(id);
     rooms.set(id, room);
   }
 
@@ -648,13 +880,7 @@ function joinExisting(ws, roomId, playerId, name) {
 function createRoom(ws, playerId, name) {
   if (ws.roomRef) detachWs(ws, true);
   const id = uniqueRoomCode();
-  const room = {
-    id,
-    slots: new Map(),
-    started: false,
-    touched: Date.now(),
-    sim: null,
-  };
+  const room = makeRoom(id);
   rooms.set(id, room);
   const pid = sanitizePlayerId(playerId);
   const displayName = sanitizeName(name);
@@ -671,6 +897,89 @@ function createRoom(ws, playerId, name) {
   });
 }
 
+/**
+ * Join a room as spectator (no seat, no commands, receives state broadcasts).
+ * Default allowSpectate = open. Does not count toward MAX_SEATS.
+ */
+function joinSpectate(ws, roomId, playerId, name) {
+  const id = String(roomId || '')
+    .trim()
+    .toUpperCase()
+    .slice(0, 16);
+  if (!id) {
+    sendJson(ws, { type: 'error', error: 'bad_room' });
+    return;
+  }
+  const room = getRoom(id);
+  if (!room) {
+    sendJson(ws, { type: 'error', error: 'no_room', room: id });
+    return;
+  }
+  if ((room.allowSpectate || 'open') === 'off') {
+    sendJson(ws, { type: 'error', error: 'spectate_off', room: id });
+    return;
+  }
+
+  const pid = sanitizePlayerId(playerId);
+  const displayName = sanitizeName(name);
+
+  // Already a player in this room — reject (don't steal seat into spectator)
+  if (ws.roomRef === room && ws.seat && !isSpectatorWs(ws)) {
+    sendJson(ws, { type: 'error', error: 'already_playing', room: id });
+    return;
+  }
+
+  // Leave other rooms
+  if (ws.roomRef && ws.roomRef !== room) {
+    detachWs(ws, true);
+  }
+
+  // Reclaim existing spectator slot for same playerId, else enforce cap
+  const already = room.spectators && room.spectators.get(pid);
+  if (!already || already.ws !== ws) {
+    const others = spectatorCount(room) - (already && already.connected ? 1 : 0);
+    if (others >= MAX_SPECTATORS) {
+      sendJson(ws, { type: 'error', error: 'spectators_full', room: id });
+      return;
+    }
+  }
+
+  bindSpectator(ws, room, pid, displayName);
+
+  const snap = roomSnapshot(room);
+  sendJson(ws, {
+    type: 'joined',
+    protocol: PROTOCOL,
+    playerId: ws.playerId,
+    name: ws.displayName,
+    seat: null,
+    role: 'spectator',
+    spectator: true,
+    reconnected: false,
+    ...snap,
+  });
+  // Notify others of spectator count change (roster only)
+  broadcastRoom(
+    room,
+    {
+      type: 'roster',
+      ...roomSnapshot(room),
+    },
+    ws
+  );
+
+  if (room.started && room.sim) {
+    sendMatchSync(ws, room, { reconnected: false, spectator: true });
+  } else {
+    // Lobby: wait for start broadcast
+    sendJson(ws, {
+      type: 'lobby_wait',
+      message: 'Waiting for match to start…',
+      ...snap,
+    });
+  }
+}
+
 function setupWs(server) {
   const wss = new WebSocketServer({ server, path: '/ws' });
 
@@ -680,6 +989,7 @@ function setupWs(server) {
     ws.role = null;
     ws.playerId = null;
     ws.displayName = 'Commander';
+    ws.isSpectator = false;
     const remote = req.socket.remoteAddress || '?';
     console.log(`[ws] connect ${remote} (clients=${wss.clients.size})`);
 
@@ -687,7 +997,7 @@ function setupWs(server) {
       type: 'hello',
       service: 'dune2v',
       protocol: PROTOCOL,
-      message: 'Server-authoritative MP. create | join | cmd | set_name',
+      message: 'Server-authoritative MP. create | join | spectate | cmd | set_name',
     });
 
     ws.on('message', (buf) => {
@@ -710,7 +1020,17 @@ function setupWs(server) {
       }
 
       if (msg.type === 'join') {
+        // Optional role: 'spectator' reuses join shape
+        if (msg.role === 'spectator') {
+          joinSpectate(ws, msg.room, msg.playerId, msg.name);
+          return;
+        }
         joinExisting(ws, msg.room, msg.playerId, msg.name);
+        return;
+      }
+
+      if (msg.type === 'spectate') {
+        joinSpectate(ws, msg.room, msg.playerId, msg.name);
         return;
       }
 
@@ -721,6 +1041,10 @@ function setupWs(server) {
           room.slots.get(ws.seat).name = ws.displayName;
           touch(room);
           broadcastRoom(room, { type: 'roster', ...roomSnapshot(room) }, null);
+        } else if (room && isSpectatorWs(ws) && room.spectators && ws.playerId) {
+          const spec = room.spectators.get(ws.playerId);
+          if (spec) spec.name = ws.displayName;
+          touch(room);
         }
         sendJson(ws, {
           type: 'name_ok',
@@ -730,10 +1054,10 @@ function setupWs(server) {
         return;
       }
 
-      // Intentional leave — free seat (no reconnect reservation)
+      // Intentional leave — free seat (no reconnect reservation); spectators just drop
       if (msg.type === 'leave') {
         const left = detachWs(ws, true);
-        if (left && !left.empty && left.room) {
+        if (left && !left.empty && left.room && !left.spectator) {
           broadcastRoom(left.room, {
             type: 'peer_left',
             playerId: left.playerId,
@@ -742,6 +1066,8 @@ function setupWs(server) {
             intentional: true,
             ...roomSnapshot(left.room),
           });
+        } else if (left && !left.empty && left.room && left.spectator) {
+          broadcastRoom(left.room, { type: 'roster', ...roomSnapshot(left.room) }, null);
         }
         sendJson(ws, { type: 'left' });
         return;
@@ -755,11 +1081,23 @@ function setupWs(server) {
       touch(room);
 
       if (msg.type === 'start') {
+        if (isSpectatorWs(ws)) {
+          sendJson(ws, { type: 'error', error: 'spectator' });
+          return;
+        }
         maybeStartMatch(room);
         return;
       }
 
       if (msg.type === 'cmd') {
+        if (isSpectatorWs(ws) || !ws.seat) {
+          sendJson(ws, {
+            type: 'cmd_result',
+            ok: false,
+            reason: 'spectator',
+          });
+          return;
+        }
         if (!room.sim || !room.started) {
           sendJson(ws, {
             type: 'cmd_result',
@@ -783,8 +1121,12 @@ function setupWs(server) {
         return;
       }
 
-      // Speed change: one player requests, other must accept
+      // Speed change: one player requests, other must accept (spectators cannot)
       if (msg.type === 'speed_request') {
+        if (isSpectatorWs(ws) || !ws.seat) {
+          sendJson(ws, { type: 'error', error: 'spectator' });
+          return;
+        }
         if (!room.sim || !room.started) {
           sendJson(ws, { type: 'error', error: 'not_started' });
           return;
@@ -819,6 +1161,10 @@ function setupWs(server) {
       }
 
       if (msg.type === 'speed_response') {
+        if (isSpectatorWs(ws) || !ws.seat) {
+          sendJson(ws, { type: 'error', error: 'spectator' });
+          return;
+        }
         if (!room.sim || !room.started || !room.speedPending) {
           sendJson(ws, { type: 'error', error: 'no_pending_speed' });
           return;
@@ -874,13 +1220,22 @@ function setupWs(server) {
           .slice(0, 200);
         if (!text) return;
         const slot = ws.seat && room.slots.get(ws.seat);
+        const spec =
+          isSpectatorWs(ws) && room.spectators && ws.playerId
+            ? room.spectators.get(ws.playerId)
+            : null;
         broadcastRoom(
           room,
           {
             type: 'chat',
             from: ws.playerId,
             seat: ws.seat,
-            name: (slot && slot.name) || ws.displayName || 'Commander',
+            role: ws.role,
+            name:
+              (slot && slot.name) ||
+              (spec && spec.name) ||
+              ws.displayName ||
+              'Commander',
             text,
             ts: Date.now(),
           },
@@ -899,7 +1254,7 @@ function setupWs(server) {
     // Drop = soft disconnect: keep seat reserved for reconnect grace period
     ws.on('close', () => {
       const left = detachWs(ws, false);
-      if (left && !left.empty && left.room) {
+      if (left && !left.empty && left.room && !left.spectator) {
         broadcastRoom(left.room, {
           type: 'peer_disconnected',
           playerId: left.playerId,
@@ -908,6 +1263,8 @@ function setupWs(server) {
           reconnectGraceMs: RECONNECT_GRACE_MS,
           ...roomSnapshot(left.room),
         });
+      } else if (left && !left.empty && left.room && left.spectator) {
+        broadcastRoom(left.room, { type: 'roster', ...roomSnapshot(left.room) }, null);
       }
       console.log(`[ws] disconnect (clients=${wss.clients.size} rooms=${rooms.size})`);
     });
@@ -931,14 +1288,30 @@ function setupWs(server) {
       const noOneHome = connectedCount(room) === 0;
       const stale = now - room.touched > ROOM_IDLE_MS;
       const empty = room.slots.size === 0;
+      // Spectators alone never keep a room
+      const onlySpectators = empty || (noOneHome && spectatorCount(room) >= 0 && room.slots.size === 0);
 
-      if (empty || (noOneHome && stale) || (noOneHome && !room.started)) {
+      if (
+        empty ||
+        onlySpectators ||
+        (noOneHome && stale) ||
+        (noOneHome && !room.started)
+      ) {
         stopSim(room);
         for (const slot of room.slots.values()) {
           try {
             if (slot.ws) slot.ws.close();
           } catch {
             /* ignore */
+          }
+        }
+        if (room.spectators) {
+          for (const spec of room.spectators.values()) {
+            try {
+              if (spec.ws) spec.ws.close();
+            } catch {
+              /* ignore */
+            }
           }
         }
         rooms.delete(id);

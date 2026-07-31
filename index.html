@@ -138,6 +138,7 @@
         <div class="actions">
           <button id="btn-continue" type="button" style="display: none">Continue</button>
           <button id="btn-start" type="button">New Skirmish (vs AI)</button>
+          <button id="btn-live" type="button">Live matches</button>
           <button id="btn-replays" type="button">Watch replays</button>
           <button id="btn-help-menu" type="button">Controls help</button>
         </div>
@@ -171,7 +172,8 @@
           </div>
         </div>
         <p class="hint" style="margin-top: 16px">
-          SP autosaves (F5 / Esc pause). MP: share <code>?room=CODE</code>.<br />
+          SP autosaves (F5 / Esc pause). MP: share <code>?room=CODE</code>.
+          Spectate: <code>?spectate=CODE</code> · list <code>?live=1</code>.<br />
           <code>?debug=1</code> · <code>?ai=0</code> · <code>?fog=0</code>
         </p>
         <div class="actions" style="margin-top: 12px">
@@ -261,6 +263,21 @@
         <div class="actions">
           <button type="button" id="btn-replays-refresh">Refresh</button>
           <button type="button" id="btn-replays-close">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="live-modal" class="modal-backdrop hidden">
+      <div class="modal modal-wide">
+        <h2>Live matches</h2>
+        <p class="hint">
+          In-progress rooms on this server. Spectate with fog off — view only, no orders.
+        </p>
+        <div id="live-list" class="replays-list"></div>
+        <p id="live-status" class="hint"></p>
+        <div class="actions">
+          <button type="button" id="btn-live-refresh">Refresh</button>
+          <button type="button" id="btn-live-close">Close</button>
         </div>
       </div>
     </div>

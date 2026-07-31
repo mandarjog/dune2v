@@ -109,10 +109,13 @@ Browser                  Server
 - Host can kick spectators later.
 
 ### Acceptance
-- [ ] `/api/live` returns active matches
-- [ ] Menu list → join as spectator → see both sides live
-- [ ] Spectator cannot build/order
-- [ ] Players unaffected; match still records 2 seats only
+- [x] `/api/live` returns active matches
+- [x] Menu list → join as spectator → see both sides live
+- [x] Spectator cannot build/order
+- [x] Players unaffected; match still records 2 seats only
+  - `GET /api/live` · WS `{ type: 'spectate', room, name }` · protocol 6
+  - FOW off via `game.spectator`; dual scoreboard; Esc → menu
+  - Cap 8 spectators/room; default `allowSpectate: open`
 
 ---
 
