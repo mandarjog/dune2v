@@ -36,7 +36,7 @@ describe('skirmish_large map', () => {
     assert.equal(Dune2.MAPS.skirmish_classic, Dune2.MAPS.skirmish1);
   });
 
-  it('has walkable spawns adjacent to rock and spice > 0', () => {
+  it('has walkable rock spawns where MCV can deploy immediately', () => {
     const def = Dune2.MAPS.skirmish_large;
     const map = Dune2.Map.createFromDef(def);
     const ps = def.spawns.player;
@@ -45,19 +45,28 @@ describe('skirmish_large map', () => {
     assert.ok(Dune2.Map.isWalkable(map, ps.x, ps.y), 'player spawn walkable');
     assert.ok(Dune2.Map.isWalkable(map, es.x, es.y), 'enemy spawn walkable');
 
-    const pTile = Dune2.Map.tileAt(map, ps.x, ps.y);
-    const eTile = Dune2.Map.tileAt(map, es.x, es.y);
-    assert.ok(
-      pTile === SAND || pTile === DUNE || pTile === ROCK,
-      'player spawn on open terrain'
-    );
-    assert.ok(
-      eTile === SAND || eTile === DUNE || eTile === ROCK,
-      'enemy spawn on open terrain'
-    );
+    // Spawns must be ROCK — CY deploy is 2×2 rock only (sand pads broke E-deploy)
+    assert.equal(Dune2.Map.tileAt(map, ps.x, ps.y), ROCK, 'player spawn on rock');
+    assert.equal(Dune2.Map.tileAt(map, es.x, es.y), ROCK, 'enemy spawn on rock');
 
-    assert.ok(nearRock(map, ps.x, ps.y, 4), 'player spawn near rock');
-    assert.ok(nearRock(map, es.x, es.y, 4), 'enemy spawn near rock');
+    const game = Dune2.Game.create();
+    Dune2.Game.startSkirmish(game, def);
+    const pMcv = game.units.find((u) => u.owner === 'player' && u.type === 'mcv');
+    const eMcv = game.units.find((u) => u.owner === 'enemy' && u.type === 'mcv');
+    assert.ok(pMcv && eMcv, 'both MCVs spawned');
+    assert.ok(
+      Dune2.Orders.canDeploy(game, pMcv.id),
+      'player MCV can deploy at spawn'
+    );
+    assert.ok(
+      Dune2.Orders.canDeploy(game, eMcv.id),
+      'enemy MCV can deploy at spawn'
+    );
+    assert.ok(Dune2.Orders.tryDeploy(game, pMcv), 'player deploy succeeds');
+    assert.ok(
+      game.buildings.some((b) => b.owner === 'player' && b.type === 'constructionYard'),
+      'player CY exists after deploy'
+    );
 
     let spiceTotal = 0;
     let spiceTiles = 0;

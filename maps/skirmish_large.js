@@ -202,30 +202,58 @@
   stampSpiceField(42, 70, 4, 1.5, 180, 400);
   stampSpiceField(54, 24, 4, 1.5, 180, 400);
 
-  // Spawns on sand adjacent to home rock plateaus (walkable, deploy nearby)
-  const playerSpawn = { x: 14, y: 78 };
-  const enemySpawn = { x: 80, y: 16 };
-
-  // Clear a small sand pad around each spawn (no rock/cliff under MCV)
-  function clearSpawnPad(sx, sy, r) {
-    for (let dy = -r; dy <= r; dy++) {
-      for (let dx = -r; dx <= r; dx++) {
+  /**
+   * MCV deploy needs a 2×2 rock footprint centered on the unit tile:
+   *   tx = floor(x) - 1, ty = floor(y) - 1  → tiles [tx..tx+1]×[ty..ty+1] all ROCK.
+   * Spawn on rock (not sand). Stamp a solid rock pad so E-deploy works immediately.
+   */
+  function ensureDeployPad(sx, sy) {
+    // Force 3×3 rock around spawn so 2×2 CY always fits
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
         const x = sx + dx;
         const y = sy + dy;
-        if (!inBounds(x, y)) continue;
-        if (getTile(x, y) === CLIFF) continue;
-        if (dx * dx + dy * dy <= r * r) {
-          const t = getTile(x, y);
-          if (t === ROCK || t === SPICE || t === SPICE_HEAVY || t === DUNE) {
-            setTile(x, y, SAND);
-            spiceAmount[idx(x, y)] = 0;
-          }
-        }
+        if (!inBounds(x, y) || getTile(x, y) === CLIFF) continue;
+        setTile(x, y, ROCK);
+        spiceAmount[idx(x, y)] = 0;
       }
     }
   }
-  clearSpawnPad(playerSpawn.x, playerSpawn.y, 1);
-  clearSpawnPad(enemySpawn.x, enemySpawn.y, 1);
+
+  function canDeployAt(sx, sy) {
+    // Same math as Orders.canDeploy for unit at (sx+0.5, sy+0.5)
+    const tx = sx - 1;
+    const ty = sy - 1;
+    for (let dy = 0; dy < 2; dy++) {
+      for (let dx = 0; dx < 2; dx++) {
+        if (getTile(tx + dx, ty + dy) !== ROCK) return false;
+      }
+    }
+    return true;
+  }
+
+  function pickSpawn(preferredX, preferredY, searchR) {
+    ensureDeployPad(preferredX, preferredY);
+    if (canDeployAt(preferredX, preferredY)) {
+      return { x: preferredX, y: preferredY };
+    }
+    for (let r = 1; r <= searchR; r++) {
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          const x = preferredX + dx;
+          const y = preferredY + dy;
+          if (!inBounds(x, y)) continue;
+          ensureDeployPad(x, y);
+          if (canDeployAt(x, y)) return { x: x, y: y };
+        }
+      }
+    }
+    return { x: preferredX, y: preferredY };
+  }
+
+  // On home rock plateaus (SW / NE) — NOT sand pads (those broke deploy)
+  const playerSpawn = pickSpawn(16, 76, 8);
+  const enemySpawn = pickSpawn(79, 18, 8);
 
   // Re-assert border cliffs after all stamps
   for (let x = 0; x < W; x++) {

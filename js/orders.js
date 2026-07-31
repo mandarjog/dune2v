@@ -36,6 +36,9 @@
       path: name + ' is stuck — no path (clear walls/units or re-order).',
       dock: name + ' waiting — refinery dock is busy.',
       silos: name + ' cannot unload — silos full (build silos or spend credits).',
+      deploy:
+        name +
+        ' cannot deploy — need a clear 2×2 rock pad (move onto rock, then E).',
       blocked: name + ' is stuck.',
     };
     return tips[u.stuckReason] || tips.blocked;
@@ -253,7 +256,16 @@
         if (!order) continue;
 
         if (order.type === 'deploy') {
-          D.Orders.tryDeploy(game, u);
+          if (u.type !== 'mcv') {
+            clearOrder(u);
+            continue;
+          }
+          if (D.Orders.tryDeploy(game, u)) {
+            clearStuck(u);
+          } else {
+            // Stay on deploy order but surface why (was silent — looked "stuck")
+            markStuck(game, u, 'deploy', dt);
+          }
           continue;
         }
 
