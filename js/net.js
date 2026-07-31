@@ -9,9 +9,25 @@
   }
 
   function roomLink(code) {
-    const u = new URL(location.href);
-    u.searchParams.set('room', code);
-    return u.pathname + u.search + u.hash;
+    const c = String(code || '')
+      .trim()
+      .toUpperCase();
+    if (!c) return '';
+    try {
+      // Clean absolute URL — drop spectate/replay/live params
+      const u = new URL(location.href);
+      u.search = '';
+      u.hash = '';
+      u.searchParams.set('room', c);
+      return u.toString();
+    } catch (e) {
+      return (
+        (location.origin || '') +
+        (location.pathname || '/') +
+        '?room=' +
+        encodeURIComponent(c)
+      );
+    }
   }
 
   const NAME_KEY = 'dune2_player_name';
@@ -852,15 +868,18 @@
 
     roomUrl() {
       if (!D.Net.room) return '';
-      try {
-        return location.origin + roomLink(D.Net.room);
-      } catch {
-        return roomLink(D.Net.room);
-      }
+      // roomLink already returns absolute URL
+      return roomLink(D.Net.room);
     },
 
     sharePath() {
-      return D.Net.room ? roomLink(D.Net.room) : '';
+      if (!D.Net.room) return '';
+      try {
+        const u = new URL(D.Net.roomUrl());
+        return u.pathname + u.search + u.hash;
+      } catch (e) {
+        return '/?room=' + encodeURIComponent(D.Net.room);
+      }
     },
 
     /** Send a chat line to the room (both seats receive, including sender). */

@@ -422,7 +422,10 @@
       });
 
       $('btn-lobby-start')?.addEventListener('click', () => {
-        if (!D.Net || D.Net.role !== 'host') return;
+        if (!D.Net || D.Net.role !== 'host') {
+          D.Game.pushMessage(boundGame, 'Only the host can start the match.');
+          return;
+        }
         if (!D.Net.startMatch || !D.Net.startMatch()) {
           D.Game.pushMessage(boundGame, 'Could not start — still connecting?');
           return;
@@ -431,25 +434,7 @@
       });
 
       $('btn-lobby-copy')?.addEventListener('click', async () => {
-        const url = D.Net && D.Net.roomUrl();
-        if (!url) return;
-        try {
-          if (navigator.clipboard && navigator.clipboard.writeText) {
-            await navigator.clipboard.writeText(url);
-            D.Game.pushMessage(game, 'Room link copied.');
-          } else {
-            const el = els.lobbyLink;
-            if (el) {
-              el.focus();
-              el.select();
-              document.execCommand('copy');
-              D.Game.pushMessage(game, 'Room link copied.');
-            }
-          }
-        } catch (err) {
-          D.Game.pushMessage(game, 'Copy failed — select the link manually.');
-        }
-        D.UI.refreshLobby();
+        await D.UI.copyRoomLink();
       });
 
       $('btn-lobby-cancel')?.addEventListener('click', () => {
@@ -1245,15 +1230,27 @@
         for (const s of seatIds) renderSeat(s);
         els.lobbyRoster.innerHTML = rows.join('');
       }
-      // Host start button
+      // Host-only start button; guests see "waiting for host"
       const btnStart = $('btn-lobby-start');
+      const waitHost = $('lobby-wait-host');
+      const n = D.Net.peers || 0;
+      const isHost = D.Net.role === 'host';
+      const inLobby = D.Net.status === 'lobby' || D.Net.status === 'connecting';
+      const started = !!(D.Net.started || D.Net.status === 'playing');
       if (btnStart) {
-        const n = D.Net.peers || 0;
-        const isHost = D.Net.role === 'host';
-        const show = isHost && D.Net.status === 'lobby' && n >= 2 && !D.Net.started;
-        btnStart.classList.toggle('hidden', !show);
+        const showStart = isHost && inLobby && n >= 2 && !started;
+        btnStart.classList.toggle('hidden', !showStart);
+        btnStart.disabled = !showStart;
+        btnStart.setAttribute('aria-hidden', showStart ? 'false' : 'true');
         btnStart.textContent =
           n >= 5 ? 'Start match (full)' : 'Start match (' + n + ' players)';
+      }
+      if (waitHost) {
+        // Guests with 2+ players: explicit wait message (not a dead Start button)
+        const showWait = !isHost && inLobby && n >= 2 && !started;
+        waitHost.classList.toggle('hidden', !showWait);
+        waitHost.textContent =
+          n + ' commanders ready — waiting for host to start…';
       }
       if (els.lobbySeat) {
         if (D.Net.seat) {
@@ -1262,7 +1259,7 @@
               ? D.Net.labelFor(D.Net.seat)
               : houseLabel(D.Net.seat);
           els.lobbySeat.textContent =
-            'Playing as ' + lab + (D.Net.role === 'host' ? ' · room host' : '');
+            'Playing as ' + lab + (isHost ? ' · room host' : ' · guest');
         } else {
           els.lobbySeat.textContent = '';
         }
@@ -1271,13 +1268,15 @@
         if (D.Net.status === 'connecting') {
           els.lobbyStatus.textContent = 'Connecting…';
         } else if (D.Net.status === 'lobby') {
-          const n = D.Net.peers || 1;
           if (n < 2) {
-            els.lobbyStatus.textContent =
-              'Waiting for players (2–5)… share the link. Host starts when ready.';
+            els.lobbyStatus.textContent = isHost
+              ? 'Waiting for players (2–5)… copy the link and share it.'
+              : 'Waiting for more players… host will start the match.';
           } else if (n >= 5) {
-            els.lobbyStatus.textContent = 'Lobby full (5) — starting…';
-          } else if (D.Net.role === 'host') {
+            els.lobbyStatus.textContent = isHost
+              ? 'Lobby full (5) — starting…'
+              : 'Lobby full — waiting for host to start…';
+          } else if (isHost) {
             els.lobbyStatus.textContent =
               n +
               ' commanders in lobby. Click Start match, or wait for more (max 5).';
@@ -1291,6 +1290,84 @@
           els.lobbyStatus.textContent = D.Net.lastError;
         }
       }
+    },
+
+    /** Copy multiplayer room share URL (robust fallbacks). */
+    async copyRoomLink() {
+      const status = $('lobby-copy-status');
+      const input = els.lobbyLink || $('lobby-link');
+      const url = (D.Net && D.Net.roomUrl && D.Net.roomUrl()) || '';
+      if (input && url) input.value = url;
+
+      const setStatus = (text, ok) => {
+        if (status) {
+          status.classList.remove('hidden');
+          status.textContent = text;
+          status.style.color = ok ? 'var(--ok)' : 'var(--danger)';
+        }
+        if (boundGame) D.Game.pushMessage(boundGame, text);
+      };
+
+      if (!url) {
+        setStatus('No room link yet — still connecting?', false);
+        return false;
+      }
+
+      let ok = false;
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(url);
+          ok = true;
+        }
+      } catch (e) {
+        ok = false;
+      }
+
+      if (!ok && input) {
+        try {
+          input.focus();
+          input.select();
+          input.setSelectionRange(0, input.value.length);
+          ok = document.execCommand('copy');
+        } catch (e2) {
+          ok = false;
+        }
+      }
+
+      if (!ok) {
+        try {
+          const ta = document.createElement('textarea');
+          ta.value = url;
+          ta.setAttribute('readonly', '');
+          ta.style.position = 'fixed';
+          ta.style.left = '-9999px';
+          document.body.appendChild(ta);
+          ta.select();
+          ok = document.execCommand('copy');
+          document.body.removeChild(ta);
+        } catch (e3) {
+          ok = false;
+        }
+      }
+
+      if (!ok) {
+        try {
+          window.prompt('Copy room link (Ctrl/Cmd+C):', url);
+          ok = true; // user can copy from prompt
+          setStatus('Select and copy the link from the prompt.', true);
+          return true;
+        } catch (e4) {
+          setStatus('Copy failed — select the link field manually.', false);
+          if (input) {
+            input.focus();
+            input.select();
+          }
+          return false;
+        }
+      }
+
+      setStatus('Room link copied.', true);
+      return true;
     },
 
     refreshMatchup(game) {

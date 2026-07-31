@@ -351,17 +351,23 @@
           <strong id="lobby-code">—</strong>
         </div>
         <label class="lobby-link-label" for="lobby-link">Share this link</label>
-        <input id="lobby-link" type="text" readonly />
+        <div class="lobby-link-row">
+          <input id="lobby-link" type="text" readonly />
+          <button id="btn-lobby-copy" type="button">Copy link</button>
+        </div>
+        <p id="lobby-copy-status" class="hint hidden" aria-live="polite"></p>
         <div class="actions" style="margin-top: 14px">
           <button id="btn-lobby-start" type="button" class="primary hidden">
             Start match
           </button>
-          <button id="btn-lobby-copy" type="button">Copy link</button>
+          <p id="lobby-wait-host" class="hint lobby-wait-host hidden">
+            Waiting for host to start…
+          </p>
           <button id="btn-lobby-cancel" type="button">Cancel</button>
         </div>
         <p class="hint" style="margin-top: 10px">
           2–5 players. Houses cycle Atreides → Harkonnen → Ordos (then repeat).
-          Host clicks <b>Start match</b> when ready (auto-starts at 5).
+          Only the <b>host</b> can start (auto-starts at 5).
         </p>
       </div>
     </div>

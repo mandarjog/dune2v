@@ -19,6 +19,11 @@
   padding: 0;
 }
 
+/* Utility — used by lobby buttons, scoreboards, etc. */
+.hidden {
+  display: none !important;
+}
+
 html,
 body {
   height: 100%;
@@ -831,6 +836,35 @@ button.linkish {
   margin-top: 8px;
   padding-top: 4px;
   text-align: left;
+}
+
+.lobby-link-row {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+  margin-top: 4px;
+}
+
+.lobby-link-row input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.lobby-link-row button {
+  flex: 0 0 auto;
+  min-width: auto;
+  padding: 8px 12px;
+}
+
+.lobby-wait-host {
+  width: 100%;
+  margin: 0;
+  padding: 10px 12px;
+  text-align: center;
+  color: var(--accent);
+  border: 1px dashed var(--panel-border);
+  border-radius: 3px;
+  background: #1a1610;
 }
 
 .mp-join-row {
