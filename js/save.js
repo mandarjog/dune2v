@@ -262,8 +262,14 @@
       // Live MP snapshots omit fog arrays (bandwidth). Always rebuild vision
       // from current units/buildings so CY deploy + moving units lift FOW.
       if (!game.fog) D.Map.initFog(game);
-      D.Map.recomputeFog(game, 'player');
-      D.Map.recomputeFog(game, 'enemy');
+      const owners =
+        D.Seats && D.Seats.active
+          ? D.Seats.active(game)
+          : ['player', 'enemy'];
+      for (const o of owners) {
+        if (game.fog && game.fog[o]) D.Map.recomputeFog(game, o);
+        else D.Map.recomputeFog(game, o);
+      }
 
       // Stuck glow is on the unit; explain why in the message log (server can't toast)
       if (D.Orders && D.Orders.announceStuckFromNet) {

@@ -473,7 +473,12 @@
 
     _applyCmd(game, seat, payload) {
       if (!payload || !payload.op) return;
-      const owner = seat === 'enemy' ? 'enemy' : 'player';
+      const owner =
+        D.Seats && D.Seats.isSeat(seat)
+          ? seat
+          : seat === 'enemy'
+            ? 'enemy'
+            : 'player';
       // Mirror server applyCommand lightly
       try {
         if (payload.op === 'order') {

@@ -143,9 +143,10 @@
           <button id="btn-help-menu" type="button">Controls help</button>
         </div>
         <div class="mp-block">
-          <div class="section-title" style="margin-top: 14px">Multiplayer 1v1</div>
+          <div class="section-title" style="margin-top: 14px">Multiplayer (2–5 FFA)</div>
           <p class="hint" style="margin-bottom: 8px">
-            Pick a name, host a room, share the link. Second player is Harkonnen.
+            Pick a name, host a room, share the link. Up to 5 commanders — houses
+            cycle Atreides / Harkonnen / Ordos (labels like <b>Ordos-Alex</b>).
           </p>
           <label class="lobby-link-label" for="mp-name-input">Your name</label>
           <input
@@ -352,9 +353,16 @@
         <label class="lobby-link-label" for="lobby-link">Share this link</label>
         <input id="lobby-link" type="text" readonly />
         <div class="actions" style="margin-top: 14px">
-          <button id="btn-lobby-copy" type="button" class="primary">Copy link</button>
+          <button id="btn-lobby-start" type="button" class="primary hidden">
+            Start match
+          </button>
+          <button id="btn-lobby-copy" type="button">Copy link</button>
           <button id="btn-lobby-cancel" type="button">Cancel</button>
         </div>
+        <p class="hint" style="margin-top: 10px">
+          2–5 players. Houses cycle Atreides → Harkonnen → Ordos (then repeat).
+          Host clicks <b>Start match</b> when ready (auto-starts at 5).
+        </p>
       </div>
     </div>
 
@@ -387,6 +395,7 @@
 
     <!-- Script order matches DESIGN.md dependencies -->
     <script src="js/config.js"></script>
+    <script src="js/seats.js"></script>
     <script src="js/rng.js"></script>
     <script src="js/sprites.js"></script>
     <script src="js/map.js"></script>

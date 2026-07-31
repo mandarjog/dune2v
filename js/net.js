@@ -97,33 +97,62 @@
       }
     },
 
-    /** Display name for a seat from last roster/start. */
+    /** Display name for a seat from last roster/start (raw name, no house prefix). */
     nameFor(seat) {
       if (D.Net.names && D.Net.names[seat]) return D.Net.names[seat];
       const s = D.Net.seats && D.Net.seats[seat];
       if (s && s.name) return s.name;
+      if (D.Seats && D.Seats.houseName) return D.Seats.houseName(seat);
       return seat === 'enemy' ? 'Harkonnen' : 'Atreides';
+    },
+
+    /** House-Name label e.g. Ordos-Alex */
+    labelFor(seat) {
+      if (D.Seats && D.Seats.label) {
+        return D.Seats.label(seat, D.Net.names || null);
+      }
+      return D.Net.nameFor(seat);
     },
 
     _applyRoster(msg) {
       if (msg.seats) D.Net.seats = msg.seats;
       if (msg.peers != null) D.Net.peers = msg.peers;
       if (msg.spectators != null) D.Net.spectators = msg.spectators;
-      const names = { player: null, enemy: null };
+      if (msg.owners) D.Net.owners = msg.owners;
+      const names = {};
+      if (D.Seats && D.Seats.IDS) {
+        for (const id of D.Seats.IDS) names[id] = null;
+      } else {
+        names.player = null;
+        names.enemy = null;
+      }
       if (msg.seats) {
-        if (msg.seats.player && msg.seats.player.name) names.player = msg.seats.player.name;
-        if (msg.seats.enemy && msg.seats.enemy.name) names.enemy = msg.seats.enemy.name;
+        for (const seat of Object.keys(msg.seats)) {
+          if (msg.seats[seat] && msg.seats[seat].name) names[seat] = msg.seats[seat].name;
+        }
       }
       if (msg.names) {
-        if (msg.names.player) names.player = msg.names.player;
-        if (msg.names.enemy) names.enemy = msg.names.enemy;
+        for (const seat of Object.keys(msg.names)) {
+          if (msg.names[seat]) names[seat] = msg.names[seat];
+        }
       }
       D.Net.names = names;
       if (D.Net.game) {
-        D.Net.game.playerNames = {
-          player: names.player || 'Atreides',
-          enemy: names.enemy || 'Harkonnen',
-        };
+        D.Net.game.playerNames = Object.assign({}, names);
+        if (msg.owners && msg.owners.length) {
+          D.Net.game.activeOwners = msg.owners.slice();
+        }
+      }
+    },
+
+    /** Host: start match with current lobby (2–5 players). */
+    startMatch() {
+      if (!D.Net.ws || D.Net.ws.readyState !== 1) return false;
+      try {
+        D.Net.ws.send(JSON.stringify({ type: 'start_match' }));
+        return true;
+      } catch (e) {
+        return false;
       }
     },
 
@@ -412,7 +441,13 @@
         D.Net.lastError = msg.error || 'error';
         D.Net._emit('error', msg);
         if (msg.error === 'room_full') {
-          D.Game.pushMessage(D.Net.game, 'Room is full (2 players max).');
+          D.Game.pushMessage(
+            D.Net.game,
+            'Room is full (5 players max). Open Live matches to spectate.'
+          );
+        }
+        if (msg.error === 'need_players') {
+          D.Game.pushMessage(D.Net.game, 'Need at least 2 players to start.');
         } else if (msg.error === 'spectators_full') {
           D.Game.pushMessage(D.Net.game, 'Too many spectators in that room.');
         } else if (msg.error === 'no_room') {
@@ -607,33 +642,31 @@
       D.Net._applyRoster(msg);
       D.Net.status = 'playing';
       D.Net._reconnectAttempts = 0;
-      const aName = D.Net.nameFor('player');
-      const hName = D.Net.nameFor('enemy');
+      if (msg.owners && msg.owners.length) {
+        game.activeOwners = msg.owners.slice();
+      }
+      const roster = (msg.owners || Object.keys(D.Net.seats || {})).filter(Boolean);
+      const rosterLabels = roster.map((s) => D.Net.labelFor(s)).join(' · ');
       if (isSpec) {
         D.Game.pushMessage(
           game,
           'SPECTATING · ' +
-            aName +
-            ' vs ' +
-            hName +
+            (rosterLabels || 'match') +
             ' · room ' +
             (D.Net.room || '') +
             ' — FOW off, view only.'
         );
       } else {
-        const meName = D.Net.nameFor(game.localOwner);
-        const foeSeat = game.localOwner === 'player' ? 'enemy' : 'player';
-        const foeName = D.Net.nameFor(foeSeat);
-        const house = game.localOwner === 'enemy' ? 'Harkonnen (red)' : 'Atreides (blue)';
+        const meLabel = D.Net.labelFor(game.localOwner);
         if (msg.reconnected) {
-          D.Game.pushMessage(
-            game,
-            'Back in the match as ' + meName + ' (' + house + ').'
-          );
+          D.Game.pushMessage(game, 'Back in the match as ' + meLabel + '.');
         } else {
           D.Game.pushMessage(
             game,
-            meName + ' vs ' + foeName + ' — you are ' + house + '. Select MCV, press E to deploy.'
+            'You are ' +
+              meLabel +
+              (roster.length > 2 ? ' · FFA ' + roster.length + 'p' : '') +
+              '. Select MCV, press E to deploy.'
           );
         }
       }

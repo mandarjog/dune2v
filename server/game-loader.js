@@ -10,6 +10,7 @@ const ROOT = path.resolve(__dirname, '..');
 
 const SCRIPTS = [
   'js/config.js',
+  'js/seats.js',
   'js/rng.js',
   'js/map.js',
   'js/pathfinding.js',

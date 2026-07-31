@@ -3,7 +3,7 @@
 /**
  * Fly-friendly game host:
  *  - Serves the static browser client (index.html, js/, css/, …)
- *  - WebSocket /ws — 2-seat multiplayer rooms (host-authoritative)
+ *  - WebSocket /ws — multiplayer rooms (2–5 FFA seats + spectators)
  *
  * Env:
  *   PORT          listen port (Fly sets this; default 8080)
@@ -25,9 +25,13 @@ const ROOT = process.env.STATIC_ROOT
   ? path.resolve(process.env.STATIC_ROOT)
   : path.resolve(__dirname, '..');
 
-const PROTOCOL = 6; // live spectate + match list
-const MAX_SEATS = 2;
+const PROTOCOL = 7; // 2–5 player FFA seats
+const MAX_SEATS = 5;
+const MIN_START = 2;
 const MAX_SPECTATORS = 8;
+/** Seat order: first two keep legacy ids for save/replay compat. */
+const SEAT_ORDER = ['player', 'enemy', 'p2', 'p3', 'p4'];
+const HOUSE_CYCLE = ['Atreides', 'Harkonnen', 'Ordos'];
 const ROOM_CODE_LEN = 6;
 const ROOM_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const ROOM_IDLE_MS = 60 * 60 * 1000;
@@ -303,14 +307,26 @@ function spectatorCount(room) {
   return n;
 }
 
+function houseForSeat(seat) {
+  const i = SEAT_ORDER.indexOf(seat);
+  return HOUSE_CYCLE[((i % 3) + 3) % 3];
+}
+
 function roomNames(room) {
-  const seats = room.slots;
-  const p = seats.get('player');
-  const e = seats.get('enemy');
-  return {
-    player: (p && p.name) || 'Atreides',
-    enemy: (e && e.name) || 'Harkonnen',
-  };
+  const names = {};
+  for (const seat of SEAT_ORDER) {
+    const slot = room.slots.get(seat);
+    // Store raw player names; client prefixes house (Ordos-Alex)
+    names[seat] = (slot && slot.name) || houseForSeat(seat);
+  }
+  return names;
+}
+
+function orderedConnectedOwners(room) {
+  return SEAT_ORDER.filter((seat) => {
+    const slot = room.slots.get(seat);
+    return slot && slot.connected;
+  });
 }
 
 function roomSnapshot(room) {
@@ -688,7 +704,7 @@ function findReclaimSeat(room, playerId) {
 }
 
 function findOpenSeat(room) {
-  for (const seat of ['player', 'enemy']) {
+  for (const seat of SEAT_ORDER) {
     if (!room.slots.has(seat)) return seat;
     const slot = room.slots.get(seat);
     // Expired reservation — free for a new player
@@ -732,12 +748,23 @@ function sendMatchSync(ws, room, { reconnected, spectator }) {
   }
 }
 
-/** Start server sim when both seats are claimed (connected). */
-function maybeStartMatch(room) {
-  if (!room || room.started) return;
-  if (room.slots.size < MAX_SEATS) return;
-  // Prefer both connected to start
-  if (connectedCount(room) < MAX_SEATS) return;
+/**
+ * Start when forced by host (2+ players) or room is full (5 connected).
+ * Does not auto-start at 2 so a third–fifth player can join the lobby first.
+ */
+function maybeStartMatch(room, opts) {
+  opts = opts || {};
+  if (!room || room.started) return false;
+  const n = connectedCount(room);
+  if (n < MIN_START) return false;
+  if (!opts.force && n < MAX_SEATS) return false;
+  return startMatchNow(room);
+}
+
+function startMatchNow(room) {
+  if (!room || room.started) return false;
+  const owners = orderedConnectedOwners(room);
+  if (owners.length < MIN_START) return false;
 
   room.started = true;
   touch(room);
@@ -751,10 +778,11 @@ function maybeStartMatch(room) {
     authority: 'server',
     speed: 1,
     speedOptions: SPEED_OPTIONS,
+    owners,
+    maxSeats: MAX_SEATS,
     ...snap,
     names,
   };
-  // Players get start; spectators get start with spectator flag via personal send after
   forEachClient(room, (ws) => {
     sendJson(ws, {
       ...startMsg,
@@ -765,7 +793,7 @@ function maybeStartMatch(room) {
   });
 
   room.speedPending = null;
-  const sim = new RoomSim(room.id, { names });
+  const sim = new RoomSim(room.id, { names, owners });
   room.sim = sim;
   sim.onState = (payload, tick, extra) => {
     const wire = JSON.stringify({
@@ -785,6 +813,7 @@ function maybeStartMatch(room) {
       {
         type: 'match_end',
         phase,
+        winner: (info && info.winner) || (room.sim && room.sim.game && room.sim.game.winner) || null,
         recordingId: (info && info.recordingId) || sim.recordingId || null,
       },
       null
@@ -792,7 +821,10 @@ function maybeStartMatch(room) {
   };
   try {
     sim.start();
-    console.log(`[room ${room.id}] server sim started`);
+    console.log(
+      `[room ${room.id}] server sim started owners=${owners.join(',')} n=${owners.length}`
+    );
+    return true;
   } catch (err) {
     console.error(`[room ${room.id}] sim failed`, err);
     room.started = false;
@@ -802,6 +834,7 @@ function maybeStartMatch(room) {
       { type: 'error', error: 'sim_failed', message: String(err.message || err) },
       null
     );
+    return false;
   }
 }
 
@@ -1080,12 +1113,34 @@ function setupWs(server) {
       }
       touch(room);
 
-      if (msg.type === 'start') {
+      if (msg.type === 'start' || msg.type === 'start_match') {
         if (isSpectatorWs(ws)) {
           sendJson(ws, { type: 'error', error: 'spectator' });
           return;
         }
-        maybeStartMatch(room);
+        // Only host (or any player if host gone) may force-start with 2–5 players
+        const slot = ws.seat && room.slots.get(ws.seat);
+        const isHost = slot && slot.role === 'host';
+        if (!isHost && ws.role !== 'host') {
+          sendJson(ws, { type: 'error', error: 'not_host' });
+          return;
+        }
+        if (room.started) {
+          sendJson(ws, { type: 'error', error: 'already_started' });
+          return;
+        }
+        if (connectedCount(room) < MIN_START) {
+          sendJson(ws, {
+            type: 'error',
+            error: 'need_players',
+            message: 'Need at least ' + MIN_START + ' players to start.',
+          });
+          return;
+        }
+        const ok = maybeStartMatch(room, { force: true });
+        if (!ok) {
+          sendJson(ws, { type: 'error', error: 'start_failed' });
+        }
         return;
       }
 

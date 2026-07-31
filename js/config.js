@@ -50,8 +50,9 @@
       spice: '#d4780a',
       spiceHeavy: '#b84e00',
       cliff: '#2a2a2a',
-      player: '#4a90d9',
-      enemy: '#c0392b',
+      player: '#4a90d9', // Atreides
+      enemy: '#c0392b', // Harkonnen
+      ordos: '#27ae60', // Ordos (3rd+ seats cycle houses)
       fog: 'rgba(0,0,0,0.72)',
       shroud: '#000000',
       selection: '#ffffff',

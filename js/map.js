@@ -107,10 +107,24 @@
 
     initFog(game) {
       const n = game.map.width * game.map.height;
-      game.fog = {
-        player: { explored: new Uint8Array(n), visible: new Uint8Array(n) },
-        enemy: { explored: new Uint8Array(n), visible: new Uint8Array(n) },
-      };
+      const owners =
+        D.Seats && D.Seats.active
+          ? D.Seats.active(game)
+          : ['player', 'enemy'];
+      game.fog = game.fog || {};
+      for (const o of owners) {
+        game.fog[o] = {
+          explored: new Uint8Array(n),
+          visible: new Uint8Array(n),
+        };
+      }
+      // Always keep classic buckets for older code paths
+      if (!game.fog.player) {
+        game.fog.player = { explored: new Uint8Array(n), visible: new Uint8Array(n) };
+      }
+      if (!game.fog.enemy) {
+        game.fog.enemy = { explored: new Uint8Array(n), visible: new Uint8Array(n) };
+      }
     },
 
     stampSight(game, owner, cx, cy, radius) {

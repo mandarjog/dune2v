@@ -17,6 +17,7 @@
   }
 
   function ownerColor(owner) {
+    if (D.Seats && D.Seats.color) return D.Seats.color(owner);
     return owner === 'player' ? D.config.colors.player : D.config.colors.enemy;
   }
 

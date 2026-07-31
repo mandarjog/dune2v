@@ -10,6 +10,7 @@ globalObj.window = undefined;
 
 const files = [
   'js/config.js',
+  'js/seats.js',
   'js/rng.js',
   'js/map.js',
   'js/pathfinding.js',

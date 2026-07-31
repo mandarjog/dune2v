@@ -187,10 +187,14 @@ describe('live API + spectator WS', () => {
     assert.equal(gj.seat, 'enemy');
     assert.notEqual(gj.role, 'spectator');
 
+    // Host must start (no longer auto-starts at 2 so FFA lobbies can fill)
+    host.send(JSON.stringify({ type: 'start_match' }));
+
     // Match should start — spectator gets start
     const start = await waitMsg(spec, 'start', 6000);
     assert.equal(start.spectator, true);
     assert.equal(start.map, 'skirmish_large');
+    assert.ok(start.owners && start.owners.length >= 2);
 
     // State broadcast reaches spectator
     const state = await waitMsg(spec, 'state', 6000);

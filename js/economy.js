@@ -15,7 +15,9 @@
     },
 
     tickPower(game) {
-      for (const owner of ['player', 'enemy']) {
+      const owners =
+        D.Seats && D.Seats.active ? D.Seats.active(game) : ['player', 'enemy'];
+      for (const owner of owners) {
         let prod = 0;
         let need = 0;
         for (const b of game.buildings) {
@@ -26,18 +28,22 @@
           else need += -def.power;
         }
         const ratio = need > 0 ? Math.min(1, prod / need) : 1;
+        if (!game.power) game.power = {};
         game.power[owner] = { prod, need, ratio };
       }
     },
 
     recalcSpiceCap(game) {
-      for (const owner of ['player', 'enemy']) {
+      const owners =
+        D.Seats && D.Seats.active ? D.Seats.active(game) : ['player', 'enemy'];
+      for (const owner of owners) {
         let cap = D.config.economy.baseSpiceCap;
         for (const b of game.buildings) {
           if (b.owner === owner && b.type === 'silo' && b.buildProgress >= 1) {
             cap += D.config.economy.siloBonus;
           }
         }
+        if (!game.spiceCap) game.spiceCap = {};
         game.spiceCap[owner] = cap;
         if (game.credits[owner] > cap) game.credits[owner] = cap;
       }

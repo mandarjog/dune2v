@@ -119,36 +119,21 @@ Browser                  Server
 
 ---
 
-## 3. Multiplayer expansion (sketch; after 1–2)
+## 3. Multiplayer expansion — **shipped: 2–5 FFA**
 
-### Today
-- Exactly **2 seats**: `player` (Atreides blue) / `enemy` (Harkonnen red).
-- Server sim, cmd stream recording, reconnect by `playerId`.
+### Shipped
+- **`MAX_SEATS = 5`**: seats `player`, `enemy`, `p2`, `p3`, `p4`
+- **Houses cycle**: Atreides (blue) → Harkonnen (red) → Ordos (green) → repeat  
+  Labels: **`Ordos-Alex`** style (`house-playerName`)
+- **Lobby**: host clicks **Start match** with 2–5 players (auto-starts at 5 full)
+- **Win**: last CY/MCV standing (FFA)
+- **Map**: 5 deployable spawns on `skirmish_large`
+- Protocol **7**
 
-### Directions (pick later)
-
-| Mode | Seats | Notes |
-|------|-------|--------|
-| **A. Better 1v1** | 2 | Map pick, timed games, ranked later — low risk |
-| **B. FFA 3** | 3 | Atreides / Ordos / Harkonnen; 3 spawns; win = last CY standing |
-| **C. 2v2** | 4 | Teams, shared vision optional, much more UI |
-
-**Recommendation:** finish **large map + spectate**, then **timed 1v1** (already discussed), then **FFA 3** if demand holds.
-
-### FFA 3 sketch (not in first implement pass)
-- Seats: `p0`, `p1`, `p2` with house colors blue / green / red.
-- `MAX_SEATS = 3`; start when 3 connected (or 2 + AI fill — later).
-- Win: only one owner has CY or MCV.
-- Fog per owner; minimap colors per seat.
-- Recording: `names` map + cmds tagged by seat (already).
-- AI: only for empty seats in “vs AI” skirmish, not ranked MP.
-
-### Bigger MP checklist (when started)
-- [ ] Generalize `localOwner` / seat list beyond player|enemy
-- [ ] Lobby roster N names
-- [ ] Map spawns N
-- [ ] `checkWinLoss` last-team / last-player alive
-- [ ] Net protocol bump if seat enums change
+### Later
+- [ ] Timed games
+- [ ] 2v2 teams
+- [ ] AI fill empty seats
 
 ---
 

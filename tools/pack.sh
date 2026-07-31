@@ -8,6 +8,7 @@ mkdir -p "$ROOT/dist"
 CSS="$ROOT/css/styles.css"
 SCRIPTS=(
   "$ROOT/js/config.js"
+  "$ROOT/js/seats.js"
   "$ROOT/js/rng.js"
   "$ROOT/js/sprites.js"
   "$ROOT/js/map.js"

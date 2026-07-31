@@ -17,10 +17,12 @@
   }
 
   function myColor(game) {
+    if (D.Seats && D.Seats.color) return D.Seats.color(me(game));
     return me(game) === 'player' ? D.config.colors.player : D.config.colors.enemy;
   }
 
   function ownerColor(owner) {
+    if (D.Seats && D.Seats.color) return D.Seats.color(owner);
     return owner === 'player' ? D.config.colors.player : D.config.colors.enemy;
   }
 
@@ -45,6 +47,9 @@
   }
 
   function houseLabel(owner) {
+    if (D.Seats && D.Seats.label) {
+      return D.Seats.label(owner, boundGame && boundGame.playerNames);
+    }
     return owner === 'player' ? 'Atreides (blue)' : 'Harkonnen (red)';
   }
 
@@ -416,6 +421,15 @@
         D.UI.showMenu();
       });
 
+      $('btn-lobby-start')?.addEventListener('click', () => {
+        if (!D.Net || D.Net.role !== 'host') return;
+        if (!D.Net.startMatch || !D.Net.startMatch()) {
+          D.Game.pushMessage(boundGame, 'Could not start — still connecting?');
+          return;
+        }
+        D.Game.pushMessage(boundGame, 'Starting match…');
+      });
+
       $('btn-lobby-copy')?.addEventListener('click', async () => {
         const url = D.Net && D.Net.roomUrl();
         if (!url) return;
@@ -596,7 +610,10 @@
           if (ev === 'error') {
             const err = (data && data.error) || D.Net.lastError || 'error';
             const map = {
-              room_full: 'That room is full (2 players).',
+              room_full:
+                'That room is full (5 players max). Use Live matches to spectate.',
+              need_players: 'Need at least 2 players to start.',
+              not_host: 'Only the host can start the match.',
               spectators_full: 'Too many spectators in that room.',
               no_room: 'Room not found (may have ended).',
               spectate_off: 'Spectating is disabled for that room.',
@@ -1196,36 +1213,56 @@
       if (els.lobbyRoster) {
         const seats = D.Net.seats || {};
         const rows = [];
-        const renderSeat = (seat, house, css) => {
+        const seatIds =
+          D.Seats && D.Seats.IDS ? D.Seats.IDS : ['player', 'enemy'];
+        const renderSeat = (seat) => {
+          const h = D.Seats ? D.Seats.house(seat) : null;
+          const house =
+            (h ? h.name : seat) +
+            (h ? ' · ' + (h.id === 'atreides' ? 'blue' : h.id === 'harkonnen' ? 'red' : 'green') : '');
+          const css = h ? h.id : '';
           const info = seats[seat];
           const name = (info && info.name) || (seat === D.Net.seat ? D.Net.name : null);
           const you = seat === D.Net.seat;
           const online = info && info.connected !== false;
           if (name) {
             const tag = you ? ' (you)' : online ? '' : ' (offline)';
+            const label = h ? h.name + '-' + name : name;
             rows.push(
-              `<div class="seat-row"><span class="seat-house">${house}</span>` +
+              `<div class="seat-row"><span class="seat-house">${escapeHtml(house)}</span>` +
                 `<span class="seat-name ${css}${you ? ' you' : ''}${
                   online ? '' : ' offline'
-                }">${escapeHtml(name)}${tag}</span></div>`
+                }">${escapeHtml(label)}${tag}</span></div>`
             );
           } else {
+            // Only show empty slots up to max (always show 5 slots so people know capacity)
             rows.push(
-              `<div class="seat-row"><span class="seat-house">${house}</span>` +
-                `<span class="empty">waiting…</span></div>`
+              `<div class="seat-row"><span class="seat-house">${escapeHtml(house)}</span>` +
+                `<span class="empty">open</span></div>`
             );
           }
         };
-        renderSeat('player', 'Atreides · blue', 'atreides');
-        renderSeat('enemy', 'Harkonnen · red', 'harkonnen');
+        for (const s of seatIds) renderSeat(s);
         els.lobbyRoster.innerHTML = rows.join('');
+      }
+      // Host start button
+      const btnStart = $('btn-lobby-start');
+      if (btnStart) {
+        const n = D.Net.peers || 0;
+        const isHost = D.Net.role === 'host';
+        const show = isHost && D.Net.status === 'lobby' && n >= 2 && !D.Net.started;
+        btnStart.classList.toggle('hidden', !show);
+        btnStart.textContent =
+          n >= 5 ? 'Start match (full)' : 'Start match (' + n + ' players)';
       }
       if (els.lobbySeat) {
         if (D.Net.seat) {
+          const lab =
+            D.Net.labelFor
+              ? D.Net.labelFor(D.Net.seat)
+              : houseLabel(D.Net.seat);
           els.lobbySeat.textContent =
-            'Playing as ' +
-            houseLabel(D.Net.seat) +
-            (D.Net.role === 'host' ? ' · room host' : '');
+            'Playing as ' + lab + (D.Net.role === 'host' ? ' · room host' : '');
         } else {
           els.lobbySeat.textContent = '';
         }
@@ -1237,9 +1274,16 @@
           const n = D.Net.peers || 1;
           if (n < 2) {
             els.lobbyStatus.textContent =
-              'Waiting for opponent… share the link below. Real-time match starts when they join.';
+              'Waiting for players (2–5)… share the link. Host starts when ready.';
+          } else if (n >= 5) {
+            els.lobbyStatus.textContent = 'Lobby full (5) — starting…';
+          } else if (D.Net.role === 'host') {
+            els.lobbyStatus.textContent =
+              n +
+              ' commanders in lobby. Click Start match, or wait for more (max 5).';
           } else {
-            els.lobbyStatus.textContent = 'Both commanders ready — starting match…';
+            els.lobbyStatus.textContent =
+              n + ' commanders — waiting for host to start.';
           }
         } else if (D.Net.status === 'playing') {
           els.lobbyStatus.textContent = 'Match in progress.';
@@ -1257,34 +1301,34 @@
         el.textContent = '';
         return;
       }
-      const names = game.playerNames || {
-        player: D.Net ? D.Net.nameFor('player') : 'Atreides',
-        enemy: D.Net ? D.Net.nameFor('enemy') : 'Harkonnen',
-      };
+      const owners =
+        (D.Seats && D.Seats.active(game)) ||
+        (game.activeOwners && game.activeOwners.length
+          ? game.activeOwners
+          : ['player', 'enemy']);
+      const names = game.playerNames || {};
       const local = me(game);
-      const a = escapeHtml(names.player || 'Atreides');
-      const h = escapeHtml(names.enemy || 'Harkonnen');
-      if (game.replay) {
-        el.innerHTML =
-          `<span class="atreides">${a}</span>` +
-          ` <span style="opacity:.5">vs</span> ` +
-          `<span class="harkonnen">${h}</span>` +
-          ` <span style="opacity:.45">· REPLAY</span>`;
-      } else if (game.spectator) {
+      const parts = owners.map((seat) => {
+        const lab = escapeHtml(
+          D.Seats ? D.Seats.label(seat, names) : names[seat] || seat
+        );
+        const h = D.Seats ? D.Seats.house(seat) : null;
+        const cls =
+          (h ? h.id : '') + (seat === local && !game.spectator && !game.replay ? ' you' : '');
+        return `<span class="${cls}">${lab}</span>`;
+      });
+      let suffix = '';
+      if (game.replay) suffix = ` <span style="opacity:.45">· REPLAY</span>`;
+      else if (game.spectator) {
         const code = escapeHtml(game.roomCode || (D.Net && D.Net.room) || '');
-        el.innerHTML =
-          `<span class="atreides">${a}</span>` +
-          ` <span style="opacity:.5">vs</span> ` +
-          `<span class="harkonnen">${h}</span>` +
+        suffix =
           ` <span style="opacity:.55">· SPECTATING` +
           (code ? ' · ' + code : '') +
           `</span>`;
-      } else {
-        el.innerHTML =
-          `<span class="${local === 'player' ? 'you' : ''}">${a}</span>` +
-          ` <span style="opacity:.5">vs</span> ` +
-          `<span class="${local === 'enemy' ? 'you' : ''}">${h}</span>`;
+      } else if (owners.length > 2) {
+        suffix = ` <span style="opacity:.45">· FFA</span>`;
       }
+      el.innerHTML = parts.join(` <span style="opacity:.4">·</span> `) + suffix;
       el.classList.remove('hidden');
     },
 
@@ -1303,20 +1347,21 @@
       board.classList.remove('hidden');
 
       const names = game.playerNames || {};
-      const sides = [
-        {
-          owner: 'player',
-          css: 'atreides',
-          label: names.player || 'Atreides',
-          house: 'Atreides',
-        },
-        {
-          owner: 'enemy',
-          css: 'harkonnen',
-          label: names.enemy || 'Harkonnen',
-          house: 'Harkonnen',
-        },
-      ];
+      const owners =
+        (D.Seats && D.Seats.active(game)) ||
+        (game.activeOwners && game.activeOwners.length
+          ? game.activeOwners
+          : ['player', 'enemy']);
+      const sides = owners.map((owner) => {
+        const h = D.Seats ? D.Seats.house(owner) : null;
+        return {
+          owner,
+          css: h ? h.id : '',
+          label: D.Seats ? D.Seats.label(owner, names) : names[owner] || owner,
+          house: h ? h.name : owner,
+          color: h ? h.color : '#888',
+        };
+      });
 
       function card(s) {
         const c = Math.floor(game.credits[s.owner] || 0);
@@ -1330,8 +1375,8 @@
           (b) => b.owner === s.owner && b.hp > 0 && b.type !== 'concrete'
         ).length;
         return (
-          `<div class="replay-score-card ${s.css}">` +
-          `<div class="house" title="${escapeHtml(s.house)}">${escapeHtml(s.label)}</div>` +
+          `<div class="replay-score-card ${s.css}" style="border-color:${s.color}">` +
+          `<div class="house" style="color:${s.color}" title="${escapeHtml(s.house)}">${escapeHtml(s.label)}</div>` +
           `<div class="line"><span class="k">Credits</span><span class="v">${c} / ${cap}</span></div>` +
           `<div class="line"><span class="k">Power</span><span class="v">${p.prod} / ${p.need}</span></div>` +
           `<div class="line"><span class="k">Army</span><span class="v">${units}u · ${blds}b</span></div>` +
@@ -1341,7 +1386,7 @@
       }
 
       board.innerHTML =
-        `<div class="replay-score-row">${card(sides[0])}${card(sides[1])}</div>`;
+        `<div class="replay-score-row" style="grid-template-columns:repeat(${Math.min(3, sides.length)},1fr)">${sides.map(card).join('')}</div>`;
     },
 
     showPause(show) {
@@ -1360,38 +1405,35 @@
       const h2 = modal.querySelector('h2');
       const p = modal.querySelector('p');
       const names = game.playerNames;
-      const myName =
-        (names && names[D.Game.me(game)]) ||
-        (D.Net && D.Net.name) ||
-        'Commander';
-      const foeName =
-        (names && names[D.Game.foe(game)]) ||
-        (D.Net && D.Net.nameFor(D.Game.foe(game))) ||
-        'Opponent';
+      const myLabel = D.Seats
+        ? D.Seats.label(D.Game.me(game), names)
+        : (names && names[D.Game.me(game)]) ||
+          (D.Net && D.Net.name) ||
+          'Commander';
+      const winLabel = game.winner
+        ? D.Seats
+          ? D.Seats.label(game.winner, names)
+          : game.winner
+        : D.Seats
+          ? D.Seats.label(D.Game.foe(game), names)
+          : 'Opponent';
       if (game.spectator) {
-        const a = (names && names.player) || 'Atreides';
-        const h = (names && names.enemy) || 'Harkonnen';
         h2.textContent = 'Match over';
         p.textContent =
-          a +
-          ' vs ' +
-          h +
-          ' — ' +
-          (game.phase === 'victory'
-            ? a + ' wins.'
-            : game.phase === 'defeat'
-              ? h + ' wins.'
-              : 'Ended.') +
+          (game.winner ? winLabel + ' wins.' : 'Ended.') +
           ' Esc returns to menu.';
+      } else if (local === 'draw') {
+        h2.textContent = 'Draw';
+        p.textContent = 'No houses remain. The desert claims all.';
       } else if (local === 'victory') {
         h2.textContent = 'Victory';
         p.textContent = game.multiplayer
-          ? myName + ' defeats ' + foeName + '. The Emperor acknowledges your control of Arrakis.'
+          ? myLabel + ' prevails. The Emperor acknowledges your control of Arrakis.'
           : 'The Emperor acknowledges your control of Arrakis.';
       } else {
         h2.textContent = 'Defeat';
         p.textContent = game.multiplayer
-          ? foeName + ' triumphs over ' + myName + '. The spice must flow… elsewhere.'
+          ? winLabel + ' triumphs over ' + myLabel + '. The spice must flow… elsewhere.'
           : 'Your base has fallen. The spice must flow… elsewhere.';
       }
       const recId = D.UI.lastRecordingId();

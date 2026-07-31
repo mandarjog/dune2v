@@ -951,6 +951,25 @@ button.linkish {
   font-weight: 600;
 }
 
+.mp-matchup .ordos,
+.seat-name.ordos {
+  color: var(--ordos, #27ae60);
+  font-weight: 600;
+}
+
+.replay-score-card.ordos {
+  border-color: color-mix(in srgb, #27ae60 55%, var(--panel-border));
+}
+
+.replay-score-card.ordos .house {
+  color: #27ae60;
+}
+
+.replay-score-row {
+  display: grid;
+  gap: 6px;
+}
+
 .mp-matchup.hidden {
   display: none;
 }

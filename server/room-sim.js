@@ -37,7 +37,14 @@ class RoomSim {
     this.game.multiplayer = true;
     this.game._serverSim = true;
     this.game.localOwner = 'player';
-    D.Game.startSkirmish(this.game, D.MAPS.skirmish_large || D.MAPS.skirmish1);
+    const owners =
+      this.meta.owners && this.meta.owners.length
+        ? this.meta.owners
+        : ['player', 'enemy'];
+    D.Game.startSkirmish(this.game, D.MAPS.skirmish_large || D.MAPS.skirmish1, {
+      owners,
+      names: this.meta.names || null,
+    });
     this.game.multiplayer = true;
     this.game._serverSim = true;
     this.running = true;
@@ -136,9 +143,10 @@ class RoomSim {
       this._broadcast(true);
       const phase = this.game.phase;
       // Finish recording first so /api/recordings/:id is ready when clients open Watch
+      const winner = this.game.winner || null;
       const info = this.stop();
       const recId = (info && info.id) || this._lastRecordingId || null;
-      if (this.onEnd) this.onEnd(phase, { recordingId: recId });
+      if (this.onEnd) this.onEnd(phase, { recordingId: recId, winner });
       return;
     }
     D.Game.tick(this.game, BASE_DT);
@@ -211,7 +219,12 @@ class RoomSim {
 
     const D = this.D;
     const game = this.game;
-    const owner = seat === 'enemy' ? 'enemy' : 'player';
+    const owner =
+      D.Seats && D.Seats.isSeat(seat)
+        ? seat
+        : seat === 'enemy'
+          ? 'enemy'
+          : 'player';
     const tickAt = game.tick;
 
     function ownedIds(ids) {

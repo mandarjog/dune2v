@@ -251,9 +251,30 @@
     return { x: preferredX, y: preferredY };
   }
 
-  // On home rock plateaus (SW / NE) — NOT sand pads (those broke deploy)
+  // Extra plateaus for FFA seats p2–p4 (NW, SE, mid-west)
+  stampRockPlateau(18, 20, 7, [
+    [4, 2, 4, 3],
+    [-3, 4, 3, 4],
+    [3, -4, 3, 3],
+  ]);
+  stampRockPlateau(76, 74, 7, [
+    [-4, -2, 4, 3],
+    [3, -4, 3, 4],
+    [-3, 4, 3, 3],
+  ]);
+  stampRockPlateau(22, 50, 6, [
+    [4, 0, 3, 3],
+    [0, 4, 3, 3],
+    [-3, -2, 3, 2],
+  ]);
+
+  // On home rock plateaus — NOT sand pads (those broke deploy)
+  // player=Atreides SW, enemy=Harkonnen NE, p2=Ordos NW, p3=Atreides SE, p4=Harkonnen mid-W
   const playerSpawn = pickSpawn(16, 76, 8);
   const enemySpawn = pickSpawn(79, 18, 8);
+  const p2Spawn = pickSpawn(18, 20, 8);
+  const p3Spawn = pickSpawn(76, 74, 8);
+  const p4Spawn = pickSpawn(22, 50, 8);
 
   // Re-assert border cliffs after all stamps
   for (let x = 0; x < W; x++) {
@@ -277,6 +298,9 @@
     spawns: {
       player: playerSpawn,
       enemy: enemySpawn,
+      p2: p2Spawn,
+      p3: p3Spawn,
+      p4: p4Spawn,
     },
     wormZones: [],
     tiles: tiles,
