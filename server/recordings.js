@@ -111,6 +111,20 @@ function appendEvent(rec, ev) {
   }
 }
 
+function removeRecording(id) {
+  if (!id) return false;
+  let ok = false;
+  for (const p of [metaPath(id), eventsPath(id)]) {
+    try {
+      fs.unlinkSync(p);
+      ok = true;
+    } catch {
+      /* missing is fine */
+    }
+  }
+  return ok;
+}
+
 function finish(rec, phase, durationTicks) {
   if (!rec || rec._closed) return null;
   rec._closed = true;
@@ -125,8 +139,19 @@ function finish(rec, phase, durationTicks) {
     }
     rec._fd = null;
   }
+  // Drop empty / abandoned matches (init-only, no player cmds)
+  if (!(rec.cmds > 0)) {
+    removeRecording(rec.id);
+    console.log(
+      `[recordings] discarded ${rec.id} (0 cmds, phase=${rec.phase}, ticks=${rec.durationTicks})`
+    );
+    pruneOld();
+    pruneZeroCmd();
+    return null;
+  }
   writeMeta(rec);
   pruneOld();
+  pruneZeroCmd();
   console.log(
     `[recordings] saved ${rec.id} format=${rec.format} events=${rec.events} cmds=${rec.cmds || 0} ticks=${rec.durationTicks} phase=${rec.phase}`
   );
@@ -138,34 +163,90 @@ function finish(rec, phase, durationTicks) {
   };
 }
 
+function readAllMetas() {
+  if (!fs.existsSync(DISK_DIR)) return [];
+  return fs
+    .readdirSync(DISK_DIR)
+    .filter((f) => f.endsWith('.meta.json'))
+    .map((f) => {
+      try {
+        return JSON.parse(fs.readFileSync(path.join(DISK_DIR, f), 'utf8'));
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean);
+}
+
 function pruneOld() {
   try {
     if (!fs.existsSync(DISK_DIR)) return;
-    const metas = fs
-      .readdirSync(DISK_DIR)
-      .filter((f) => f.endsWith('.meta.json'))
-      .map((f) => {
-        try {
-          return JSON.parse(fs.readFileSync(path.join(DISK_DIR, f), 'utf8'));
-        } catch {
-          return null;
-        }
-      })
-      .filter(Boolean)
-      .sort((a, b) => (b.endedAt || 0) - (a.endedAt || 0));
+    const metas = readAllMetas().sort((a, b) => (b.endedAt || 0) - (a.endedAt || 0));
     while (metas.length > MAX_RECORDINGS) {
       const old = metas.pop();
       if (!old || !old.id) continue;
-      for (const p of [metaPath(old.id), eventsPath(old.id)]) {
-        try {
-          fs.unlinkSync(p);
-        } catch {
-          /* ignore */
-        }
-      }
+      removeRecording(old.id);
     }
   } catch (e) {
     console.warn('[recordings] prune failed', e.message);
+  }
+}
+
+/**
+ * Delete recordings with zero player commands (abandoned lobbies / crashes).
+ * Also removes orphan .jsonl / .meta pairs and unfinished 0-cmd leftovers.
+ * @returns {{ removed: string[], kept: number }}
+ */
+function pruneZeroCmd() {
+  const removed = [];
+  try {
+    ensureDir();
+    if (!fs.existsSync(DISK_DIR)) return { removed, kept: 0 };
+
+    const files = fs.readdirSync(DISK_DIR);
+    const metaIds = new Set();
+    const jsonlIds = new Set();
+
+    for (const f of files) {
+      if (f.endsWith('.meta.json')) metaIds.add(f.slice(0, -'.meta.json'.length));
+      else if (f.endsWith('.jsonl')) jsonlIds.add(f.slice(0, -'.jsonl'.length));
+    }
+
+    // Orphans
+    for (const id of metaIds) {
+      if (!jsonlIds.has(id)) {
+        removeRecording(id);
+        removed.push(id + '(orphan-meta)');
+      }
+    }
+    for (const id of jsonlIds) {
+      if (!metaIds.has(id)) {
+        removeRecording(id);
+        removed.push(id + '(orphan-jsonl)');
+      }
+    }
+
+    const metas = readAllMetas();
+    for (const m of metas) {
+      if (!m || !m.id) continue;
+      const cmds = m.cmds != null ? m.cmds | 0 : 0;
+      // 0 cmds always junk; also drop never-finished 0-event stubs
+      if (cmds === 0) {
+        if (removeRecording(m.id)) removed.push(m.id);
+      }
+    }
+
+    if (removed.length) {
+      console.log(
+        `[recordings] pruneZeroCmd removed ${removed.length}: ${removed.slice(0, 12).join(', ')}${
+          removed.length > 12 ? '…' : ''
+        }`
+      );
+    }
+    return { removed, kept: readAllMetas().length };
+  } catch (e) {
+    console.warn('[recordings] pruneZeroCmd failed', e.message);
+    return { removed, kept: 0 };
   }
 }
 
@@ -173,17 +254,8 @@ function list() {
   ensureDir();
   try {
     if (!fs.existsSync(DISK_DIR)) return [];
-    return fs
-      .readdirSync(DISK_DIR)
-      .filter((f) => f.endsWith('.meta.json'))
-      .map((f) => {
-        try {
-          return JSON.parse(fs.readFileSync(path.join(DISK_DIR, f), 'utf8'));
-        } catch {
-          return null;
-        }
-      })
-      .filter(Boolean)
+    return readAllMetas()
+      .filter((m) => (m.cmds | 0) > 0)
       .sort((a, b) => (b.endedAt || 0) - (a.endedAt || 0))
       .slice(0, MAX_RECORDINGS);
   } catch {
@@ -225,4 +297,7 @@ module.exports = {
   finish,
   list,
   get,
+  pruneOld,
+  pruneZeroCmd,
+  removeRecording,
 };

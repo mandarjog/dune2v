@@ -118,6 +118,24 @@ function serveStatic(req, res) {
     });
   }
 
+  // Ops: force prune 0-cmd / orphan recordings
+  if (urlPath === '/api/recordings/prune' && (req.method === 'POST' || req.method === 'GET')) {
+    const r = runRecordingCleanup('api');
+    return send(
+      res,
+      200,
+      JSON.stringify({
+        ok: true,
+        removed: (r && r.removed) || [],
+        kept: r ? r.kept : 0,
+      }),
+      {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Cache-Control': 'no-store',
+      }
+    );
+  }
+
   // Live in-progress (or lobby) matches for spectate list
   if (urlPath === '/api/live' && req.method === 'GET') {
     return send(res, 200, JSON.stringify({ ok: true, matches: listLiveMatches() }), {
@@ -1388,8 +1406,31 @@ function setupWs(server) {
 const server = http.createServer(serveStatic);
 setupWs(server);
 
+/** Drop abandoned 0-cmd recordings (lobby start/stop with no play). */
+const PRUNE_ZERO_CMD_MS = 15 * 60 * 1000;
+
+function runRecordingCleanup(reason) {
+  try {
+    const r = recordings.pruneZeroCmd();
+    if (r && r.removed && r.removed.length) {
+      console.log(
+        `[recordings] cleanup (${reason}): removed ${r.removed.length}, kept ${r.kept}`
+      );
+    } else if (reason === 'boot') {
+      console.log(`[recordings] cleanup (boot): nothing to remove, kept ${r ? r.kept : 0}`);
+    }
+    return r;
+  } catch (e) {
+    console.warn('[recordings] cleanup failed', e.message);
+    return null;
+  }
+}
+
 server.listen(PORT, HOST, () => {
   console.log(`[dune2v] http://${HOST}:${PORT}  static=${ROOT}  ws=/ws  protocol=${PROTOCOL}`);
+  // Immediate sweep of leftover 0-cmd stubs on volume
+  runRecordingCleanup('boot');
+  setInterval(() => runRecordingCleanup('interval'), PRUNE_ZERO_CMD_MS).unref();
 });
 
 function shutdown(sig) {
