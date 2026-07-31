@@ -1406,18 +1406,20 @@ function setupWs(server) {
 const server = http.createServer(serveStatic);
 setupWs(server);
 
-/** Drop abandoned 0-cmd recordings (lobby start/stop with no play). */
-const PRUNE_ZERO_CMD_MS = 15 * 60 * 1000;
+/** Drop short recordings (cmds < MIN_CMDS_TO_SAVE). */
+const PRUNE_SHORT_MS = 15 * 60 * 1000;
 
 function runRecordingCleanup(reason) {
   try {
-    const r = recordings.pruneZeroCmd();
+    const r = recordings.pruneShort ? recordings.pruneShort() : recordings.pruneZeroCmd();
     if (r && r.removed && r.removed.length) {
       console.log(
-        `[recordings] cleanup (${reason}): removed ${r.removed.length}, kept ${r.kept}`
+        `[recordings] cleanup (${reason}): removed ${r.removed.length}, kept ${r.kept} (minCmds=${r.minCmds || 10})`
       );
     } else if (reason === 'boot') {
-      console.log(`[recordings] cleanup (boot): nothing to remove, kept ${r ? r.kept : 0}`);
+      console.log(
+        `[recordings] cleanup (boot): nothing to remove, kept ${r ? r.kept : 0} (minCmds=${(r && r.minCmds) || 10})`
+      );
     }
     return r;
   } catch (e) {
@@ -1430,7 +1432,7 @@ server.listen(PORT, HOST, () => {
   console.log(`[dune2v] http://${HOST}:${PORT}  static=${ROOT}  ws=/ws  protocol=${PROTOCOL}`);
   // Immediate sweep of leftover 0-cmd stubs on volume
   runRecordingCleanup('boot');
-  setInterval(() => runRecordingCleanup('interval'), PRUNE_ZERO_CMD_MS).unref();
+  setInterval(() => runRecordingCleanup('interval'), PRUNE_SHORT_MS).unref();
 });
 
 function shutdown(sig) {

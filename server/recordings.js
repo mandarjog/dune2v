@@ -15,6 +15,8 @@ const fs = require('fs');
 const path = require('path');
 
 const MAX_RECORDINGS = 40;
+/** Matches with fewer player cmds than this are discarded (not worth replaying). */
+const MIN_CMDS_TO_SAVE = 10;
 
 const DISK_DIR = process.env.RECORDINGS_DIR
   ? path.resolve(process.env.RECORDINGS_DIR)
@@ -139,21 +141,22 @@ function finish(rec, phase, durationTicks) {
     }
     rec._fd = null;
   }
-  // Drop empty / abandoned matches (init-only, no player cmds)
-  if (!(rec.cmds > 0)) {
+  // Drop empty / short matches (not worth replaying)
+  const cmds = rec.cmds | 0;
+  if (cmds < MIN_CMDS_TO_SAVE) {
     removeRecording(rec.id);
     console.log(
-      `[recordings] discarded ${rec.id} (0 cmds, phase=${rec.phase}, ticks=${rec.durationTicks})`
+      `[recordings] discarded ${rec.id} (${cmds} cmds < ${MIN_CMDS_TO_SAVE}, phase=${rec.phase}, ticks=${rec.durationTicks})`
     );
     pruneOld();
-    pruneZeroCmd();
+    pruneShort();
     return null;
   }
   writeMeta(rec);
   pruneOld();
-  pruneZeroCmd();
+  pruneShort();
   console.log(
-    `[recordings] saved ${rec.id} format=${rec.format} events=${rec.events} cmds=${rec.cmds || 0} ticks=${rec.durationTicks} phase=${rec.phase}`
+    `[recordings] saved ${rec.id} format=${rec.format} events=${rec.events} cmds=${cmds} ticks=${rec.durationTicks} phase=${rec.phase}`
   );
   return {
     id: rec.id,
@@ -193,15 +196,16 @@ function pruneOld() {
 }
 
 /**
- * Delete recordings with zero player commands (abandoned lobbies / crashes).
- * Also removes orphan .jsonl / .meta pairs and unfinished 0-cmd leftovers.
- * @returns {{ removed: string[], kept: number }}
+ * Delete short / empty recordings (cmds < MIN_CMDS_TO_SAVE) and orphans.
+ * @returns {{ removed: string[], kept: number, minCmds: number }}
  */
-function pruneZeroCmd() {
+function pruneShort() {
   const removed = [];
   try {
     ensureDir();
-    if (!fs.existsSync(DISK_DIR)) return { removed, kept: 0 };
+    if (!fs.existsSync(DISK_DIR)) {
+      return { removed, kept: 0, minCmds: MIN_CMDS_TO_SAVE };
+    }
 
     const files = fs.readdirSync(DISK_DIR);
     const metaIds = new Set();
@@ -230,24 +234,32 @@ function pruneZeroCmd() {
     for (const m of metas) {
       if (!m || !m.id) continue;
       const cmds = m.cmds != null ? m.cmds | 0 : 0;
-      // 0 cmds always junk; also drop never-finished 0-event stubs
-      if (cmds === 0) {
-        if (removeRecording(m.id)) removed.push(m.id);
+      if (cmds < MIN_CMDS_TO_SAVE) {
+        if (removeRecording(m.id)) removed.push(m.id + '(cmds=' + cmds + ')');
       }
     }
 
     if (removed.length) {
       console.log(
-        `[recordings] pruneZeroCmd removed ${removed.length}: ${removed.slice(0, 12).join(', ')}${
-          removed.length > 12 ? '…' : ''
-        }`
+        `[recordings] pruneShort (min=${MIN_CMDS_TO_SAVE}) removed ${removed.length}: ${removed
+          .slice(0, 12)
+          .join(', ')}${removed.length > 12 ? '…' : ''}`
       );
     }
-    return { removed, kept: readAllMetas().length };
+    return {
+      removed,
+      kept: readAllMetas().filter((m) => (m.cmds | 0) >= MIN_CMDS_TO_SAVE).length,
+      minCmds: MIN_CMDS_TO_SAVE,
+    };
   } catch (e) {
-    console.warn('[recordings] pruneZeroCmd failed', e.message);
-    return { removed, kept: 0 };
+    console.warn('[recordings] pruneShort failed', e.message);
+    return { removed, kept: 0, minCmds: MIN_CMDS_TO_SAVE };
   }
+}
+
+/** @deprecated alias — prefer pruneShort */
+function pruneZeroCmd() {
+  return pruneShort();
 }
 
 function list() {
@@ -255,7 +267,7 @@ function list() {
   try {
     if (!fs.existsSync(DISK_DIR)) return [];
     return readAllMetas()
-      .filter((m) => (m.cmds | 0) > 0)
+      .filter((m) => (m.cmds | 0) >= MIN_CMDS_TO_SAVE)
       .sort((a, b) => (b.endedAt || 0) - (a.endedAt || 0))
       .slice(0, MAX_RECORDINGS);
   } catch {
@@ -291,6 +303,8 @@ function get(id) {
 
 module.exports = {
   DISK_DIR,
+  MAX_RECORDINGS,
+  MIN_CMDS_TO_SAVE,
   newId,
   begin,
   appendEvent,
@@ -298,6 +312,7 @@ module.exports = {
   list,
   get,
   pruneOld,
+  pruneShort,
   pruneZeroCmd,
   removeRecording,
 };
