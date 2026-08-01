@@ -100,7 +100,7 @@ fly apps open
 
 The game **autosaves** while you play (~15s), on pause, and when the tab closes. After a refresh, use **Continue** on the main menu (not “New Skirmish”).
 
-Credits are capped by spice storage (`1000` base + `1000` per Silo). A Combat Tank is `600¢`, Harvester `800¢`, MCV `2000¢` — build **Silos** before expensive units.
+Credits are capped by spice storage (`500` base + `1000` per Silo). Skirmish starts with CY + Windtrap + Refinery + harvester (or MCV-only). A Combat Tank is `600¢`, Harvester `800¢`, MCV `2000¢` — build **Silos** before expensive units.
 
 ## Release pack (single file)
 

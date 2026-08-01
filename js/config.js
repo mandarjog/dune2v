@@ -32,8 +32,9 @@
     },
 
     economy: {
-      startingCredits: 1000, // === baseSpiceCap (design KD #31)
-      baseSpiceCap: 1000,
+      // Lowered with free starter base (CY+WT+Refinery+harvester)
+      startingCredits: 500, // === baseSpiceCap
+      baseSpiceCap: 500,
       siloBonus: 1000,
       spiceToCredit: 1,
       harvestRate: 40,
@@ -109,7 +110,8 @@
       windtrap: {
         name: 'Windtrap',
         cost: 300,
-        power: 100,
+        // Was 100; with free starter WT, 70 keeps early power tighter (CY+ref need 40)
+        power: 70,
         hp: 200,
         buildTime: 30,
         tileW: 2,

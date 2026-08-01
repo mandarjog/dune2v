@@ -114,7 +114,7 @@
 
     emptySpiceCap() {
       const o = {};
-      const base = (D.config.economy && D.config.economy.baseSpiceCap) || 1000;
+      const base = (D.config.economy && D.config.economy.baseSpiceCap) || 500;
       for (const id of IDS) o[id] = base;
       return o;
     },

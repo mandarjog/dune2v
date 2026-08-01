@@ -68,10 +68,24 @@ describe('economy cap', () => {
   it('charge and cap clamp', () => {
     const game = Dune2.Game.create();
     Dune2.Game.startSkirmish(game, Dune2.MAPS.skirmish1);
-    assert.equal(game.credits.player, 1000);
-    assert.equal(game.spiceCap.player, 1000);
+    const cap = Dune2.config.economy.baseSpiceCap;
+    assert.equal(cap, 500);
+    assert.equal(game.credits.player, cap);
+    assert.equal(game.spiceCap.player, cap);
     Dune2.Game.giveCredits(game, 5000);
-    assert.equal(game.credits.player, 1000);
+    assert.equal(game.credits.player, cap);
+  });
+
+  it('starter base power is positive but tight', () => {
+    const game = Dune2.Game.create();
+    Dune2.Game.startSkirmish(game, Dune2.MAPS.skirmish_large || Dune2.MAPS.skirmish1, {
+      startMode: 'base',
+    });
+    const p = game.power.player;
+    // Windtrap 70 − CY 10 − Refinery 30 = 30 surplus
+    assert.equal(p.prod, 70);
+    assert.equal(p.need, 40);
+    assert.ok(p.ratio >= 1);
   });
 });
 
