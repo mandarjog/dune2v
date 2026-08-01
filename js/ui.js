@@ -518,7 +518,8 @@
           return;
         }
         if (D.Save) D.Save.clear();
-        game.speedMult = 1;
+        game.speedMult =
+          (D.config.skirmish && D.config.skirmish.defaultSpeed) || 2;
         D.Game.startSkirmish(game, D.MAPS.skirmish_large || D.MAPS.skirmish1, {
           startMode: D.UI.selectedStartMode(),
         });

@@ -799,7 +799,7 @@ function startMatchNow(room, opts) {
     seed: 42,
     map: 'skirmish_large',
     authority: 'server',
-    speed: 1,
+    speed: 2,
     speedOptions: SPEED_OPTIONS,
     owners,
     maxSeats: MAX_SEATS,

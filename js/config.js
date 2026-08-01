@@ -51,6 +51,8 @@
      */
     skirmish: {
       startMode: 'base', // 'base' | 'mcv'
+      /** Default sim speed for SP and new MP matches. */
+      defaultSpeed: 2,
     },
 
     colors: {

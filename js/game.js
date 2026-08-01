@@ -138,6 +138,13 @@
       game.activeOwners = owners.slice();
       if (opts.names) game.playerNames = opts.names;
 
+      // Default match speed (SP); MP server overrides via RoomSim
+      if (!game.multiplayer) {
+        const defSp =
+          (D.config.skirmish && D.config.skirmish.defaultSpeed) || 2;
+        game.speedMult = defSp;
+      }
+
       const startMode =
         opts.startMode === 'mcv' || opts.startMode === 'base'
           ? opts.startMode

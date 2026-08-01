@@ -6,6 +6,7 @@ const recordings = require('./recordings');
 const BASE_DT = 0.05; // 20 Hz — must match D.config.DT_SEC
 const STATE_EVERY = 2;
 const SPEED_OPTIONS = [0.5, 1, 1.5, 2, 3];
+const DEFAULT_SPEED = 2;
 
 /**
  * Server-authoritative skirmish.
@@ -19,7 +20,7 @@ class RoomSim {
     this.game = null;
     this.timer = null;
     this.running = false;
-    this.speed = 1;
+    this.speed = DEFAULT_SPEED;
     this.onState = null;
     this.onEnd = null;
     this._rec = null;
@@ -49,7 +50,8 @@ class RoomSim {
     this.game.multiplayer = true;
     this.game._serverSim = true;
     this.running = true;
-    this.speed = 1;
+    this.speed = DEFAULT_SPEED;
+    this.game.netSpeed = DEFAULT_SPEED;
 
     this._rec = recordings.begin({
       room: this.roomId,
