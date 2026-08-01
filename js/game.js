@@ -82,9 +82,9 @@
         netRole: null,
         roomCode: null,
         playerNames: null,
-        speedMult: 1,
+        speedMult: (D.config.skirmish && D.config.skirmish.defaultSpeed) || 2,
         replay: false,
-        netSpeed: 1,
+        netSpeed: (D.config.skirmish && D.config.skirmish.defaultSpeed) || 2,
       };
     },
 
