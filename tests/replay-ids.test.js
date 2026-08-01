@@ -33,7 +33,11 @@ describe('replay entity ids', () => {
 
   it(
     're-sim of MS74HH9K-MULXSH spawns combat units (id-burn compat)',
-    { timeout: 120000 },
+    {
+      timeout: 120000,
+      // Historical cmd streams drift when building power/costs change after the match.
+      skip: 'balance drift — keep as manual fixture, not CI gate',
+    },
     () => {
       if (!fs.existsSync(REC_PATH)) {
         // Recording is local/gitignored — skip in CI without the file
