@@ -389,6 +389,20 @@ function sanitizeName(raw) {
   return s || 'Commander';
 }
 
+const TITLE_MAX = 40;
+
+/** Optional public match title (host-set). Empty → null. */
+function sanitizeTitle(raw) {
+  if (raw == null) return null;
+  let s = String(raw)
+    .replace(/[\u0000-\u001f\u007f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, TITLE_MAX)
+    .replace(/[<>]/g, '');
+  return s || null;
+}
+
 function sanitizePlayerId(raw) {
   const s = String(raw == null ? '' : raw)
     .replace(/[^a-zA-Z0-9_-]/g, '')
@@ -451,14 +465,19 @@ function roomSnapshot(room) {
   }
   const spectateOpen =
     (room.allowSpectate || 'open') !== 'off' && specs < MAX_SPECTATORS;
+  const seatsTaken = room.slots.size;
+  const canJoinSeat =
+    !room.started && (seatsTaken < MAX_SEATS || reclaimable);
   return {
     room: room.id,
+    title: room.title || null,
     peers: connected,
     players: connected,
     seats,
     names,
     started: room.started,
-    open: room.slots.size < MAX_SEATS || reclaimable,
+    open: canJoinSeat, // joinable as a player (lobby + free seat)
+    canJoin: canJoinSeat,
     spectateOpen,
     spectators: specs,
     phase,
@@ -468,7 +487,7 @@ function roomSnapshot(room) {
   };
 }
 
-/** Public list for GET /api/live — non-empty rooms (lobby or in-progress). */
+/** Public list for GET /api/live — lobby + in-progress rooms. */
 function listLiveMatches() {
   const matches = [];
   const now = Date.now();
@@ -480,20 +499,25 @@ function listLiveMatches() {
     const snap = roomSnapshot(room);
     matches.push({
       room: snap.room,
+      title: snap.title,
       names: snap.names,
       started: snap.started,
       phase: snap.phase,
       players: snap.players,
       spectators: snap.spectators,
-      open: snap.spectateOpen,
+      canJoin: !!snap.canJoin,
+      canSpectate: !!snap.spectateOpen,
+      // legacy: "open" meant spectate; keep for old clients as canSpectate
+      open: !!snap.spectateOpen,
       tick: snap.tick,
       ageMs: Math.max(0, now - (room.createdAt || room.touched || now)),
     });
   }
-  // Started matches first, then by most recent activity
+  // Lobbies first (joinable), then started; then by activity
   matches.sort((a, b) => {
-    if (a.started !== b.started) return a.started ? -1 : 1;
-    return (b.tick || 0) - (a.tick || 0);
+    if (a.started !== b.started) return a.started ? 1 : -1;
+    if (a.canJoin !== b.canJoin) return a.canJoin ? -1 : 1;
+    return (b.tick || 0) - (a.tick || 0) || a.ageMs - b.ageMs;
   });
   return matches;
 }
@@ -502,6 +526,7 @@ function makeRoom(id) {
   const now = Date.now();
   return {
     id,
+    title: null,
     slots: new Map(),
     spectators: new Map(),
     started: false,
@@ -975,6 +1000,16 @@ function joinExisting(ws, roomId, playerId, name) {
     const prev = room.slots.get(seat);
     bindSeat(ws, room, seat, pid, displayName, prev ? prev.role : undefined);
   } else {
+    // No new seats after the match has started — spectate instead
+    if (room.started) {
+      sendJson(ws, {
+        type: 'error',
+        error: 'match_started',
+        room: id,
+        message: 'Match already started — use Spectate from Live matches.',
+      });
+      return;
+    }
     seat = findOpenSeat(room);
     if (!seat) {
       sendJson(ws, { type: 'error', error: 'room_full', room: id });
@@ -1016,14 +1051,18 @@ function joinExisting(ws, roomId, playerId, name) {
   }
 }
 
-function createRoom(ws, playerId, name) {
+function createRoom(ws, playerId, name, title) {
   if (ws.roomRef) detachWs(ws, true);
   const id = uniqueRoomCode();
   const room = makeRoom(id);
+  room.title = sanitizeTitle(title);
   rooms.set(id, room);
   const pid = sanitizePlayerId(playerId);
   const displayName = sanitizeName(name);
   bindSeat(ws, room, 'player', pid, displayName, 'host');
+  console.log(
+    `[room ${id}] created title=${room.title || '(none)'} host=${displayName}`
+  );
   sendJson(ws, {
     type: 'joined',
     protocol: PROTOCOL,
@@ -1034,6 +1073,27 @@ function createRoom(ws, playerId, name) {
     created: true,
     ...roomSnapshot(room),
   });
+}
+
+function setRoomTitle(ws, title) {
+  const room = ws.roomRef;
+  if (!room) {
+    sendJson(ws, { type: 'error', error: 'no_room' });
+    return;
+  }
+  if (ws.role !== 'host') {
+    sendJson(ws, { type: 'error', error: 'not_host' });
+    return;
+  }
+  if (room.started) {
+    sendJson(ws, { type: 'error', error: 'already_started' });
+    return;
+  }
+  room.title = sanitizeTitle(title);
+  touch(room);
+  const snap = roomSnapshot(room);
+  broadcastRoom(room, { type: 'room_update', ...snap }, null);
+  sendJson(ws, { type: 'title_ok', title: room.title, ...snap });
 }
 
 /**
@@ -1166,9 +1226,14 @@ function setupWs(server) {
 
       if (msg.type === 'create') {
         console.log(
-          `[ws] create name=${msg.name || '?'} clientRev=${msg.clientRev || ws.clientRev || '?'}`
+          `[ws] create name=${msg.name || '?'} title=${msg.title || ''} clientRev=${msg.clientRev || ws.clientRev || '?'}`
         );
-        createRoom(ws, msg.playerId, msg.name);
+        createRoom(ws, msg.playerId, msg.name, msg.title);
+        return;
+      }
+
+      if (msg.type === 'set_title') {
+        setRoomTitle(ws, msg.title);
         return;
       }
 

@@ -128,14 +128,22 @@ describe('live API + spectator WS', () => {
   it('lists room after host create; spectate rejects cmds and does not take seat', async () => {
     const host = await openWs(wsUrl);
     await waitMsg(host, 'hello');
-    host.send(JSON.stringify({ type: 'create', playerId: 'p_host_test', name: 'HostAlice' }));
+    host.send(
+      JSON.stringify({
+        type: 'create',
+        playerId: 'p_host_test',
+        name: 'HostAlice',
+        title: 'Friday FFA',
+      })
+    );
     const joined = await waitMsg(host, 'joined');
     assert.ok(joined.room);
     assert.equal(joined.seat, 'player');
     assert.equal(joined.role, 'host');
     assert.equal(joined.spectators, 0);
+    assert.equal(joined.title, 'Friday FFA');
 
-    // Live list should include lobby room
+    // Live list should include lobby room (joinable before start)
     const listRes = await fetch(base + '/api/live');
     const list = await listRes.json();
     assert.equal(list.ok, true);
@@ -143,7 +151,10 @@ describe('live API + spectator WS', () => {
     assert.ok(entry, 'room appears in /api/live');
     assert.equal(entry.names.player, 'HostAlice');
     assert.equal(entry.players, 1);
-    assert.equal(entry.open, true);
+    assert.equal(entry.title, 'Friday FFA');
+    assert.equal(entry.canJoin, true);
+    assert.equal(entry.started, false);
+    assert.equal(entry.canSpectate, true);
 
     // Spectator joins without taking seat
     const spec = await openWs(wsUrl);

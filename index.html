@@ -180,6 +180,17 @@
             autocomplete="nickname"
             spellcheck="false"
           />
+          <label class="lobby-link-label" for="mp-title-input" style="margin-top: 8px"
+            >Match name <span class="meta">(optional — shown in Live list)</span></label
+          >
+          <input
+            id="mp-title-input"
+            type="text"
+            maxlength="40"
+            placeholder="e.g. Friday FFA"
+            autocomplete="off"
+            spellcheck="false"
+          />
           <div class="actions" style="margin-top: 10px">
             <button id="btn-mp-host" type="button" class="primary">Host room</button>
           </div>
@@ -194,6 +205,10 @@
             />
             <button id="btn-mp-join" type="button">Join</button>
           </div>
+          <p class="hint" style="margin-top: 8px; text-align: left">
+            Or open <b>Live matches</b> to <b>Join</b> a lobby before it starts, or
+            <b>Spectate</b> a game in progress.
+          </p>
         </div>
         <p class="hint" style="margin-top: 16px">
           SP autosaves (F5 / Esc pause). MP: share <code>?room=CODE</code>.
@@ -301,7 +316,8 @@
       <div class="modal modal-wide">
         <h2>Live matches</h2>
         <p class="hint">
-          In-progress rooms on this server. Spectate with fog off — view only, no orders.
+          <b>Lobby</b> rooms: Join as a player before the host starts.
+          <b>In progress</b>: Spectate only (fog off, no orders).
         </p>
         <div id="live-list" class="replays-list"></div>
         <p id="live-status" class="hint"></p>
@@ -371,7 +387,8 @@
     <!-- Multiplayer lobby -->
     <div id="lobby-modal" class="modal-backdrop hidden">
       <div class="modal modal-wide">
-        <h2>Multiplayer lobby</h2>
+        <h2 id="lobby-heading">Multiplayer lobby</h2>
+        <p id="lobby-match-title" class="lobby-match-title hidden"></p>
         <p id="lobby-status">Connecting…</p>
         <div id="lobby-roster" class="lobby-roster"></div>
         <p id="lobby-seat" class="hint"></p>

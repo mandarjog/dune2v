@@ -419,9 +419,11 @@
       $('btn-mp-host')?.addEventListener('click', () => {
         if (!D.Net) return;
         const name = els.mpNameInput ? els.mpNameInput.value : undefined;
+        const titleEl = $('mp-title-input');
+        const title = titleEl ? titleEl.value : '';
         D.UI.hideMenu();
         D.UI.showLobby('Creating room…');
-        D.Net.host(name);
+        D.Net.host(name, { title });
       });
 
       $('btn-mp-join')?.addEventListener('click', () => {
@@ -665,6 +667,8 @@
             const map = {
               room_full:
                 'That room is full (5 players max). Use Live matches to spectate.',
+              match_started:
+                'Match already started — open Live matches and Spectate instead.',
               need_players: 'Need at least 2 players to start.',
               not_host: 'Only the host can start the match.',
               spectators_full: 'Too many spectators in that room.',
@@ -1148,8 +1152,8 @@
         const items = data.matches || [];
         if (status) {
           status.textContent = items.length
-            ? items.length + ' live room(s) on this server'
-            : 'No live matches right now — host a room or refresh.';
+            ? items.length + ' room(s) on this server'
+            : 'No rooms right now — host a match or refresh.';
         }
         for (const it of items) {
           const row = document.createElement('div');
@@ -1168,12 +1172,25 @@
             it.started && tick
               ? mins + ':' + String(secs).padStart(2, '0')
               : '—';
+          const title = (it.title && String(it.title).trim()) || '';
+          const hostName = names.player || 'Host';
+          const rosterBits = [];
+          for (const k of Object.keys(names)) {
+            if (names[k]) rosterBits.push(names[k]);
+          }
+          const who =
+            rosterBits.length > 0
+              ? rosterBits.join(' · ')
+              : hostName;
           left.innerHTML =
-            '<strong>' +
-            escapeHtml(names.player || 'Atreides') +
-            '</strong> vs <strong>' +
-            escapeHtml(names.enemy || 'Harkonnen') +
-            '</strong><br/><span class="meta">' +
+            (title
+              ? '<strong class="live-title">' +
+                escapeHtml(title) +
+                '</strong><br/>'
+              : '') +
+            '<span class="live-who">' +
+            escapeHtml(who) +
+            '</span><br/><span class="meta">' +
             escapeHtml(it.room || '') +
             ' · ' +
             phase +
@@ -1181,29 +1198,62 @@
             clock +
             ' · ' +
             (it.players | 0) +
-            ' playing · ' +
+            '/' +
+            5 +
+            ' seats · ' +
             (it.spectators | 0) +
             ' watching' +
-            (it.open === false ? ' · closed' : '') +
+            (!it.started && !it.canJoin ? ' · full' : '') +
             '</span>';
           const actions = document.createElement('div');
           actions.className = 'replay-row-actions';
-          const btn = document.createElement('button');
-          btn.type = 'button';
-          btn.className = 'primary';
-          btn.textContent = it.open === false ? 'Full' : 'Spectate';
-          btn.disabled = it.open === false;
-          btn.addEventListener('click', () => {
-            if (!D.Net || !it.room) return;
-            const name =
-              (els.mpNameInput && els.mpNameInput.value) ||
-              D.Net.loadStoredName() ||
-              undefined;
-            D.UI.hideLiveMatches();
-            D.UI.hideMenu();
-            D.Net.spectate(it.room, name);
-          });
-          actions.appendChild(btn);
+
+          const playerName = () =>
+            (els.mpNameInput && els.mpNameInput.value) ||
+            (D.Net && D.Net.loadStoredName && D.Net.loadStoredName()) ||
+            undefined;
+
+          // Lobby + free seat → Join as player
+          if (!it.started && it.canJoin) {
+            const btnJoin = document.createElement('button');
+            btnJoin.type = 'button';
+            btnJoin.className = 'primary';
+            btnJoin.textContent = 'Join';
+            btnJoin.addEventListener('click', () => {
+              if (!D.Net || !it.room) return;
+              D.UI.hideLiveMatches();
+              D.UI.hideMenu();
+              D.UI.showLobby('Joining ' + (title || it.room) + '…');
+              D.Net.join(it.room, playerName());
+            });
+            actions.appendChild(btnJoin);
+          }
+
+          // Spectate: in progress, or lobby while waiting
+          const canSpec =
+            it.canSpectate !== false && it.open !== false;
+          if (canSpec) {
+            const btnSpec = document.createElement('button');
+            btnSpec.type = 'button';
+            btnSpec.className = it.started ? 'primary' : '';
+            btnSpec.textContent = 'Spectate';
+            btnSpec.addEventListener('click', () => {
+              if (!D.Net || !it.room) return;
+              D.UI.hideLiveMatches();
+              D.UI.hideMenu();
+              D.Net.spectate(it.room, playerName());
+            });
+            actions.appendChild(btnSpec);
+          }
+
+          if (!actions.childNodes.length) {
+            const full = document.createElement('button');
+            full.type = 'button';
+            full.textContent = 'Full';
+            full.disabled = true;
+            actions.appendChild(full);
+          }
+
           row.appendChild(left);
           row.appendChild(actions);
           list.appendChild(row);
@@ -1365,6 +1415,21 @@
       if (els.lobbyCode) els.lobbyCode.textContent = code;
       if (els.lobbyLink) {
         els.lobbyLink.value = url;
+      }
+      const titleEl = $('lobby-match-title');
+      const heading = $('lobby-heading');
+      const title = D.Net.roomTitle;
+      if (titleEl) {
+        if (title) {
+          titleEl.textContent = title;
+          titleEl.classList.remove('hidden');
+        } else {
+          titleEl.textContent = '';
+          titleEl.classList.add('hidden');
+        }
+      }
+      if (heading) {
+        heading.textContent = title ? 'Lobby · ' + title : 'Multiplayer lobby';
       }
       if (els.lobbyRoster) {
         const seats = D.Net.seats || {};

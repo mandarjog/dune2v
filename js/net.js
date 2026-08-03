@@ -61,6 +61,7 @@
     game: null,
     status: 'idle', // idle | connecting | lobby | playing | error | reconnecting
     room: null,
+    roomTitle: null,
     seat: null, // 'player' | 'enemy' | null (spectator)
     role: null, // 'host' | 'guest' | 'spectator'
     playerId: null,
@@ -74,6 +75,7 @@
     _wantRoom: null,
     _wantSpectate: false,
     _createOnOpen: false,
+    _pendingTitle: '',
     _handlers: [],
     _lastStateTick: -1,
     _focusedOnce: false,
@@ -139,6 +141,8 @@
       if (msg.peers != null) D.Net.peers = msg.peers;
       if (msg.spectators != null) D.Net.spectators = msg.spectators;
       if (msg.owners) D.Net.owners = msg.owners;
+      if (msg.title !== undefined) D.Net.roomTitle = msg.title || null;
+      if (msg.room) D.Net.room = msg.room;
       const names = {};
       if (D.Seats && D.Seats.IDS) {
         for (const id of D.Seats.IDS) names[id] = null;
@@ -220,8 +224,12 @@
       D.Net.loadPlayerId();
     },
 
-    /** Connect and create a fresh room. */
-    host(name) {
+    /**
+     * Connect and create a fresh room.
+     * @param {string} [name] player display name
+     * @param {{ title?: string }} [opts] optional match title
+     */
+    host(name, opts) {
       if (name != null) D.Net.saveName(name);
       else D.Net.loadStoredName();
       D.Net.loadPlayerId();
@@ -229,7 +237,14 @@
       D.Net._createOnOpen = true;
       D.Net._wantSpectate = false;
       D.Net._wantRoom = null;
+      D.Net._pendingTitle =
+        opts && opts.title != null ? String(opts.title).trim().slice(0, 40) : '';
       D.Net._connect();
+    },
+
+    /** Host: rename the lobby match (before start). */
+    setTitle(title) {
+      return D.Net._send({ type: 'set_title', title: title || '' });
     },
 
     /** Connect and join/create room code (shareable URL). Same playerId reclaims seat. */
@@ -294,6 +309,7 @@
       D.Net.ws = null;
       D.Net.status = 'idle';
       D.Net.room = null;
+      D.Net.roomTitle = null;
       D.Net.seat = null;
       D.Net.role = null;
       D.Net.peers = 0;
@@ -306,6 +322,7 @@
       D.Net._wantRoom = null;
       D.Net._wantSpectate = false;
       D.Net._createOnOpen = false;
+      D.Net._pendingTitle = '';
       if (D.Net.game) {
         D.Net.game.multiplayer = false;
         D.Net.game.spectator = false;
@@ -402,14 +419,14 @@
         const playerId = D.Net.loadPlayerId();
         const rev = clientRev();
         if (D.Net._createOnOpen) {
-          ws.send(
-            JSON.stringify({
-              type: 'create',
-              playerId,
-              name,
-              clientRev: rev,
-            })
-          );
+          const payload = {
+            type: 'create',
+            playerId,
+            name,
+            clientRev: rev,
+          };
+          if (D.Net._pendingTitle) payload.title = D.Net._pendingTitle;
+          ws.send(JSON.stringify(payload));
         } else if (D.Net._wantRoom && D.Net._wantSpectate) {
           ws.send(
             JSON.stringify({
@@ -509,6 +526,7 @@
 
       if (msg.type === 'joined') {
         D.Net.room = msg.room;
+        D.Net.roomTitle = msg.title || null;
         D.Net.seat = msg.seat != null ? msg.seat : null;
         D.Net.role = msg.role;
         const isSpec = msg.role === 'spectator' || msg.spectator === true;
@@ -577,7 +595,9 @@
         msg.type === 'peer_joined' ||
         msg.type === 'peer_reconnected' ||
         msg.type === 'roster' ||
-        msg.type === 'name_ok'
+        msg.type === 'name_ok' ||
+        msg.type === 'room_update' ||
+        msg.type === 'title_ok'
       ) {
         if (msg.name && msg.type === 'name_ok') D.Net.name = msg.name;
         D.Net._applyRoster(msg);
