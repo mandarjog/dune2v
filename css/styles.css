@@ -542,6 +542,84 @@ button.sel-unit-cell .sel-unit-name {
   color: #ffe8e4;
 }
 
+.chat-hud-line.system .who {
+  color: #ffcc44;
+}
+
+.chat-hud-line.system .body {
+  color: #ffe9a8;
+  font-weight: 700;
+}
+
+.chat-hud-line.alert-attack .who,
+.chat-hud-line.alert-attack .body {
+  color: #ff5555;
+}
+
+.chat-hud-line.alert-elim .who,
+.chat-hud-line.alert-elim .body {
+  color: #ff8844;
+}
+
+/* Under-attack red edge flash on the map viewport */
+#game-wrap.under-attack-flash::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 35;
+  box-shadow: inset 0 0 0 4px rgba(220, 40, 30, 0.95),
+    inset 0 0 48px 12px rgba(180, 20, 10, 0.55);
+  animation: under-attack-pulse 0.85s ease-out forwards;
+}
+
+@keyframes under-attack-pulse {
+  0% {
+    opacity: 1;
+  }
+  40% {
+    opacity: 0.85;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* Mid-match FFA elimination notice */
+.elim-banner {
+  position: absolute;
+  top: 56px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 36;
+  max-width: min(480px, 90%);
+  padding: 10px 16px;
+  background: rgba(40, 10, 8, 0.92);
+  border: 1px solid #c0392b;
+  color: #f5d0c8;
+  text-align: center;
+  pointer-events: none;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
+}
+
+.elim-banner.hidden {
+  display: none !important;
+}
+
+.elim-banner strong {
+  display: block;
+  color: #ff6b5a;
+  letter-spacing: 0.12em;
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+
+.elim-banner span {
+  font-size: 12px;
+  color: #c9b8a8;
+  line-height: 1.35;
+}
+
 .corner-actions {
   position: absolute;
   top: 10px;
@@ -813,6 +891,17 @@ button.linkish {
   background: #3a3228;
 }
 
+.modal button.btn-secondary {
+  border-color: var(--muted);
+  color: var(--muted);
+  min-width: 160px;
+}
+
+.modal button.btn-secondary:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
 .modal.victory h2 {
   color: var(--ok);
 }
@@ -1010,6 +1099,18 @@ button.linkish {
 .mp-matchup .ordos,
 .seat-name.ordos {
   color: var(--ordos, #27ae60);
+  font-weight: 600;
+}
+
+/* FFA seat 4–5 extras (inline styles also set color; these are fallbacks) */
+.seat-name.seat-p3,
+.mp-matchup .seat-p3 {
+  color: #e84393;
+  font-weight: 600;
+}
+.seat-name.seat-p4,
+.mp-matchup .seat-p4 {
+  color: #2c2c2c;
   font-weight: 600;
 }
 

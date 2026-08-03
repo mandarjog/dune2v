@@ -2,7 +2,14 @@
 /**
  * Multi-seat FFA support (2–5 players).
  * Seat ids keep `player` / `enemy` for the first two (save/replay compat),
- * then `p2`…`p4`. Houses cycle Atreides → Harkonnen → Ordos and repeat.
+ * then `p2`…`p4`.
+ *
+ * Five unique colors (no shared house tint in FFA):
+ *   player  Atreides  blue
+ *   enemy   Harkonnen red
+ *   p2      Ordos     green
+ *   p3      Harkonnen pink  (extra Harkonnen seat)
+ *   p4      Ordos     black (extra Ordos seat)
  */
 (function (global) {
   'use strict';
@@ -10,6 +17,56 @@
 
   const IDS = ['player', 'enemy', 'p2', 'p3', 'p4'];
 
+  /**
+   * Per-seat visual + house binding (index-aligned with IDS).
+   * Colors must be distinct for 5-player FFA readability.
+   */
+  const SEAT_DEFS = [
+    {
+      seat: 'player',
+      id: 'atreides',
+      name: 'Atreides',
+      color: '#4a90d9',
+      colorDark: '#2a5a9a',
+      tracer: '#9cf',
+    },
+    {
+      seat: 'enemy',
+      id: 'harkonnen',
+      name: 'Harkonnen',
+      color: '#c0392b',
+      colorDark: '#8a2018',
+      tracer: '#f96',
+    },
+    {
+      seat: 'p2',
+      id: 'ordos',
+      name: 'Ordos',
+      color: '#27ae60',
+      colorDark: '#1a6b3c',
+      tracer: '#6f6',
+    },
+    {
+      seat: 'p3',
+      id: 'harkonnen',
+      name: 'Harkonnen',
+      // Additional Harkonnen — pink
+      color: '#e84393',
+      colorDark: '#a02860',
+      tracer: '#f8a',
+    },
+    {
+      seat: 'p4',
+      id: 'ordos',
+      name: 'Ordos',
+      // Additional Ordos — black (light edge for dark sand readability)
+      color: '#2c2c2c',
+      colorDark: '#111111',
+      tracer: '#ccc',
+    },
+  ];
+
+  /** Back-compat list of unique house archetypes (UI dropdowns etc.). */
   const HOUSES = [
     {
       id: 'atreides',
@@ -36,6 +93,7 @@
     MIN_START: 2,
     IDS: IDS.slice(),
     HOUSES: HOUSES,
+    SEAT_DEFS: SEAT_DEFS,
 
     index(seat) {
       const i = IDS.indexOf(seat);
@@ -46,14 +104,33 @@
       return IDS.indexOf(seat) >= 0;
     },
 
-    /** House def for a seat (cycles every 3). */
+    /** Full seat def (color + house) for a seat id. */
+    def(seat) {
+      return SEAT_DEFS[D.Seats.index(seat)] || SEAT_DEFS[0];
+    },
+
+    /** House def for a seat (unique color per seat; house id may repeat). */
     house(seat) {
-      return HOUSES[D.Seats.index(seat) % HOUSES.length];
+      const d = D.Seats.def(seat);
+      return {
+        id: d.id,
+        name: d.name,
+        color: d.color,
+        colorDark: d.colorDark,
+        tracer: d.tracer,
+        seat: d.seat,
+      };
     },
 
     color(seat) {
       const h = D.Seats.house(seat);
       return h ? h.color : '#888';
+    },
+
+    /** Tracer / muzzle tint for combat FX. */
+    tracer(seat) {
+      const d = D.Seats.def(seat);
+      return (d && d.tracer) || '#fff';
     },
 
     /**

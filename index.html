@@ -98,7 +98,7 @@
           <div id="unit-menu"></div>
           <div id="build-menu"></div>
           <div class="hint">
-            Click select · <b>M</b>/<b>G</b> move to cursor · Ctrl+click<br />
+            <b>A</b> attack-move · <b>S</b> stop · <b>M</b> move · Ctrl/⌘+click<br />
             <button type="button" id="btn-help-sidebar" class="linkish">Controls (?)</button>
           </div>
         </div>
@@ -138,10 +138,25 @@
         <div class="actions">
           <button id="btn-continue" type="button" style="display: none">Continue</button>
           <button id="btn-start" type="button">New Skirmish (vs AI)</button>
+          <button
+            id="btn-start-mass"
+            type="button"
+            class="btn-secondary"
+            title="SP vs AI with large pre-built armies (path / late-game test)"
+          >
+            Mass armies (test)
+          </button>
           <button id="btn-live" type="button">Live matches</button>
           <button id="btn-replays" type="button">Watch replays</button>
           <button id="btn-help-menu" type="button">Controls help</button>
         </div>
+        <p class="hint" style="margin-top: 8px">
+          Stress test:
+          <code>?scenario=mass</code>
+          or
+          <code>?scenario=mass&amp;armies=120</code>
+          (units per side, FOW/AI as usual)
+        </p>
         <label class="start-mode-row" for="opt-mcv-start">
           <input type="checkbox" id="opt-mcv-start" />
           <span>MCV-only start <span class="meta">(classic — no free base)</span></span>
@@ -149,8 +164,9 @@
         <div class="mp-block">
           <div class="section-title" style="margin-top: 14px">Multiplayer (2–5 FFA)</div>
           <p class="hint" style="margin-bottom: 8px">
-            Pick a name, host a room, share the link. Up to 5 commanders — houses
-            cycle Atreides / Harkonnen / Ordos (labels like <b>Ordos-Alex</b>).
+            Pick a name, host a room, share the link. Up to 5 commanders —
+            colors: blue Atreides, red Harkonnen, green Ordos, pink Harkonnen,
+            black Ordos (labels like <b>Ordos-Alex</b>).
             Default start: CY + Windtrap + Refinery + harvester.
           </p>
           <label class="lobby-link-label" for="mp-name-input">Your name</label>
@@ -195,31 +211,35 @@
         <div class="help-body">
           <h3>Mouse / trackpad</h3>
           <table class="help-table">
-            <tr><td>Click</td><td>Select unit / building</td></tr>
-            <tr><td>Drag</td><td>Box-select units</td></tr>
-            <tr><td><b>Right-click</b></td><td>Move / attack / harvest</td></tr>
-            <tr><td><b>Ctrl+click</b> or <b>⌘+click</b></td><td>Same as right-click (trackpad)</td></tr>
-            <tr><td>Alt+click</td><td>Attack-move</td></tr>
-            <tr><td>Minimap click</td><td>Pan camera</td></tr>
+            <tr><td>Click / drag</td><td>Select / box-select</td></tr>
+            <tr><td><b>Right-click</b></td><td>Move / attack enemy / harvest</td></tr>
+            <tr><td><b>Ctrl+click</b> or <b>⌘+click</b></td><td>Same as right-click — <b>move</b> (trackpad)</td></tr>
+            <tr><td><b>Alt+click</b></td><td>Attack-move to ground (trackpad)</td></tr>
+            <tr><td><b>Ctrl+Shift+click</b></td><td>Attack-move (trackpad alternate)</td></tr>
+            <tr><td>Minimap click</td><td>Jump camera</td></tr>
           </table>
-          <h3>Keyboard</h3>
+          <h3>Keyboard (classic RTS)</h3>
           <table class="help-table">
-            <tr><td><b>WASD</b> / arrows</td><td>Pan camera</td></tr>
+            <tr><td><b>A</b></td><td>Attack-move (or attack enemy under cursor). With units selected, does <b>not</b> pan.</td></tr>
+            <tr><td><b>S</b> / <b>.</b></td><td>Stop. With units selected, does <b>not</b> pan.</td></tr>
+            <tr><td><b>M</b> / <b>G</b></td><td>Move to tile under cursor (great on trackpad)</td></tr>
+            <tr><td><b>H</b></td><td>Harvest (selected harvesters → nearest spice)</td></tr>
             <tr><td><b>E</b></td><td>Deploy selected MCV</td></tr>
-            <tr><td><b>M</b> / <b>G</b></td><td>Move selection to tile under cursor</td></tr>
-            <tr><td><b>A</b></td><td>Attack-move (or attack enemy) under cursor</td></tr>
-            <tr><td><b>H</b></td><td>Harvest (selected harvesters)</td></tr>
-            <tr><td><b>X</b> / <b>.</b></td><td>Stop selected units</td></tr>
-            <tr><td><b>Ctrl+1–9</b></td><td>Assign control group</td></tr>
-            <tr><td><b>1–9</b></td><td>Recall control group</td></tr>
+            <tr><td><b>Ctrl+1–9</b> / <b>1–9</b></td><td>Assign / recall control group</td></tr>
+            <tr><td><b>Arrows</b></td><td>Pan camera (always)</td></tr>
+            <tr><td><b>WASD</b></td><td>Pan when <b>nothing</b> selected; A/S become orders when units are selected</td></tr>
             <tr><td><b>Enter</b></td><td>Focus multiplayer chat</td></tr>
-            <tr><td><b>Space</b> / <b>F</b> / <b>Enter</b></td><td>Confirm building placement under cursor</td></tr>
+            <tr><td><b>Space</b> / <b>F</b></td><td>Confirm building placement under cursor</td></tr>
             <tr><td><b>Esc</b></td><td>Close help / cancel placement / pause (SP)</td></tr>
-            <tr><td><b>F5</b></td><td>Quicksave (SP)</td></tr>
-            <tr><td><b>F3</b></td><td>Debug overlay</td></tr>
-            <tr><td><b>?</b> or <b>/</b></td><td>This help (Esc closes it)</td></tr>
-            <tr><td><b>+</b> / <b>-</b></td><td>Game speed up / down (SP instant; replay too)</td></tr>
+            <tr><td><b>?</b> or <b>/</b></td><td>This help</td></tr>
+            <tr><td><b>+</b> / <b>-</b></td><td>Game speed (SP)</td></tr>
           </table>
+          <h3>Trackpad quick start</h3>
+          <p>
+            Select units → hover destination → <b>A</b> attack-move or <b>M</b> move.
+            Or <b>Ctrl/⌘+click</b> to move, <b>Alt+click</b> to attack-move.
+            Pan with <b>arrow keys</b> or minimap while an army is selected.
+          </p>
           <h3>Radar</h3>
           <p>
             A powered <b>Radar</b> shows <b>enemy units and buildings on the minimap</b>
@@ -375,7 +395,8 @@
           <span>MCV-only start <span class="meta">(host sets for everyone)</span></span>
         </label>
         <p class="hint" style="margin-top: 10px">
-          2–5 players. Houses cycle Atreides → Harkonnen → Ordos (then repeat).
+          2–5 players. Seat colors: blue · red · green · pink · black
+          (Atreides / Harkonnen / Ordos / Harkonnen / Ordos).
           Only the <b>host</b> can start (auto-starts at 5). Default base: CY + power + refinery.
         </p>
       </div>
@@ -421,6 +442,7 @@
     <script src="js/combat.js"></script>
     <script src="js/ai.js"></script>
     <script src="js/game.js"></script>
+    <script src="js/scenario.js"></script>
     <script src="js/renderer.js"></script>
     <script src="js/input.js"></script>
     <script src="js/ui.js"></script>

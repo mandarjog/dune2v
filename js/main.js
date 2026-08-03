@@ -44,11 +44,32 @@
 
     // Shareable multiplayer room: ?room=ABC123 → name prompt, then join
     // Spectate: ?spectate=CODE · live list: ?live=1
+    // Mass-army SP stress: ?scenario=mass&armies=100
     const room = (params.get('room') || '').trim().toUpperCase();
     const spectateRoom = (params.get('spectate') || '').trim().toUpperCase();
     const showLive = params.get('live') === '1' || params.get('live') === 'true';
     const replayId = (params.get('replay') || '').trim();
-    if (replayId && D.Replay && D.UI) {
+    const scenario = (params.get('scenario') || params.get('mass') || '').toLowerCase();
+    const wantMass =
+      scenario === 'mass' ||
+      scenario === 'armies' ||
+      scenario === 'stress' ||
+      params.get('mass') === '1' ||
+      params.get('mass') === 'true';
+
+    if (wantMass && D.Scenario && !room && !spectateRoom && !replayId) {
+      if (D.Save) D.Save.clear();
+      game.multiplayer = false;
+      game.localOwner = 'player';
+      const opts = D.Scenario.parseOpts(params);
+      D.Scenario.startMassArmies(game, opts);
+      if (D.UI) {
+        D.UI.hideMenu();
+        D.UI.refresh(game);
+      }
+      if (D.Renderer) D.Renderer.rebuildTerrain(game);
+      if (D.Save) D.Save.write(game);
+    } else if (replayId && D.Replay && D.UI) {
       // Deep-link to a match recording
       (async () => {
         try {

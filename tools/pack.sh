@@ -19,6 +19,7 @@ SCRIPTS=(
   "$ROOT/js/combat.js"
   "$ROOT/js/ai.js"
   "$ROOT/js/game.js"
+  "$ROOT/js/scenario.js"
   "$ROOT/js/renderer.js"
   "$ROOT/js/input.js"
   "$ROOT/js/ui.js"

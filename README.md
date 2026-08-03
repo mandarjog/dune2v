@@ -79,22 +79,25 @@ fly apps open
 
 ## Controls
 
+Classic RTS keys where possible; trackpad alternatives in parentheses.
+
 | Input | Action |
 |-------|--------|
 | LMB | Select / box select |
 | Double-click unit | Select all of type |
 | RMB | Move / attack enemy / harvest spice |
-| Ctrl+RMB | Attack-move |
-| **E** | Deploy MCV → Construction Yard |
+| **Ctrl/⌘+click** | Same as RMB — move (trackpad) |
+| **Alt+click** or **Ctrl+Shift+click** | Attack-move (trackpad) |
+| **A** | Attack-move (or attack enemy under cursor); no pan if units selected |
+| **S** / **.** | Stop; no pan if units selected |
+| **M** / **G** | Move to tile under cursor |
 | **H** | Harvester → nearest spice |
-| **X** / **.** | Stop |
-| Ctrl+1–9 | Assign control group |
-| 1–9 | Recall group |
-| WASD / arrows | Pan camera |
+| **E** | Deploy MCV |
+| Ctrl+1–9 / 1–9 | Assign / recall control group |
+| Arrows | Pan camera (always) |
+| WASD | Pan when nothing selected |
 | Minimap click | Jump camera |
 | Esc | Pause (also saves) |
-| F3 | Debug overlay |
-| F5 | Quicksave |
 
 ### Save / refresh
 

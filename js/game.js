@@ -19,9 +19,26 @@
       return me === 'player' ? 'enemy' : 'player';
     },
 
-    /** End-screen phase from the local player's perspective. */
+    /** True when this seat has lost CY+MCV (mid-match FFA or final). */
+    isEliminated(game, owner) {
+      if (!game || !owner) return false;
+      if (game.eliminated && game.eliminated[owner] != null) return true;
+      return false;
+    },
+
+    /**
+     * End-screen outcome from the local player's perspective.
+     * Always prefer `game.winner` — never trust a host-relative phase alone
+     * (server used to set phase from localOwner='player', which made every
+     * non-player seat flip to "victory" in FFA).
+     */
     localEndPhase(game) {
-      if (game.phase !== 'victory' && game.phase !== 'defeat' && game.phase !== 'draw') {
+      if (
+        game.phase !== 'victory' &&
+        game.phase !== 'defeat' &&
+        game.phase !== 'draw' &&
+        game.phase !== 'ended'
+      ) {
         return game.phase;
       }
       if (game.phase === 'draw') return 'draw';
@@ -29,7 +46,8 @@
       if (game.winner != null) {
         return game.winner === me ? 'victory' : 'defeat';
       }
-      // Legacy 1v1: phase victory meant player (Atreides) won
+      if (game.phase === 'ended') return 'draw';
+      // Legacy 1v1 saves: phase victory meant Atreides (player seat) won
       if (me === 'player') return game.phase;
       return game.phase === 'victory' ? 'defeat' : 'victory';
     },
@@ -63,6 +81,10 @@
         },
         activeOwners: ['player', 'enemy'],
         winner: null,
+        /** seat -> tick when eliminated (no CY/MCV). Match may continue in FFA. */
+        eliminated: {},
+        /** Recent combat/system alerts for MP clients (under attack, elim). */
+        alerts: [],
         ai: {
           state: 'Bootstrap',
           waveAt: 0,
@@ -73,7 +95,19 @@
         placement: null,
         hoverTile: null,
         rngSeed: D.config.seed,
-        stats: { fps: 0, simMs: 0 },
+        stats: {
+          fps: 0,
+          simMs: 0,
+          /** Last Orders.issue path batch (ms / count) */
+          pathLastIssueMs: 0,
+          pathLastIssueCount: 0,
+          pathLastIssueOk: 0,
+          pathLastBackend: 'astar',
+          pathLastFlowBuildMs: 0,
+          /** Repaths inside last Orders.tick */
+          pathTickMs: 0,
+          pathTickCount: 0,
+        },
         _repathsThisTick: 0,
         // multiplayer
         localOwner: 'player',
@@ -86,6 +120,28 @@
         replay: false,
         netSpeed: (D.config.skirmish && D.config.skirmish.defaultSpeed) || 2,
       };
+    },
+
+    /**
+     * Queue a short-lived alert for clients (chat HUD / flash).
+     * @param {object} game
+     * @param {{seat?:string, kind:string, text:string, x?:number, y?:number}} alert
+     */
+    pushAlert(game, alert) {
+      if (!game || !alert || !alert.text) return;
+      if (!game.alerts) game.alerts = [];
+      game._alertSeq = (game._alertSeq || 0) + 1;
+      game.alerts.push({
+        id: game._alertSeq,
+        seat: alert.seat || null,
+        kind: alert.kind || 'info',
+        text: String(alert.text).slice(0, 120),
+        x: alert.x,
+        y: alert.y,
+        t: game.tick | 0,
+      });
+      // Keep a small rolling window for net snapshots
+      if (game.alerts.length > 12) game.alerts = game.alerts.slice(-12);
     },
 
     pushMessage(game, text) {
@@ -119,6 +175,10 @@
       game.phase = 'playing';
       game.tick = 0;
       game.winner = null;
+      game.eliminated = {};
+      game.alerts = [];
+      game._alertSeq = 0;
+      game._underAttackAt = {};
       game.units = [];
       game.buildings = [];
       game.projectiles = [];
@@ -365,14 +425,42 @@
       if (game.tick < 40) return;
 
       const owners = D.Seats ? D.Seats.active(game) : ['player', 'enemy'];
+      if (!game.eliminated) game.eliminated = {};
+
+      // Mid-match FFA elimination: mark seats that lost CY+MCV while others remain.
+      for (const o of owners) {
+        if (game.eliminated[o] != null) continue;
+        if (!D.Game.isDefeated(game, o)) continue;
+        game.eliminated[o] = game.tick;
+        const label = D.Seats ? D.Seats.label(o, game.playerNames) : o;
+        D.Game.pushMessage(game, label + ' has been eliminated!');
+        D.Game.pushAlert(game, {
+          seat: o,
+          kind: 'eliminated',
+          text: 'Your base has fallen — you are eliminated.',
+        });
+        // Inform everyone else once via global-ish alert (no seat = all clients)
+        D.Game.pushAlert(game, {
+          seat: null,
+          kind: 'elim_notice',
+          text: label + ' has been eliminated!',
+        });
+      }
+
       const alive = owners.filter((o) => !D.Game.isDefeated(game, o));
 
       if (alive.length >= 2) return;
 
       if (alive.length === 1) {
         game.winner = alive[0];
+        // Neutral end phase for MP/server: clients derive victory/defeat from winner.
+        // SP keeps classic victory/defeat so old UI paths and saves still work.
         const me = D.Game.me(game);
-        game.phase = game.winner === me ? 'victory' : 'defeat';
+        if (game.multiplayer || game._serverSim) {
+          game.phase = 'ended';
+        } else {
+          game.phase = game.winner === me ? 'victory' : 'defeat';
+        }
         const local = D.Game.localEndPhase(game);
         const winLabel = D.Seats
           ? D.Seats.label(game.winner, game.playerNames)
@@ -383,6 +471,14 @@
             ? 'Victory! ' + winLabel + ' controls Arrakis.'
             : 'Defeat. ' + winLabel + ' triumphs. The spice must flow… elsewhere.'
         );
+        D.Game.pushAlert(game, {
+          seat: null,
+          kind: 'match_end',
+          text:
+            local === 'victory'
+              ? 'Victory! ' + winLabel + ' controls Arrakis.'
+              : winLabel + ' wins the match.',
+        });
         return;
       }
 
@@ -403,10 +499,18 @@
       D.Economy.tick(game, dt);
       D.Combat.tick(game, dt);
       if (!game.multiplayer && !game.replay) D.AI.tick(game, dt);
+      // FOW: full recompute is O(units × sight²). Always update local view;
+      // stagger other owners when the unit count is high.
       if (!game._replaySeeking) {
         const owners = D.Seats ? D.Seats.active(game) : ['player', 'enemy'];
-        for (const o of owners) {
-          D.Map.recomputeFog(game, o);
+        const nUnits = game.units ? game.units.length : 0;
+        const local = game.localOwner || 'player';
+        D.Map.recomputeFog(game, local);
+        const others = owners.filter((o) => o !== local);
+        if (nUnits > 60 && others.length) {
+          D.Map.recomputeFog(game, others[game.tick % others.length]);
+        } else {
+          for (const o of others) D.Map.recomputeFog(game, o);
         }
       }
       D.Game.checkWinLoss(game);

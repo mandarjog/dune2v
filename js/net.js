@@ -627,6 +627,14 @@
         if (msg.recordingId) {
           D.Net.lastRecordingId = msg.recordingId;
         }
+        const game = D.Net.game;
+        if (game) {
+          if (msg.winner !== undefined) game.winner = msg.winner;
+          // Neutral phase — localEndPhase uses winner for correct FFA outcome
+          if (msg.phase === 'draw') game.phase = 'draw';
+          else game.phase = 'ended';
+          if (msg.recordingId) game.lastRecordingId = msg.recordingId;
+        }
         D.Net._emit('match_end', msg);
         return;
       }
@@ -726,6 +734,11 @@
       game._serverSim = false;
       if (game.phase === 'menu') game.phase = 'playing';
 
+      // Process server alerts (under attack, elimination) → chat HUD + flash
+      if (D.UI && D.UI.consumeNetAlerts) {
+        D.UI.consumeNetAlerts(game, msg.payload.alerts || game.alerts);
+      }
+
       if (!hadMap && D.Renderer) {
         D.Renderer.rebuildTerrain(game);
         D.Net._focusSpawn(game);
@@ -750,6 +763,7 @@
       }
       if (msg.reason === 'spectator') return; // silent for spectators
       const reasons = {
+        eliminated: 'You have been eliminated — watch mode only.',
         ids: 'No valid units for that order.',
         placement: 'Cannot deploy here — need rock (move MCV onto rock first).',
         rock: 'Cannot deploy here — need rock (move MCV onto rock first).',

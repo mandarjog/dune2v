@@ -54,6 +54,7 @@ function begin(meta) {
     id,
     room: meta.room || '',
     names: meta.names || {},
+    owners: meta.owners || null,
     startedAt: Date.now(),
     endedAt: 0,
     durationTicks: 0,
@@ -67,6 +68,7 @@ function begin(meta) {
     cmds: 0,
     _fd: null,
     _closed: false,
+    _metaCmdFlush: 0,
   };
   try {
     rec._fd = fs.openSync(eventsPath(id), 'w');
@@ -84,6 +86,7 @@ function writeMeta(rec) {
     id: rec.id,
     room: rec.room,
     names: rec.names,
+    owners: rec.owners || null,
     startedAt: rec.startedAt,
     endedAt: rec.endedAt,
     durationTicks: rec.durationTicks,
@@ -102,14 +105,44 @@ function writeMeta(rec) {
   }
 }
 
+/** Flush in-memory event/cmd counts to disk (in-progress matches). */
+function touchMeta(rec) {
+  if (!rec || rec._closed) return;
+  writeMeta(rec);
+}
+
 function appendEvent(rec, ev) {
   if (!rec || rec._closed || !rec._fd) return;
   try {
     fs.writeSync(rec._fd, JSON.stringify(ev) + '\n');
     rec.events++;
-    if (ev.type === 'cmd') rec.cmds = (rec.cmds || 0) + 1;
+    if (ev.type === 'cmd') {
+      rec.cmds = (rec.cmds || 0) + 1;
+      // Periodic meta flush so crash/OOM still lists long FFA matches
+      if (rec.cmds - (rec._metaCmdFlush || 0) >= 25) {
+        rec._metaCmdFlush = rec.cmds;
+        writeMeta(rec);
+      }
+    }
   } catch (e) {
     console.warn('[recordings] event write failed', e.message);
+  }
+}
+
+/** Count cmd events in a jsonl file (for orphan / crash recovery). */
+function countCmdsOnDisk(id) {
+  const ep = eventsPath(id);
+  if (!fs.existsSync(ep)) return 0;
+  try {
+    const text = fs.readFileSync(ep, 'utf8');
+    let n = 0;
+    // Fast path: count type":"cmd" without full JSON parse
+    const re = /"type"\s*:\s*"cmd"/g;
+    let m;
+    while ((m = re.exec(text))) n++;
+    return n;
+  } catch {
+    return 0;
   }
 }
 
@@ -233,9 +266,23 @@ function pruneShort() {
     const metas = readAllMetas();
     for (const m of metas) {
       if (!m || !m.id) continue;
-      const cmds = m.cmds != null ? m.cmds | 0 : 0;
+      // Prefer disk count — unfinished matches used to keep meta.cmds=0 while
+      // the jsonl already held the full command stream (deploy/crash).
+      let cmds = m.cmds != null ? m.cmds | 0 : 0;
+      const disk = countCmdsOnDisk(m.id);
+      if (disk > cmds) cmds = disk;
       if (cmds < MIN_CMDS_TO_SAVE) {
         if (removeRecording(m.id)) removed.push(m.id + '(cmds=' + cmds + ')');
+      } else if (disk > (m.cmds | 0)) {
+        // Heal stale meta so list()/UI see the real stream
+        try {
+          fs.writeFileSync(
+            metaPath(m.id),
+            JSON.stringify({ ...m, cmds: disk, events: Math.max(m.events | 0, disk) })
+          );
+        } catch {
+          /* ignore */
+        }
       }
     }
 
@@ -266,9 +313,27 @@ function list() {
   ensureDir();
   try {
     if (!fs.existsSync(DISK_DIR)) return [];
-    return readAllMetas()
+    const metas = readAllMetas().map((m) => {
+      // Crash recovery: meta may still say cmds:0 while jsonl has the stream
+      let cmds = m.cmds | 0;
+      if (cmds < MIN_CMDS_TO_SAVE && m.id) {
+        const disk = countCmdsOnDisk(m.id);
+        if (disk > cmds) {
+          cmds = disk;
+          m.cmds = disk;
+          // Heal meta so next list is cheap
+          try {
+            fs.writeFileSync(metaPath(m.id), JSON.stringify({ ...m, cmds: disk }));
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+      return m;
+    });
+    return metas
       .filter((m) => (m.cmds | 0) >= MIN_CMDS_TO_SAVE)
-      .sort((a, b) => (b.endedAt || 0) - (a.endedAt || 0))
+      .sort((a, b) => (b.endedAt || b.startedAt || 0) - (a.endedAt || a.startedAt || 0))
       .slice(0, MAX_RECORDINGS);
   } catch {
     return [];
@@ -308,6 +373,8 @@ module.exports = {
   newId,
   begin,
   appendEvent,
+  touchMeta,
+  countCmdsOnDisk,
   finish,
   list,
   get,

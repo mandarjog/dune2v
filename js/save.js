@@ -51,6 +51,13 @@
         savedAt: Date.now(),
         phase: game.phase === 'paused' ? 'playing' : game.phase,
         tick: game.tick,
+        // FFA / MP: required for correct win/loss + replay re-sim
+        winner: game.winner != null ? game.winner : null,
+        activeOwners: (game.activeOwners || ['player', 'enemy']).slice(),
+        eliminated: game.eliminated ? { ...game.eliminated } : {},
+        playerNames: game.playerNames ? { ...game.playerNames } : null,
+        // Recent alerts (under attack / elim) for MP clients
+        alerts: (game.alerts || []).slice(-8),
         credits: { ...game.credits },
         spiceCap: { ...game.spiceCap },
         structureBuilder: { ...game.structureBuilder },
@@ -244,6 +251,15 @@
       game.multiplayer = true;
       game._serverSim = false;
 
+      // FFA metadata (may be missing on very old servers)
+      if (data.activeOwners && data.activeOwners.length) {
+        game.activeOwners = data.activeOwners.slice();
+      }
+      if (data.winner !== undefined) game.winner = data.winner;
+      if (data.eliminated) game.eliminated = { ...data.eliminated };
+      if (data.playerNames) game.playerNames = { ...data.playerNames };
+      if (data.alerts) game.alerts = data.alerts.slice();
+
       if (keepCam && !firstLoad) {
         game.camera.x = keepCam.x;
         game.camera.y = keepCam.y;
@@ -284,7 +300,7 @@
       const map = game.map;
       const n = map.width * map.height;
 
-      // tiles / spice — only mark terrain dirty if tiles changed
+      // tiles / spice — optional on lean MP snapshots (map already loaded)
       let tilesDirty = false;
       if (data.map.tiles) {
         const src = data.map.tiles;
@@ -309,14 +325,31 @@
       if (data.map.blocked) {
         const src = data.map.blocked;
         for (let i = 0; i < n; i++) map.blocked[i] = src[i] | 0;
-      } else {
+      } else if (data.map.tiles) {
+        // Only rebuild blocked when we received a full tile payload
         D.Map.rebuildBlocked(game);
       }
       if (tilesDirty) map.terrainDirty = true;
 
-      game.phase =
-        data.phase === 'victory' || data.phase === 'defeat' ? data.phase : 'playing';
+      // Accept neutral 'ended' from FFA server; never invent victory from host seat
+      if (
+        data.phase === 'victory' ||
+        data.phase === 'defeat' ||
+        data.phase === 'draw' ||
+        data.phase === 'ended'
+      ) {
+        game.phase = data.phase;
+      } else {
+        game.phase = 'playing';
+      }
       game.tick = data.tick || 0;
+      if (data.winner !== undefined) game.winner = data.winner;
+      if (data.activeOwners && data.activeOwners.length) {
+        game.activeOwners = data.activeOwners.slice();
+      }
+      if (data.eliminated) game.eliminated = { ...data.eliminated };
+      if (data.playerNames) game.playerNames = { ...data.playerNames };
+      if (data.alerts) game.alerts = data.alerts.slice();
       if (data.credits) game.credits = data.credits;
       if (data.spiceCap) game.spiceCap = data.spiceCap;
       if (data.structureBuilder) game.structureBuilder = data.structureBuilder;
@@ -431,8 +464,25 @@
       }
       game.map.terrainDirty = true;
 
-      game.phase = data.phase === 'victory' || data.phase === 'defeat' ? data.phase : 'playing';
+      if (
+        data.phase === 'victory' ||
+        data.phase === 'defeat' ||
+        data.phase === 'draw' ||
+        data.phase === 'ended'
+      ) {
+        game.phase = data.phase;
+      } else {
+        game.phase = 'playing';
+      }
       game.tick = data.tick || 0;
+      game.winner = data.winner != null ? data.winner : null;
+      game.activeOwners =
+        data.activeOwners && data.activeOwners.length
+          ? data.activeOwners.slice()
+          : game.activeOwners || ['player', 'enemy'];
+      game.eliminated = data.eliminated ? { ...data.eliminated } : {};
+      game.playerNames = data.playerNames ? { ...data.playerNames } : game.playerNames || null;
+      game.alerts = data.alerts ? data.alerts.slice() : [];
       game.credits = data.credits || { player: 1000, enemy: 1000 };
       game.spiceCap = data.spiceCap || { player: 1000, enemy: 1000 };
       game.structureBuilder = data.structureBuilder || { player: null, enemy: null };
@@ -446,6 +496,9 @@
       game.placement = null;
       game.messages = data.messages || [];
       if (data.rngState != null) D.rng.setState(data.rngState);
+      if (D.Seats && D.Seats.ensureBuckets) {
+        D.Seats.ensureBuckets(game, game.activeOwners);
+      }
       if (data.features) {
         if (data.features.fog != null) D.config.features.fog = data.features.fog;
         if (data.features.ai != null) D.config.features.ai = data.features.ai;

@@ -157,16 +157,35 @@
       )
         return;
       const speed = PAN_SPEED * dt;
-      if (panKeys.left || keys.ArrowLeft || keys.KeyA) game.camera.x -= speed;
-      if (panKeys.right || keys.ArrowRight || keys.KeyD) game.camera.x += speed;
-      if (panKeys.up || keys.ArrowUp || keys.KeyW) game.camera.y -= speed;
-      if (panKeys.down || keys.ArrowDown || keys.KeyS) game.camera.y += speed;
+      // Only panKeys (not raw keys.KeyA/S) so A/S unit orders never slide the camera
+      if (panKeys.left || keys.ArrowLeft) game.camera.x -= speed;
+      if (panKeys.right || keys.ArrowRight) game.camera.x += speed;
+      if (panKeys.up || keys.ArrowUp) game.camera.y -= speed;
+      if (panKeys.down || keys.ArrowDown) game.camera.y += speed;
       if (D.Renderer) D.Renderer.clampCamera(game);
+    },
+
+    /** Unit selected and can receive orders (A/S should not pan). */
+    wantsUnitCommand(game) {
+      if (!game || game.replay || game.spectator) return false;
+      if (game.phase !== 'playing') return false;
+      if (D.Input.isEliminatedLocal && D.Input.isEliminatedLocal(game)) return false;
+      return selectedUnits(game).length > 0;
+    },
+
+    /** True when local seat has been eliminated mid-FFA (view only). */
+    isEliminatedLocal(game) {
+      if (!game || game.spectator || game.replay) return false;
+      const me = D.Game.me(game);
+      return !!(game.eliminated && game.eliminated[me] != null);
     },
 
     /** True when viewer must not issue orders / place buildings. */
     isSpectator(game) {
-      return !!(game && (game.replay || game.spectator));
+      return !!(
+        game &&
+        (game.replay || game.spectator || D.Input.isEliminatedLocal(game))
+      );
     },
 
     onKeyDown(game, e) {
@@ -177,10 +196,17 @@
         return;
       }
 
-      if (e.code === 'ArrowLeft' || e.code === 'KeyA') panKeys.left = true;
-      if (e.code === 'ArrowRight' || e.code === 'KeyD') panKeys.right = true;
-      if (e.code === 'ArrowUp' || e.code === 'KeyW') panKeys.up = true;
-      if (e.code === 'ArrowDown' || e.code === 'KeyS') panKeys.down = true;
+      // Camera: arrows always. WASD pans only when not used as RTS unit keys.
+      // Standard RTS: A=attack-move, S=stop — those win when units are selected.
+      const unitCmd = D.Input.wantsUnitCommand(game);
+      if (e.code === 'ArrowLeft') panKeys.left = true;
+      if (e.code === 'ArrowRight') panKeys.right = true;
+      if (e.code === 'ArrowUp') panKeys.up = true;
+      if (e.code === 'ArrowDown') panKeys.down = true;
+      if (e.code === 'KeyA' && !unitCmd) panKeys.left = true;
+      if (e.code === 'KeyD') panKeys.right = true;
+      if (e.code === 'KeyW') panKeys.up = true;
+      if (e.code === 'KeyS' && !unitCmd) panKeys.down = true;
 
       // Live spectate: camera + leave only (no orders / build)
       if (game.spectator && !game.replay) {
@@ -374,33 +400,47 @@
         return;
       }
 
-      if (e.code === 'KeyX' || e.code === 'Period') {
+      // S / . — stop (classic RTS S; period as extra; no pan when units selected)
+      if (e.code === 'KeyS' || e.code === 'Period') {
+        if (e.code === 'KeyS' && !D.Input.wantsUnitCommand(game)) {
+          // no selection: let S pan (already set panKeys above)
+          return;
+        }
         issueStop(
           game,
           selectedUnits(game).map((u) => u.id)
         );
+        panKeys.down = false; // cancel accidental pan if set
         e.preventDefault();
         return;
       }
 
-      // M / G — move selected units to tile under cursor (no right-click needed)
-      // A — attack-move to hover tile
+      // M / G — move to cursor (trackpad-friendly)
+      // A — attack-move / attack under cursor (classic RTS; no pan when units selected)
       if (e.code === 'KeyM' || e.code === 'KeyG' || e.code === 'KeyA') {
         const units = selectedUnits(game);
         if (!units.length) {
-          D.Game.pushMessage(game, 'Select unit(s), hover the map, then M/G to move (A = attack-move).');
+          if (e.code === 'KeyA') {
+            // no selection: A pans left (panKeys already set)
+            return;
+          }
+          D.Game.pushMessage(
+            game,
+            'Select unit(s), hover the map, then M/G to move (A = attack-move).'
+          );
           e.preventDefault();
           return;
         }
         const ht = game.hoverTile;
         if (!ht || ht.tx == null) {
-          D.Game.pushMessage(game, 'Move the pointer over the map first, then press M.');
+          D.Game.pushMessage(game, 'Hover the map, then M/G to move or A to attack-move.');
           e.preventDefault();
           return;
         }
         const wx = ht.tx + 0.5;
         const wy = ht.ty + 0.5;
         const attackMove = e.code === 'KeyA';
+        panKeys.left = false; // A is order, never pan while commanding
         // Harvesters on spice → harvest order when moving with M/G
         if (!attackMove) {
           const harvs = units.filter((u) => u.type === 'harvester');
@@ -422,7 +462,7 @@
             return;
           }
         }
-        // Attack enemy under cursor with A or when clicking attack on foe
+        // A on enemy = direct attack; A on ground = attack-move
         if (attackMove) {
           const hit = pickAt(game, wx, wy);
           const enemy = foe(game);
@@ -514,9 +554,21 @@
       }
     },
 
-    /** Trackpad / no-right-button: Ctrl or ⌘ + click issues orders (like RMB). */
+    /**
+     * Trackpad / no-right-button:
+     * - Ctrl/⌘ + click = order click (like RMB → move / attack enemy)
+     * - Alt + click = attack-move (or Ctrl/⌘+Shift+click)
+     */
     isOrderModifier(e) {
       return !!(e && (e.ctrlKey || e.metaKey));
+    },
+
+    isAttackMoveClick(e) {
+      if (!e) return false;
+      // Alt alone or with order-click; Shift+Ctrl/⌘ also
+      if (e.altKey) return true;
+      if (e.shiftKey && (e.ctrlKey || e.metaKey || e.button === 2)) return true;
+      return false;
     },
 
     onMouseDown(game, e) {
@@ -539,8 +591,13 @@
       const pos = canvasPos(e, canvas);
       const o = me(game);
 
-      // Right-click OR Ctrl/⌘+left-click = issue order (trackpad-friendly)
-      if (e.button === 2 || (e.button === 0 && D.Input.isOrderModifier(e) && !game.placement)) {
+      // RMB, Ctrl/⌘+LMB, or Alt+LMB = issue order (trackpad-friendly)
+      const orderClick =
+        e.button === 2 ||
+        (e.button === 0 &&
+          !game.placement &&
+          (D.Input.isOrderModifier(e) || e.altKey));
+      if (orderClick) {
         e.preventDefault();
         D.Input.rightClick(game, pos, e);
         return;
@@ -730,14 +787,19 @@
           issueOrder(
             game,
             rest.map((u) => u.id),
-            { type: e.ctrlKey ? 'attack-move' : 'move', x: world.x, y: world.y }
+            {
+              type: D.Input.isAttackMoveClick(e) ? 'attack-move' : 'move',
+              x: world.x,
+              y: world.y,
+            }
           );
         }
         return;
       }
 
-      // Alt = attack-move; plain RMB / Ctrl+click = move
-      const attackMove = !!(e.altKey && !e.ctrlKey && !e.metaKey);
+      // Attack-move: Alt+click, Alt+RMB, or Ctrl/⌘+Shift+click (trackpad)
+      // Plain RMB / Ctrl+click = move
+      const attackMove = D.Input.isAttackMoveClick(e);
       issueOrder(
         game,
         units.map((u) => u.id),

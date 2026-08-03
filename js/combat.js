@@ -9,12 +9,71 @@
     return weapon.vsB;
   }
 
+  /** Throttled "we are under attack" for the defender (SP + MP snapshots). */
+  function noteUnderAttack(game, owner, target) {
+    if (!game || !owner || !target) return;
+    if (game.eliminated && game.eliminated[owner] != null) return;
+    game._underAttackAt = game._underAttackAt || {};
+    const last = game._underAttackAt[owner] || 0;
+    // ~3s at 20 Hz — avoid spamming chat/flash every shell
+    if (game.tick - last < 60) return;
+    game._underAttackAt[owner] = game.tick;
+    const x =
+      target.tileW != null
+        ? target.tileX + (target.tileW || 1) / 2
+        : target.x;
+    const y =
+      target.tileW != null
+        ? target.tileY + (target.tileH || 1) / 2
+        : target.y;
+    if (D.Game && D.Game.pushAlert) {
+      D.Game.pushAlert(game, {
+        seat: owner,
+        kind: 'under_attack',
+        text: 'We are under attack!',
+        x,
+        y,
+      });
+    }
+    // SP: flash + sidebar; MP clients read alerts from net snapshots
+    if (
+      !game.multiplayer &&
+      !game._serverSim &&
+      D.Game.me(game) === owner &&
+      typeof document !== 'undefined'
+    ) {
+      if (D.UI && D.UI.flashUnderAttack) D.UI.flashUnderAttack();
+      if (D.UI && D.UI.appendSystemChat) {
+        // Show on map chat HUD if present (may be hidden in SP)
+        D.UI.setChatVisible && D.UI.setChatVisible(true);
+        D.UI.appendSystemChat('We are under attack!', 'under_attack');
+      }
+      if (D.Game && D.Game.pushMessage) D.Game.pushMessage(game, 'We are under attack!');
+    }
+  }
+
   function applyDamage(game, target, weapon, attackerOwner) {
     const kind = D.Entities.targetKind(target);
     const armor = target.tileW != null ? 0 : (D.config.units[target.type]?.armor || 0);
     const mult = multFor(weapon, kind);
     const dmg = Math.max(1, Math.floor(weapon.damage * mult) - armor);
     target.hp -= dmg;
+    if (
+      attackerOwner &&
+      target.owner &&
+      attackerOwner !== target.owner &&
+      target.hp > 0
+    ) {
+      noteUnderAttack(game, target.owner, target);
+    } else if (
+      attackerOwner &&
+      target.owner &&
+      attackerOwner !== target.owner &&
+      target.hp <= 0
+    ) {
+      // Still ping once when something dies under fire
+      noteUnderAttack(game, target.owner, target);
+    }
     if (target.hp <= 0) {
       target.hp = 0;
       D.Combat.kill(game, target, attackerOwner);
@@ -54,7 +113,12 @@
       x1: tc.x,
       y1: tc.y,
       life: 0.14,
-      color: attacker.owner === 'player' ? '#9cf' : '#f96',
+      color:
+        D.Seats && D.Seats.tracer
+          ? D.Seats.tracer(attacker.owner)
+          : attacker.owner === 'player'
+            ? '#9cf'
+            : '#f96',
       owner: attacker.owner,
     });
   }
@@ -95,27 +159,52 @@
       life: 0.12,
       r: isTurret ? 0.35 : 0.22,
       owner: attacker.owner,
-      color: attacker.owner === 'player' ? '#9cf' : '#f96',
+      color:
+        D.Seats && D.Seats.tracer
+          ? D.Seats.tracer(attacker.owner)
+          : attacker.owner === 'player'
+            ? '#9cf'
+            : '#f96',
     });
   }
 
   D.Combat = {
     resolveTarget(game, u) {
+      // Explicit attack target
       if (u.order && u.order.type === 'attack') {
         const t = D.Entities.getById(game, u.order.targetId);
         if (t && t.hp > 0) return t;
       }
+      // Attack-move: acquire in *sight* (may be beyond weapon range → path closer)
       if (u.order && u.order.type === 'attack-move') {
-        return D.Combat.findHostileInSight(game, u);
+        return D.Combat.findHostileInRadius(game, u, null);
       }
-      return null;
+      // Non-combat orders: never free-fire
+      if (u.order) {
+        const t = u.order.type;
+        if (t === 'harvest' || t === 'deploy') return null;
+      }
+      // Idle / stop / plain move: auto-fire only at hostiles already in *weapon range*
+      // (classic C&C/Dune feel — tanks next to enemies shoot even after a move order)
+      return D.Combat.findHostileInRadius(game, u, 'weapon');
     },
 
-    findHostileInSight(game, u) {
+    /**
+     * Nearest hostile in radius.
+     * @param {'weapon'|null} mode  'weapon' = use weapon.range; null = use sight
+     */
+    findHostileInRadius(game, u, mode) {
       const def = D.config.units[u.type];
-      const sight = def ? def.sight : 3;
+      if (!def) return null;
+      let radius;
+      if (mode === 'weapon') {
+        if (!def.weapon) return null;
+        radius = def.weapon.range;
+      } else {
+        radius = def.sight != null ? def.sight : 3;
+      }
       let best = null;
-      let bestD = sight + 0.01;
+      let bestD = radius + 0.01;
       for (const o of game.units) {
         if (o.owner === u.owner || o.hp <= 0) continue;
         if (!D.Combat.canSee(game, u.owner, o.x, o.y)) continue;
@@ -136,6 +225,11 @@
         }
       }
       return best;
+    },
+
+    /** @deprecated use findHostileInRadius */
+    findHostileInSight(game, u) {
+      return D.Combat.findHostileInRadius(game, u, null);
     },
 
     canSee(game, owner, x, y) {
@@ -171,12 +265,7 @@
         if (!def || !def.weapon) continue;
         u.weapon.cooldownLeft = Math.max(0, u.weapon.cooldownLeft - dt);
 
-        let target = D.Combat.resolveTarget(game, u);
-        // auto-acquire only if attack-move or idle? design: only on attack orders
-        if (!target && u.order && u.order.type === 'attack-move') {
-          target = D.Combat.findHostileInSight(game, u);
-        }
-
+        const target = D.Combat.resolveTarget(game, u);
         if (!target) continue;
         const tc =
           target.tileW != null
@@ -186,7 +275,12 @@
         if (!D.Combat.canSee(game, u.owner, tc.x, tc.y)) continue;
         const dist = Math.hypot(u.x - tc.x, u.y - tc.y);
         if (dist <= def.weapon.range) {
-          u.path = []; // stop at range
+          // Only explicit "attack this id" holds position. Move / attack-move must
+          // keep their path — clearing it every tick trapped armies in melees so
+          // only units outside gun range obeyed a new group order (~1/3 moved).
+          if (u.order && u.order.type === 'attack') {
+            u.path = [];
+          }
           if (u.weapon.cooldownLeft === 0) {
             if (def.weapon.projectile) fireProjectile(game, u, target, def.weapon);
             else fireHitscan(game, u, target, def.weapon);

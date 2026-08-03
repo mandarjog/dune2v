@@ -184,6 +184,27 @@
         D.config.seed = rec.seed != null ? rec.seed : D.config.seed;
         D.Game.startSkirmish(game, D.MAPS.skirmish1);
       }
+      // FFA: restore seats from init or recording meta (older inits lacked activeOwners)
+      const recMeta = D.Replay.recording || {};
+      if (init && init.state && init.state.activeOwners && init.state.activeOwners.length) {
+        game.activeOwners = init.state.activeOwners.slice();
+      } else if (recMeta.owners && recMeta.owners.length) {
+        game.activeOwners = recMeta.owners.slice();
+      } else if (recMeta.names) {
+        const seats = Object.keys(recMeta.names).filter(
+          (s) => D.Seats && D.Seats.isSeat && D.Seats.isSeat(s)
+        );
+        if (seats.length >= 2) game.activeOwners = seats;
+      }
+      if (init && init.state && init.state.playerNames) {
+        game.playerNames = init.state.playerNames;
+      } else if (recMeta.names) {
+        game.playerNames = recMeta.names;
+      }
+      if (D.Seats && D.Seats.ensureBuckets) {
+        D.Seats.ensureBuckets(game, game.activeOwners);
+      }
+      if (D.Map && D.Map.initFog) D.Map.initFog(game);
       game.replay = true;
       game._serverSim = true;
       game.multiplayer = false;

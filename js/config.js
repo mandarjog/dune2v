@@ -26,9 +26,35 @@
     },
 
     path: {
-      maxRepathsPerTick: 8,
+      /**
+       * Path backend for group point-moves (move / attack-move):
+       * - hybrid: A* if group < flowMinGroup, else one flow field for all (default)
+       * - flow: always flow field for point-moves (still A* for attack-target / harvest)
+       * - astar: legacy per-unit A*
+       */
+      backend: 'hybrid',
+      /** hybrid: use flow field when issuing this many units (or more) to one goal. */
+      flowMinGroup: 5,
+      // Large FFA armies: old budget of 8 made most units sit idle for seconds
+      maxRepathsPerTick: 64,
       maxNodes: 2048,
       arrivalDist: 0.15,
+      /** Safety cap when walking integration field to a waypoint list. */
+      maxFlowPathSteps: 4096,
+      /**
+       * Group move: unique goal slots around the click so units don't stack
+       * (stacking also makes combat look like splash — damage is still per-unit).
+       */
+      formationSpacing: 1.0,
+      /** Soft push only when fully stopped (never while following a path). */
+      separationRadius: 0.5,
+      separationStrength: 0.25,
+      /** Min ticks between A* repaths for one unit (stops vibration near bases). */
+      repathCooldownTicks: 16,
+      /** How close path end may be to goal before we skip repath. */
+      pathGoalSlop: 2.25,
+      /** Give up move if stuck this long with no progress (seconds). */
+      stuckGiveUpSec: 6,
     },
 
     economy: {
@@ -62,9 +88,11 @@
       spice: '#d4780a',
       spiceHeavy: '#b84e00',
       cliff: '#2a2a2a',
-      player: '#4a90d9', // Atreides
-      enemy: '#c0392b', // Harkonnen
-      ordos: '#27ae60', // Ordos (3rd+ seats cycle houses)
+      player: '#4a90d9', // Atreides (seat 0)
+      enemy: '#c0392b', // Harkonnen (seat 1)
+      ordos: '#27ae60', // Ordos (seat 2 / p2)
+      harkonnenPink: '#e84393', // additional Harkonnen (seat 3 / p3)
+      ordosBlack: '#2c2c2c', // additional Ordos (seat 4 / p4)
       fog: 'rgba(0,0,0,0.72)',
       shroud: '#000000',
       selection: '#ffffff',

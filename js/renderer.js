@@ -9,6 +9,10 @@
   let mctx = null;
   let terrainCanvas = null;
   let tctx = null;
+  /** 1px/tile fog mask (shroud + dim) — much cheaper than per-tile fillRect */
+  let fogCanvas = null;
+  let fctx = null;
+  let fogCacheOwner = null;
   let viewW = 800;
   let viewH = 600;
 
@@ -311,30 +315,66 @@
     drawFog(game) {
       if (!D.Map.fogVisible(game)) return;
       const map = game.map;
-      const fog = game.fog[me(game)];
+      const owner = me(game);
+      const fog = game.fog[owner];
+      if (!fog) return;
       const t = ts();
-      const cam = game.camera;
-      const x0 = Math.max(0, Math.floor(cam.x / t));
-      const y0 = Math.max(0, Math.floor(cam.y / t));
-      const x1 = Math.min(map.width, Math.ceil((cam.x + viewW) / t) + 1);
-      const y1 = Math.min(map.height, Math.ceil((cam.y + viewH) / t) + 1);
+      const w = map.width;
+      const h = map.height;
 
-      for (let ty = y0; ty < y1; ty++) {
-        for (let tx = x0; tx < x1; tx++) {
-          const i = ty * map.width + tx;
+      // Rebuild 1px-per-tile fog mask only when sim marks dirty (not every frame)
+      if (
+        !fogCanvas ||
+        fogCanvas.width !== w ||
+        fogCanvas.height !== h ||
+        fogCacheOwner !== owner ||
+        game._fogDrawDirty
+      ) {
+        if (!fogCanvas) {
+          fogCanvas = document.createElement('canvas');
+          fctx = fogCanvas.getContext('2d', { alpha: true });
+        }
+        if (fogCanvas.width !== w || fogCanvas.height !== h) {
+          fogCanvas.width = w;
+          fogCanvas.height = h;
+        }
+        const img = fctx.createImageData(w, h);
+        const d = img.data;
+        // Shroud ~#000 opaque; explored-not-visible dim ~45% black
+        for (let i = 0; i < w * h; i++) {
+          const p = i * 4;
           if (!fog.explored[i]) {
-            ctx.fillStyle = D.config.colors.shroud;
-            const s = D.Renderer.worldToScreen(game, tx, ty);
-            ctx.fillRect(s.x, s.y, t + 0.5, t + 0.5);
+            d[p] = 0;
+            d[p + 1] = 0;
+            d[p + 2] = 0;
+            d[p + 3] = 255;
           } else if (!fog.visible[i]) {
-            // Explored-but-not-visible: dim terrain only (entities draw above).
-            // Keep alpha moderate so rock/spice still read under the veil.
-            ctx.fillStyle = 'rgba(0,0,0,0.45)';
-            const s = D.Renderer.worldToScreen(game, tx, ty);
-            ctx.fillRect(s.x, s.y, t + 0.5, t + 0.5);
+            d[p] = 0;
+            d[p + 1] = 0;
+            d[p + 2] = 0;
+            d[p + 3] = 115; // ~0.45 * 255
+          } else {
+            d[p + 3] = 0;
           }
         }
+        fctx.putImageData(img, 0, 0);
+        fogCacheOwner = owner;
+        game._fogDrawDirty = false;
       }
+
+      // Scale mask to world pixels and align with camera
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(
+        fogCanvas,
+        0,
+        0,
+        w,
+        h,
+        -game.camera.x,
+        -game.camera.y,
+        w * t,
+        h * t
+      );
     },
 
     drawBuilding(game, b) {

@@ -20,6 +20,7 @@ const SCRIPTS = [
   'js/combat.js',
   'js/ai.js',
   'js/game.js',
+  'js/scenario.js',
   'js/save.js',
   'maps/skirmish1.js',
   'maps/skirmish_large.js',

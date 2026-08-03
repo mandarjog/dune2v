@@ -5,6 +5,9 @@ const recordings = require('./recordings');
 
 const BASE_DT = 0.05; // 20 Hz — must match D.config.DT_SEC
 const STATE_EVERY = 2;
+/** When armies get huge, send snapshots less often to keep WS + JSON cheap. */
+const STATE_EVERY_LARGE = 3;
+const LARGE_UNIT_THRESHOLD = 80;
 const SPEED_OPTIONS = [0.5, 1, 1.5, 2, 3];
 const DEFAULT_SPEED = 2;
 
@@ -24,6 +27,8 @@ class RoomSim {
     this.onState = null;
     this.onEnd = null;
     this._rec = null;
+    /** After first full map blob, omit tiles/spice from live snapshots. */
+    this._mapSent = false;
   }
 
   start() {
@@ -56,15 +61,23 @@ class RoomSim {
     this._rec = recordings.begin({
       room: this.roomId,
       names: this.meta.names || {},
+      owners: owners.slice(),
       baseDt: BASE_DT,
       seed: D.config.seed,
     });
     // One full init snapshot (map + starting units) — not per-frame dumps
+    const initState = this._serializeInit();
+    if (initState) {
+      initState.activeOwners = owners.slice();
+      initState.playerNames = this.meta.names || null;
+    }
     recordings.appendEvent(this._rec, {
       t: 0,
       type: 'init',
-      state: this._serializeInit(),
+      state: initState,
     });
+    // Persist meta so list() shows in-progress matches with owners
+    if (this._rec) recordings.touchMeta(this._rec);
 
     this._armTimer();
     this._broadcast(true);
@@ -142,9 +155,10 @@ class RoomSim {
   _tick() {
     if (!this.running || !this.game) return;
     const D = this.D;
+    // Match over: victory | defeat | ended (FFA) | draw
     if (this.game.phase !== 'playing') {
       this._broadcast(true);
-      const phase = this.game.phase;
+      const phase = this.game.phase === 'ended' ? 'ended' : this.game.phase;
       // Finish recording first so /api/recordings/:id is ready when clients open Watch
       const winner = this.game.winner || null;
       const info = this.stop();
@@ -158,7 +172,9 @@ class RoomSim {
 
   _broadcast(force) {
     if (!this.game || !this.onState) return;
-    if (!force && this.game.tick % STATE_EVERY !== 0) return;
+    const nU = this.game.units ? this.game.units.length : 0;
+    const every = nU >= LARGE_UNIT_THRESHOLD ? STATE_EVERY_LARGE : STATE_EVERY;
+    if (!force && this.game.tick % every !== 0) return;
     const payload = this._serializeLive();
     if (payload) this.onState(payload, this.game.tick, { speed: this.speed });
   }
@@ -188,6 +204,7 @@ class RoomSim {
   /**
    * Live net snapshot for clients. Includes projectiles/fx so shells are visible
    * in MP (clients do not run combat). Still omits fog/paths for bandwidth.
+   * After the first full map, skip tiles/spice arrays (~100KB+) — clients keep local map.
    */
   _serializeLive() {
     const D = this.D;
@@ -211,6 +228,21 @@ class RoomSim {
     if (data.fx && data.fx.length > 40) {
       data.fx = data.fx.slice(-40);
     }
+    // Map terrain is huge; only send once (or when explicitly forced via full serialize)
+    if (this._mapSent && data.map) {
+      // Keep dimensions / spawns; drop bulk arrays. Spice harvest still needs occasional updates.
+      const spice = data.map.spiceAmount;
+      delete data.map.tiles;
+      delete data.map.blocked;
+      // Send spice every ~2s so harvest is visible (40 ticks @ 20Hz)
+      if (this.game && this.game.tick % 40 !== 0) {
+        delete data.map.spiceAmount;
+      } else if (spice) {
+        data.map.spiceAmount = spice;
+      }
+    } else {
+      this._mapSent = true;
+    }
     return data;
   }
 
@@ -228,6 +260,10 @@ class RoomSim {
         : seat === 'enemy'
           ? 'enemy'
           : 'player';
+    // Eliminated FFA seats cannot order (still receive state / chat)
+    if (game.eliminated && game.eliminated[owner] != null) {
+      return { ok: false, reason: 'eliminated' };
+    }
     const tickAt = game.tick;
 
     function ownedIds(ids) {
@@ -335,6 +371,27 @@ class RoomSim {
         seat,
         payload: slim,
       });
+    }
+
+    // Path batch cost from Orders.issue (server-side visibility for big moves)
+    if (
+      result &&
+      result.ok &&
+      payload.op === 'order' &&
+      game.stats &&
+      game.stats.pathLastIssueCount > 0
+    ) {
+      const ms = game.stats.pathLastIssueMs || 0;
+      const n = game.stats.pathLastIssueCount || 0;
+      if (ms >= 15 || n >= 40) {
+        const via = game.stats.pathLastBackend || '?';
+        const flowB = game.stats.pathLastFlowBuildMs || 0;
+        console.log(
+          `[path] room=${this.roomId} seat=${owner} issue ${n} via=${via} ${ms.toFixed(2)}ms` +
+            (via === 'flow' ? ` (field ${flowB.toFixed(2)}ms)` : '') +
+            ` ok=${game.stats.pathLastIssueOk || 0}`
+        );
+      }
     }
 
     return result;

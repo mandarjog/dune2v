@@ -7,6 +7,9 @@
   /** Last selection panel signature — avoid nuking produce buttons every frame */
   let lastSelSig = '';
   let boundGame = null;
+  /** Alert ids already shown (under attack / elim chat) */
+  const seenAlertIds = new Set();
+  let attackFlashTimer = 0;
 
   function $(id) {
     return document.getElementById(id);
@@ -214,7 +217,7 @@
       const sidebar = $('sidebar');
       sidebar?.addEventListener('mousedown', (e) => e.stopPropagation());
 
-      $('btn-start')?.addEventListener('click', () => {
+      function startLocalSkirmish(kind) {
         if (game.multiplayer && D.Net) D.Net.leave();
         game.multiplayer = false;
         game.spectator = false;
@@ -222,9 +225,16 @@
         game.netRole = null;
         D.config.features.ai = true;
         if (D.Save) D.Save.clear();
-        D.Game.startSkirmish(game, D.MAPS.skirmish_large || D.MAPS.skirmish1, {
-          startMode: D.UI.selectedStartMode(),
-        });
+        if (kind === 'mass' && D.Scenario) {
+          const opts = D.Scenario.parseOpts
+            ? D.Scenario.parseOpts(new URLSearchParams(location.search))
+            : { perSide: 80 };
+          D.Scenario.startMassArmies(game, opts);
+        } else {
+          D.Game.startSkirmish(game, D.MAPS.skirmish_large || D.MAPS.skirmish1, {
+            startMode: D.UI.selectedStartMode(),
+          });
+        }
         lastSelSig = '';
         D.UI.hideMenu();
         D.UI.hideLobby();
@@ -232,7 +242,10 @@
         D.UI.refresh(game);
         D.Renderer.rebuildTerrain(game);
         if (D.Save) D.Save.write(game);
-      });
+      }
+
+      $('btn-start')?.addEventListener('click', () => startLocalSkirmish('normal'));
+      $('btn-start-mass')?.addEventListener('click', () => startLocalSkirmish('mass'));
 
       $('btn-continue')?.addEventListener('click', () => {
         if (game.multiplayer) return;
@@ -619,13 +632,14 @@
                   data.recordingId +
                   ')'
               );
-              // Refresh end modal buttons if already showing
-              if (game.phase === 'victory' || game.phase === 'defeat') {
-                D.UI.showEnd(game);
-              } else {
-                D.UI.syncEndRecordingButtons(data.recordingId);
-              }
             }
+            if (data.winner !== undefined && game) game.winner = data.winner;
+            if (game && game.phase === 'playing') {
+              game.phase = data.phase === 'draw' ? 'draw' : 'ended';
+            }
+            // Always show end screen with winner-derived local outcome
+            D.UI.showEnd(game);
+            if (data.recordingId) D.UI.syncEndRecordingButtons(data.recordingId);
           }
           if (ev === 'error') {
             const err = (data && data.error) || D.Net.lastError || 'error';
@@ -746,33 +760,136 @@
       if (!log) return;
       if (hud) hud.classList.remove('hidden');
 
-      const mine = msg.seat && boundGame && msg.seat === D.Game.me(boundGame);
+      const isSystem = !!(msg.system || msg.kind === 'system' || msg.kind === 'under_attack' || msg.kind === 'eliminated');
+      const mine = !isSystem && msg.seat && boundGame && msg.seat === D.Game.me(boundGame);
       const line = document.createElement('div');
-      line.className = 'chat-hud-line ' + (mine ? 'mine' : 'theirs');
+      line.className =
+        'chat-hud-line ' +
+        (isSystem ? 'system' : mine ? 'mine' : 'theirs') +
+        (msg.kind === 'under_attack' ? ' alert-attack' : '') +
+        (msg.kind === 'eliminated' ? ' alert-elim' : '');
 
       const who = document.createElement('span');
       who.className = 'who';
-      const name =
-        msg.name ||
-        (msg.seat === 'enemy' ? 'Harkonnen' : 'Atreides');
+      const name = isSystem
+        ? 'SYSTEM'
+        : msg.name ||
+          (msg.seat === 'enemy' ? 'Harkonnen' : 'Atreides');
       who.textContent = name;
 
       const body = document.createElement('span');
       body.className = 'body';
-      body.textContent = ': ' + (msg.text || '');
+      body.textContent = isSystem ? ' ' + (msg.text || '') : ': ' + (msg.text || '');
 
       line.appendChild(who);
       line.appendChild(body);
       log.appendChild(line);
-      while (log.children.length > 12) log.removeChild(log.firstChild);
+      while (log.children.length > 16) log.removeChild(log.firstChild);
 
       // Fade like classic RTS chat after a few seconds
-      const FADE_MS = 10000;
-      const REMOVE_MS = 12000;
+      const FADE_MS = isSystem ? 14000 : 10000;
+      const REMOVE_MS = isSystem ? 16000 : 12000;
       setTimeout(() => line.classList.add('fading'), FADE_MS);
       setTimeout(() => {
         if (line.parentNode) line.parentNode.removeChild(line);
       }, REMOVE_MS);
+    },
+
+    /** System line on the map chat HUD (not the sidebar message log). */
+    appendSystemChat(text, kind) {
+      D.UI.appendChat({
+        system: true,
+        kind: kind || 'system',
+        text: text || '',
+        name: 'SYSTEM',
+      });
+    },
+
+    /** Red edge flash when local forces take damage. */
+    flashUnderAttack() {
+      const wrap = $('game-wrap') || document.getElementById('game-wrap');
+      if (!wrap) return;
+      wrap.classList.remove('under-attack-flash');
+      // reflow so re-adding restarts animation
+      void wrap.offsetWidth;
+      wrap.classList.add('under-attack-flash');
+      if (attackFlashTimer) clearTimeout(attackFlashTimer);
+      attackFlashTimer = setTimeout(() => {
+        wrap.classList.remove('under-attack-flash');
+        attackFlashTimer = 0;
+      }, 900);
+    },
+
+    /**
+     * Apply server snapshot alerts for the local seat (and broadcast notices).
+     * @param {object} game
+     * @param {Array} alerts
+     */
+    consumeNetAlerts(game, alerts) {
+      if (!game || !alerts || !alerts.length) return;
+      const me = D.Game.me(game);
+      for (const a of alerts) {
+        if (!a || a.id == null) continue;
+        if (seenAlertIds.has(a.id)) continue;
+        seenAlertIds.add(a.id);
+        // Bound set growth
+        if (seenAlertIds.size > 80) {
+          const arr = [...seenAlertIds];
+          for (let i = 0; i < 40; i++) seenAlertIds.delete(arr[i]);
+        }
+
+        const forMe = !a.seat || a.seat === me;
+        if (a.kind === 'under_attack' && forMe && !game.spectator) {
+          D.UI.flashUnderAttack();
+          D.UI.appendSystemChat(a.text || 'We are under attack!', 'under_attack');
+          // Optional: snap attention — do not force camera (annoying mid-fight)
+          continue;
+        }
+        if (a.kind === 'eliminated' && a.seat === me && !game.spectator) {
+          D.UI.appendSystemChat(a.text || 'You are eliminated.', 'eliminated');
+          D.UI.showEliminatedBanner(game, true);
+          continue;
+        }
+        if (a.kind === 'elim_notice' || (a.kind === 'eliminated' && a.seat !== me)) {
+          if (forMe || !a.seat) {
+            D.UI.appendSystemChat(a.text || 'A house has fallen.', 'system');
+          }
+          continue;
+        }
+        if (a.kind === 'match_end') {
+          // End modal handles this; optional chat line
+          if (a.text) D.UI.appendSystemChat(a.text, 'system');
+        }
+      }
+
+      // Keep banner in sync even if alert was missed
+      if (
+        game.eliminated &&
+        game.eliminated[me] != null &&
+        game.phase === 'playing' &&
+        !game.spectator
+      ) {
+        D.UI.showEliminatedBanner(game, true);
+      }
+    },
+
+    showEliminatedBanner(game, show) {
+      let el = $('elim-banner');
+      if (!show) {
+        if (el) el.classList.add('hidden');
+        return;
+      }
+      if (!el) {
+        const wrap = $('game-wrap');
+        if (!wrap) return;
+        el = document.createElement('div');
+        el.id = 'elim-banner';
+        el.className = 'elim-banner';
+        el.innerHTML =
+          '<strong>ELIMINATED</strong><span>Your Construction Yard and MCV are gone. Watch the rest of the match.</span>';
+        wrap.appendChild(el);
+      }
+      el.classList.remove('hidden');
     },
 
     sendChat() {
@@ -1237,9 +1354,21 @@
           D.Seats && D.Seats.IDS ? D.Seats.IDS : ['player', 'enemy'];
         const renderSeat = (seat) => {
           const h = D.Seats ? D.Seats.house(seat) : null;
+          const col = h ? h.color : '#888';
+          const tint =
+            seat === 'player'
+              ? 'blue'
+              : seat === 'enemy'
+                ? 'red'
+                : seat === 'p2'
+                  ? 'green'
+                  : seat === 'p3'
+                    ? 'pink'
+                    : seat === 'p4'
+                      ? 'black'
+                      : '';
           const house =
-            (h ? h.name : seat) +
-            (h ? ' · ' + (h.id === 'atreides' ? 'blue' : h.id === 'harkonnen' ? 'red' : 'green') : '');
+            (h ? h.name : seat) + (tint ? ' · ' + tint : '');
           const css = h ? h.id : '';
           const info = seats[seat];
           const name = (info && info.name) || (seat === D.Net.seat ? D.Net.name : null);
@@ -1252,7 +1381,7 @@
               `<div class="seat-row"><span class="seat-house">${escapeHtml(house)}</span>` +
                 `<span class="seat-name ${css}${you ? ' you' : ''}${
                   online ? '' : ' offline'
-                }">${escapeHtml(label)}${tag}</span></div>`
+                }" style="color:${col}">${escapeHtml(label)}${tag}</span></div>`
             );
           } else {
             // Only show empty slots up to max (always show 5 slots so people know capacity)
@@ -1435,9 +1564,11 @@
           D.Seats ? D.Seats.label(seat, names) : names[seat] || seat
         );
         const h = D.Seats ? D.Seats.house(seat) : null;
+        const col = h ? h.color : '';
         const cls =
           (h ? h.id : '') + (seat === local && !game.spectator && !game.replay ? ' you' : '');
-        return `<span class="${cls}">${lab}</span>`;
+        const st = col ? ` style="color:${col}"` : '';
+        return `<span class="${cls}"${st}>${lab}</span>`;
       });
       let suffix = '';
       if (game.replay) suffix = ` <span style="opacity:.45">· REPLAY</span>`;
@@ -1518,12 +1649,13 @@
     },
 
     showEnd(game) {
-      if (!els.endModal) return;
+      if (!els.endModal || !game) return;
+      D.UI.showEliminatedBanner(game, false);
       const modal = els.endModal;
       modal.classList.remove('hidden');
       const local = D.Game.localEndPhase(game);
       modal.querySelector('.modal').classList.toggle('victory', local === 'victory');
-      modal.querySelector('.modal').classList.toggle('defeat', local === 'defeat');
+      modal.querySelector('.modal').classList.toggle('defeat', local === 'defeat' || local === 'draw');
       const h2 = modal.querySelector('h2');
       const p = modal.querySelector('p');
       const names = game.playerNames;
@@ -1555,7 +1687,7 @@
       } else {
         h2.textContent = 'Defeat';
         p.textContent = game.multiplayer
-          ? winLabel + ' triumphs over ' + myLabel + '. The spice must flow… elsewhere.'
+          ? winLabel + ' triumphs. ' + myLabel + ' has fallen. The spice must flow… elsewhere.'
           : 'Your base has fallen. The spice must flow… elsewhere.';
       }
       const recId = D.UI.lastRecordingId();
@@ -1794,7 +1926,23 @@
         D.UI.syncQueueProgress(game);
       }
 
-      if (game.phase === 'victory' || game.phase === 'defeat') {
+      // Mid-FFA elimination banner while match still playing
+      if (
+        game.phase === 'playing' &&
+        game.multiplayer &&
+        !game.spectator &&
+        game.eliminated &&
+        game.eliminated[me(game)] != null
+      ) {
+        D.UI.showEliminatedBanner(game, true);
+      }
+
+      if (
+        game.phase === 'victory' ||
+        game.phase === 'defeat' ||
+        game.phase === 'ended' ||
+        game.phase === 'draw'
+      ) {
         if (els.endModal?.classList.contains('hidden')) D.UI.showEnd(game);
       }
     },
@@ -2077,6 +2225,8 @@
     updateDebug(game) {
       if (!els.debug || !els.debug.classList.contains('visible')) return;
       const o = me(game);
+      const st = game.stats || {};
+      const pm = D.Path && D.Path.metrics;
       els.debug.textContent = [
         `fps ${game.stats.fps | 0}  sim ${game.stats.simMs.toFixed(2)}ms`,
         `tick ${game.tick}  phase ${game.phase}  me=${o}`,
@@ -2086,9 +2236,19 @@
         game.multiplayer
           ? `mp ${game.netRole} room ${game.roomCode || D.Net?.room || '?'} peers ${D.Net?.peers || 0}`
           : `ai ${game.ai.state}  repaths ${game._repathsThisTick || 0}`,
+        `path issue ${((st.pathLastIssueMs || 0)).toFixed(2)}ms n=${st.pathLastIssueCount || 0} ok=${st.pathLastIssueOk || 0} via=${st.pathLastBackend || '?'}`,
+        st.pathLastBackend === 'flow'
+          ? `path flow  build ${((st.pathLastFlowBuildMs || 0)).toFixed(2)}ms`
+          : '',
+        `path tick  ${((st.pathTickMs || 0)).toFixed(2)}ms n=${st.pathTickCount || 0} repaths=${game._repathsThisTick || 0}`,
+        pm
+          ? `path life  A*=${pm.finds} flowBuilds=${pm.flowBuilds || 0} maxA*=${pm.maxMs.toFixed(2)}ms`
+          : '',
         `cam ${game.camera.x | 0},${game.camera.y | 0}`,
         D.Save && D.Save.has() ? 'save: yes' : 'save: no',
-      ].join('\n');
+      ]
+        .filter(Boolean)
+        .join('\n');
     },
   };
 })(typeof window !== 'undefined' ? window : globalThis);

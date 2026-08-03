@@ -31,7 +31,14 @@ const MIN_START = 2;
 const MAX_SPECTATORS = 8;
 /** Seat order: first two keep legacy ids for save/replay compat. */
 const SEAT_ORDER = ['player', 'enemy', 'p2', 'p3', 'p4'];
-const HOUSE_CYCLE = ['Atreides', 'Harkonnen', 'Ordos'];
+/** Match client Seats: Atreides, Harkonnen, Ordos, Harkonnen (pink), Ordos (black). */
+const HOUSE_FOR_SEAT = {
+  player: 'Atreides',
+  enemy: 'Harkonnen',
+  p2: 'Ordos',
+  p3: 'Harkonnen',
+  p4: 'Ordos',
+};
 const ROOM_CODE_LEN = 6;
 const ROOM_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const ROOM_IDLE_MS = 60 * 60 * 1000;
@@ -326,8 +333,7 @@ function spectatorCount(room) {
 }
 
 function houseForSeat(seat) {
-  const i = SEAT_ORDER.indexOf(seat);
-  return HOUSE_CYCLE[((i % 3) + 3) % 3];
+  return HOUSE_FOR_SEAT[seat] || 'Atreides';
 }
 
 function roomNames(room) {
@@ -832,12 +838,17 @@ function startMatchNow(room, opts) {
     });
   };
   sim.onEnd = (phase, info) => {
+    const winner =
+      (info && info.winner) ||
+      (sim.game && sim.game.winner) ||
+      null;
     broadcastRoom(
       room,
       {
         type: 'match_end',
-        phase,
-        winner: (info && info.winner) || (room.sim && room.sim.game && room.sim.game.winner) || null,
+        // Always send neutral 'ended' + winner so every seat derives correctly
+        phase: phase === 'draw' ? 'draw' : 'ended',
+        winner,
         recordingId: (info && info.recordingId) || sim.recordingId || null,
       },
       null
@@ -1436,7 +1447,20 @@ server.listen(PORT, HOST, () => {
 });
 
 function shutdown(sig) {
-  console.log(`[dune2v] ${sig}, shutting down`);
+  console.log(`[dune2v] ${sig}, shutting down — finishing open rooms/recordings`);
+  // Critical: fly deploy / machine stop must finalize command-stream recordings.
+  // Without this, jsonl may exist but meta stays cmds:0 and boot prune deletes it.
+  try {
+    for (const room of rooms.values()) {
+      try {
+        stopSim(room);
+      } catch (e) {
+        console.warn(`[dune2v] stopSim ${room && room.id}:`, e.message);
+      }
+    }
+  } catch (e) {
+    console.warn('[dune2v] shutdown room sweep failed', e.message);
+  }
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(1), 5000).unref();
 }

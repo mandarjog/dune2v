@@ -68,7 +68,9 @@
         // frameMs already added once; scale remaining for speed
         if (speed !== 1) D.Loop._accMs += frameMs * (speed - 1);
         let guard = 0;
-        const maxCatch = speed > 1 ? 12 : 5;
+        // Large armies: fewer catch-up ticks so one slow frame does not cascade
+        const nU = game.units ? game.units.length : 0;
+        const maxCatch = nU > 80 ? (speed > 1 ? 6 : 3) : speed > 1 ? 12 : 5;
         while (D.Loop._accMs >= stepMs && guard < maxCatch) {
           D.Game.tick(game, dtSec);
           D.Loop._accMs -= stepMs;
@@ -89,15 +91,16 @@
         D.UI.updateDebug(game);
       }
 
-      // Autosave every ~15s while playing (single-player only)
+      // Autosave every ~15s (or ~30s if huge army — localStorage JSON is expensive)
       if (
         D.Save &&
         !game.multiplayer &&
         game.phase === 'playing' &&
-        game.tick > 0 &&
-        game.tick % 300 === 0
+        game.tick > 0
       ) {
-        D.Save.write(game);
+        const nU = game.units ? game.units.length : 0;
+        const every = nU > 80 ? 600 : 300;
+        if (game.tick % every === 0) D.Save.write(game);
       }
     },
   };

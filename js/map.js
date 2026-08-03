@@ -170,6 +170,7 @@
       if (!D.Map.fogEnabled(game)) {
         fog.visible.fill(1);
         fog.explored.fill(1);
+        game._fogDrawDirty = true;
         return;
       }
 
@@ -198,6 +199,7 @@
         const cy = b.tileY + b.tileH / 2;
         D.Map.stampSight(game, owner, cx, cy, def.sight);
       }
+      game._fogDrawDirty = true;
     },
 
     isVisible(game, owner, tx, ty) {

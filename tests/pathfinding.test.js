@@ -57,6 +57,85 @@ describe('pathfinding', () => {
   });
 });
 
+describe('flow field / hybrid', () => {
+  it('buildFlowField + pathFromField reaches goal on large map', () => {
+    const map = Dune2.Map.createFromDef(Dune2.MAPS.skirmish_large);
+    const sp = map.spawns.player;
+    // Prefer sand just off the home rock plateau
+    let sx = sp.x + 8;
+    let sy = sp.y - 6;
+    if (!Dune2.Map.isWalkable(map, sx, sy)) {
+      sx = sp.x;
+      sy = sp.y;
+    }
+    assert.ok(Dune2.Map.isWalkable(map, sx, sy), 'start walkable');
+    const field = Dune2.Path.buildFlowField(map, 48.5, 48.5);
+    assert.ok(field);
+    assert.ok(field.reached > 100);
+    const path = Dune2.Path.pathFromField(field, sx + 0.5, sy + 0.5);
+    assert.ok(path && path.length > 0, 'flow path from near player spawn');
+    const last = path[path.length - 1];
+    assert.ok(Math.abs(last.x - (field.gx + 0.5)) < 0.01);
+    assert.ok(Math.abs(last.y - (field.gy + 0.5)) < 0.01);
+  });
+
+  it('hybrid uses flow for large groups and A* for small', () => {
+    const map = Dune2.Map.createFromDef(Dune2.MAPS.skirmish_large);
+    const prev = Dune2.config.path.backend;
+    const prevMin = Dune2.config.path.flowMinGroup;
+    Dune2.config.path.backend = 'hybrid';
+    Dune2.config.path.flowMinGroup = 5;
+
+    const small = [];
+    for (let i = 0; i < 3; i++) {
+      small.push({ x: 20 + i, y: 70, path: [] });
+    }
+    const viaSmall = Dune2.Path.assignGroupMove(map, small, 40.5, 50.5);
+    assert.equal(viaSmall, 'astar');
+    assert.ok(small.every((u) => u.path && u.path.length));
+
+    const big = [];
+    for (let i = 0; i < 12; i++) {
+      big.push({ x: 18 + (i % 4), y: 72 - Math.floor(i / 4), path: [] });
+    }
+    const viaBig = Dune2.Path.assignGroupMove(map, big, 40.5, 50.5);
+    assert.equal(viaBig, 'flow');
+    assert.ok(big.filter((u) => u.path && u.path.length).length >= 10);
+
+    Dune2.config.path.backend = prev;
+    Dune2.config.path.flowMinGroup = prevMin;
+  });
+
+  it('Orders.issue move uses flow for 20 infantry', () => {
+    const game = Dune2.Game.create();
+    Dune2.Game.startSkirmish(game, Dune2.MAPS.skirmish_large, {
+      owners: ['player', 'enemy'],
+      startMode: 'base',
+    });
+    Dune2.config.path.backend = 'hybrid';
+    Dune2.config.path.flowMinGroup = 5;
+    const ids = [];
+    for (let i = 0; i < 20; i++) {
+      const u = Dune2.Entities.createUnit(
+        game,
+        'infantry',
+        'player',
+        22 + (i % 5) * 0.8,
+        68 - Math.floor(i / 5) * 0.8
+      );
+      ids.push(u.id);
+    }
+    Dune2.Orders.issue(game, ids, { type: 'move', x: 50.5, y: 50.5 });
+    assert.equal(game.stats.pathLastBackend, 'flow');
+    let withPath = 0;
+    for (const id of ids) {
+      const u = game.units.find((x) => x.id === id);
+      if (u && u.path && u.path.length) withPath++;
+    }
+    assert.ok(withPath >= 18, 'most units path via flow, got ' + withPath);
+  });
+});
+
 describe('economy cap', () => {
   it('starting credits equal base spice cap', () => {
     assert.equal(
