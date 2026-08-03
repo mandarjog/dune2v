@@ -33,12 +33,14 @@ Production host: **static game + WebSocket** on one Fly app (not Vercel).
 # once: create app (name must be unique on Fly)
 fly apps create dune2v   # skip if app already exists
 
-fly deploy
+# Bake git rev into the image (sidebar + /api/version + WS hello)
+fly deploy --build-arg GIT_COMMIT="$(git rev-parse --short HEAD)"
 # → https://dune2v.fly.dev/
 # → wss://dune2v.fly.dev/ws
 ```
 
-Health check: `GET /health` → `{ "ok": true }`.
+Health: `GET /health` → `{ "ok": true, "rev": "…" }`.  
+Build stamp: `GET /api/version` (must match sidebar `rev …` after hard refresh).
 
 ### Multiplayer (shared room)
 

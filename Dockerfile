@@ -3,6 +3,11 @@ FROM node:22-alpine
 
 WORKDIR /app
 
+# Bake git short SHA (pass: fly deploy --build-arg GIT_COMMIT=$(git rev-parse --short HEAD))
+# .dockerignore excludes .git so runtime `git rev-parse` cannot work on Fly.
+ARG GIT_COMMIT=unknown
+ENV GIT_COMMIT=$GIT_COMMIT
+
 COPY package.json package-lock.json* ./
 RUN npm install --omit=dev
 
