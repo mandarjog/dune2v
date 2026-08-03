@@ -121,6 +121,20 @@ body {
 }
 
 /* One horizontal line: "Dune II" ........ Speed [1×] */
+.build-rev {
+  font-size: 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+  padding: 0 0 4px;
+  opacity: 0.85;
+  cursor: help;
+  user-select: text;
+}
+.build-rev.mismatch {
+  color: #e0a040;
+}
+
 .sidebar-title-row {
   display: flex;
   flex-direction: row;

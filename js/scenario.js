@@ -79,44 +79,46 @@
     return placed;
   }
 
-  /** Extra silos / factory so late-game eco isn't empty. */
-  function boostBase(game, owner) {
+  /** Place building near spawn; spiral if exact tile fails (rock / occupied). */
+  function placeExtra(game, owner, type, dx, dy) {
     const map = game.map;
     const sp = map.spawns[owner] || map.spawns.player;
+    const tx0 = Math.floor(sp.x + dx);
+    const ty0 = Math.floor(sp.y + dy);
+    if (D.Map.canPlace(game, type, tx0, ty0, owner, { skipProximity: true })) {
+      D.Entities.createBuilding(game, type, owner, tx0, ty0, { complete: true });
+      return true;
+    }
+    for (let r = 1; r <= 8; r++) {
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx2 = -r; dx2 <= r; dx2++) {
+          if (Math.abs(dx2) !== r && Math.abs(dy) !== r) continue;
+          const tx = tx0 + dx2;
+          const ty = ty0 + dy;
+          if (
+            D.Map.canPlace(game, type, tx, ty, owner, { skipProximity: true })
+          ) {
+            D.Entities.createBuilding(game, type, owner, tx, ty, {
+              complete: true,
+            });
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  /** Extra silos / factory so late-game eco isn't empty. */
+  function boostBase(game, owner) {
     const extras = [
       { type: 'silo', dx: 4, dy: 0 },
       { type: 'silo', dx: 5, dy: 0 },
       { type: 'barracks', dx: 3, dy: -3 },
       { type: 'lightFactory', dx: 6, dy: -2 },
       { type: 'heavyFactory', dx: -2, dy: 3 },
-      { type: 'gunTurret', dx: 8, dy: 1 },
     ];
-    for (const e of extras) {
-      const tx = Math.floor(sp.x + e.dx);
-      const ty = Math.floor(sp.y + e.dy);
-      if (!D.Map.canPlace(game, e.type, tx, ty, owner, { skipProximity: true })) {
-        // loose search
-        let ok = false;
-        for (let r = 1; r <= 5 && !ok; r++) {
-          for (let dy = -r; dy <= r && !ok; dy++) {
-            for (let dx = -r; dx <= r && !ok; dx++) {
-              if (
-                D.Map.canPlace(game, e.type, tx + dx, ty + dy, owner, {
-                  skipProximity: true,
-                })
-              ) {
-                D.Entities.createBuilding(game, e.type, owner, tx + dx, ty + dy, {
-                  complete: true,
-                });
-                ok = true;
-              }
-            }
-          }
-        }
-        continue;
-      }
-      D.Entities.createBuilding(game, e.type, owner, tx, ty, { complete: true });
-    }
+    for (const e of extras) placeExtra(game, owner, e.type, e.dx, e.dy);
     D.Map.rebuildBlocked(game);
     D.Economy.tickPower(game);
     D.Economy.recalcSpiceCap(game);
@@ -124,6 +126,102 @@
     if (game.spiceCap[owner] != null) {
       game.credits[owner] = game.spiceCap[owner];
     }
+  }
+
+  /**
+   * Scan a filled disk of rock around anchor; score by approach direction.
+   * @returns {Array<{tx:number,ty:number}>}
+   */
+  function placeNearAnchor(game, owner, type, ax, ay, count, opts) {
+    opts = opts || {};
+    const preferDir = opts.preferDir || null;
+    const minR = opts.minR != null ? opts.minR : 1;
+    const maxR = opts.maxR != null ? opts.maxR : 14;
+    const minSep = opts.minSep != null ? opts.minSep : 1; // tile gap between same type
+    const placed = [];
+    const candidates = [];
+    const ax0 = Math.floor(ax);
+    const ay0 = Math.floor(ay);
+    for (let dy = -maxR; dy <= maxR; dy++) {
+      for (let dx = -maxR; dx <= maxR; dx++) {
+        const r = Math.hypot(dx, dy);
+        if (r < minR || r > maxR) continue;
+        const tx = ax0 + dx;
+        const ty = ay0 + dy;
+        if (!D.Map.canPlace(game, type, tx, ty, owner, { skipProximity: true })) {
+          continue;
+        }
+        let score = -r;
+        if (preferDir) {
+          const len = r || 1;
+          score += ((dx / len) * preferDir.x + (dy / len) * preferDir.y) * 12;
+        }
+        candidates.push({ tx, ty, score });
+      }
+    }
+    candidates.sort((a, b) => b.score - a.score);
+    for (const c of candidates) {
+      if (placed.length >= count) break;
+      if (!D.Map.canPlace(game, type, c.tx, c.ty, owner, { skipProximity: true })) {
+        continue;
+      }
+      // keep a little spacing so the ring is readable
+      let near = false;
+      for (const p of placed) {
+        if (Math.hypot(p.x - c.tx, p.y - c.ty) < minSep) {
+          near = true;
+          break;
+        }
+      }
+      if (near) continue;
+      D.Entities.createBuilding(game, type, owner, c.tx, c.ty, { complete: true });
+      placed.push({ x: c.tx, y: c.ty });
+    }
+    return placed;
+  }
+
+  /**
+   * Enemy-only defense for mass-army stress (player stays open).
+   * Runs *before* boostBase factories so rock next to the CY is free.
+   * Turrets on the approach side + windtraps for power.
+   */
+  function boostEnemyDefense(game) {
+    const owner = 'enemy';
+    const map = game.map;
+    const cy = game.buildings.find(
+      (b) => b.owner === owner && b.type === 'constructionYard' && b.hp > 0
+    );
+    const sp = (map.spawns && map.spawns[owner]) || map.spawns.player;
+    const ax = cy ? cy.tileX + cy.tileW / 2 : sp.x + 0.5;
+    const ay = cy ? cy.tileY + cy.tileH / 2 : sp.y + 0.5;
+    // Face player spawn (SW on skirmish_large)
+    const pSp = map.spawns.player || { x: map.width / 2, y: map.height / 2 };
+    let dx = pSp.x - ax;
+    let dy = pSp.y - ay;
+    const len = Math.hypot(dx, dy) || 1;
+    const preferDir = { x: dx / len, y: dy / len };
+
+    // Power first (behind base), then a clear turret screen on the approach
+    placeNearAnchor(game, owner, 'windtrap', ax, ay, 3, {
+      preferDir: { x: -preferDir.x, y: -preferDir.y },
+      minR: 2,
+      maxR: 12,
+      minSep: 2,
+    });
+    const turrets = placeNearAnchor(game, owner, 'gunTurret', ax, ay, 8, {
+      preferDir,
+      minR: 2,
+      maxR: 12,
+      minSep: 1.4,
+    });
+
+    D.Map.rebuildBlocked(game);
+    D.Economy.tickPower(game);
+    D.Economy.recalcSpiceCap(game);
+    if (game.spiceCap[owner] != null) {
+      game.credits[owner] = game.spiceCap[owner];
+    }
+    return turrets;
   }
 
   D.Scenario = {
@@ -148,8 +246,10 @@
       game.netRole = null;
 
       D.config.features.ai = opts.ai !== false;
-      if (opts.fog === false) D.config.features.fog = false;
+      // Mass stress default: FOW off so you can see enemy turrets/base.
+      // Override with ?fog=1 to play with fog.
       if (opts.fog === true) D.config.features.fog = true;
+      else D.config.features.fog = false;
 
       D.Game.startSkirmish(game, mapDef, {
         owners: ['player', 'enemy'],
@@ -157,7 +257,11 @@
         names: { player: 'Commander', enemy: 'AI Harkonnen' },
       });
 
+      /** @type {Array<{x:number,y:number}>} */
+      let turretSpots = [];
       if (opts.boostBase !== false) {
+        // Defenses first (while rock around CY is free), then eco buildings
+        turretSpots = boostEnemyDefense(game);
         boostBase(game, 'player');
         boostBase(game, 'enemy');
       }
@@ -165,24 +269,50 @@
       const pN = spawnArmy(game, 'player', perSide);
       const eN = spawnArmy(game, 'enemy', perSide);
 
-      // Fog for both so vision is consistent
+      // Fog maps still init (for toggling mid-game); vision full when fog off
       if (D.Map.initFog) D.Map.initFog(game);
+      // Force flag again right before recompute (defends against anything that flipped it)
+      if (opts.fog === true) D.config.features.fog = true;
+      else D.config.features.fog = false;
       D.Map.recomputeFog(game, 'player');
       D.Map.recomputeFog(game, 'enemy');
+      game._fogDrawDirty = true;
 
+      const nTur = turretSpots.length;
+      const posHint =
+        nTur > 0
+          ? ' at ' +
+            turretSpots
+              .slice(0, 3)
+              .map((p) => p.x + ',' + p.y)
+              .join(' · ') +
+            (nTur > 3 ? '…' : '')
+          : '';
       D.Game.pushMessage(
         game,
         'Mass armies: ' +
           pN +
           ' vs ' +
           eN +
-          ' + bases. You = Atreides, AI = Harkonnen. Play as a normal skirmish.'
+          '. Enemy gun turrets: ' +
+          nTur +
+          posHint +
+          '. FOW ' +
+          (D.config.features.fog ? 'ON' : 'OFF') +
+          '. You = Atreides.'
       );
       if (game.stats) {
         game.stats.scenario = 'mass';
         game.stats.scenarioPerSide = perSide;
+        game.stats.enemyTurrets = nTur;
       }
-      return { player: pN, enemy: eN, perSide };
+      return {
+        player: pN,
+        enemy: eN,
+        perSide,
+        enemyTurrets: nTur,
+        turretSpots,
+      };
     },
 
     /** Parse URL / menu options. */
@@ -191,9 +321,14 @@
       let perSide = 80;
       if (params.get('armies')) perSide = parseInt(params.get('armies'), 10) || 80;
       if (params.get('units')) perSide = parseInt(params.get('units'), 10) || perSide;
+      // fog: default off for mass; ?fog=1 forces on; ?fog=0 forces off
+      let fog;
+      if (params.get('fog') === '1' || params.get('fog') === 'true') fog = true;
+      else if (params.get('fog') === '0' || params.get('fog') === 'false') fog = false;
+      else fog = false; // mass default
       return {
         perSide: clamp(perSide, 10, 250),
-        fog: params.get('fog') === '0' ? false : undefined,
+        fog,
         ai: params.get('ai') === '0' ? false : true,
       };
     },

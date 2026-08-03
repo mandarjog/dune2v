@@ -183,8 +183,9 @@
       if (u.order) {
         const t = u.order.type;
         if (t === 'harvest' || t === 'deploy') return null;
+        // follow: same as plain move — weapon-range auto-fire only (no chase)
       }
-      // Idle / stop / plain move: auto-fire only at hostiles already in *weapon range*
+      // Idle / stop / plain move / follow: auto-fire only at hostiles already in *weapon range*
       // (classic C&C/Dune feel — tanks next to enemies shoot even after a move order)
       return D.Combat.findHostileInRadius(game, u, 'weapon');
     },

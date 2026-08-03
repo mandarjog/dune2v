@@ -18,6 +18,36 @@ describe('Scenario.mass armies', () => {
     assert.ok(
       game.buildings.some((b) => b.owner === 'enemy' && b.type === 'constructionYard')
     );
+    // Enemy-only gun turret ring near CY; player has none from scenario boost
+    const pTurrets = game.buildings.filter(
+      (b) => b.owner === 'player' && b.type === 'gunTurret'
+    ).length;
+    const eTurrets = game.buildings.filter(
+      (b) => b.owner === 'enemy' && b.type === 'gunTurret'
+    );
+    assert.equal(pTurrets, 0, 'player has no scenario turrets');
+    assert.ok(
+      eTurrets.length >= 6,
+      'enemy defense turrets ' + eTurrets.length + ' (need ≥6)'
+    );
+    const cy = game.buildings.find(
+      (b) => b.owner === 'enemy' && b.type === 'constructionYard'
+    );
+    assert.ok(cy, 'enemy CY');
+    const cx = cy.tileX + cy.tileW / 2;
+    const cyY = cy.tileY + cy.tileH / 2;
+    for (const t of eTurrets) {
+      const d = Math.hypot(t.tileX + 0.5 - cx, t.tileY + 0.5 - cyY);
+      assert.ok(d <= 14, 'turret near CY dist=' + d.toFixed(1) + ' @' + t.tileX + ',' + t.tileY);
+    }
+    // Turrets need powerRatio ≥ 0.5 or they stay offline
+    const ePow = game.power.enemy;
+    assert.ok(
+      ePow && ePow.ratio >= 0.5,
+      'enemy power for turrets got ' + (ePow && ePow.ratio)
+    );
+    // Mass defaults FOW off so defenses are visible
+    assert.equal(Dune2.config.features.fog, false);
     assert.equal(Dune2.config.features.ai, true);
     // Select-all path: issue move should path (hybrid flow for large group)
     const ids = game.units.filter((u) => u.owner === 'player' && u.type !== 'harvester').map((u) => u.id);

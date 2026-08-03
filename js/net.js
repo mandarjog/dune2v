@@ -40,8 +40,12 @@
       .replace(/\s+/g, ' ')
       .trim()
       .slice(0, NAME_MAX)
-      .replace(/[<>]/g, '');
+      .replace(/[<>&\"]/g, '');
     return s || 'Commander';
+  }
+
+  function clientRev() {
+    return (D.buildRev && D.buildRev()) || (D.BUILD && D.BUILD.rev) || 'unknown';
   }
 
   function genPlayerId() {
@@ -396,12 +400,14 @@
       ws.onopen = () => {
         const name = D.Net.name || D.Net.loadStoredName();
         const playerId = D.Net.loadPlayerId();
+        const rev = clientRev();
         if (D.Net._createOnOpen) {
           ws.send(
             JSON.stringify({
               type: 'create',
               playerId,
               name,
+              clientRev: rev,
             })
           );
         } else if (D.Net._wantRoom && D.Net._wantSpectate) {
@@ -411,6 +417,7 @@
               room: D.Net._wantRoom,
               playerId,
               name,
+              clientRev: rev,
             })
           );
         } else if (D.Net._wantRoom) {
@@ -420,6 +427,7 @@
               room: D.Net._wantRoom,
               playerId,
               name,
+              clientRev: rev,
             })
           );
         }
@@ -460,7 +468,23 @@
     },
 
     _onMessage(msg) {
-      if (msg.type === 'hello') return;
+      if (msg.type === 'hello') {
+        if (msg.rev) {
+          D.BUILD = D.BUILD || {};
+          D.BUILD.serverRev = msg.rev;
+          if (D.showBuildRev) D.showBuildRev({ serverRev: msg.rev });
+          const crev = clientRev();
+          if (crev !== msg.rev && crev !== 'dev-local' && crev !== 'unknown') {
+            console.warn(
+              '[dune2] client/server rev mismatch client=' + crev + ' server=' + msg.rev
+            );
+          }
+          console.log(
+            '[dune2] hello server rev=' + msg.rev + ' client rev=' + crev
+          );
+        }
+        return;
+      }
 
       if (msg.type === 'error') {
         D.Net.lastError = msg.error || 'error';
@@ -803,6 +827,7 @@
 
     _send(obj) {
       if (D.Net.ws && D.Net.ws.readyState === 1) {
+        if (obj && obj.clientRev == null) obj.clientRev = clientRev();
         D.Net.ws.send(JSON.stringify(obj));
         return true;
       }

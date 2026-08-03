@@ -225,16 +225,28 @@
         game.netRole = null;
         D.config.features.ai = true;
         if (D.Save) D.Save.clear();
+        const params = new URLSearchParams(location.search);
         if (kind === 'mass' && D.Scenario) {
           const opts = D.Scenario.parseOpts
-            ? D.Scenario.parseOpts(new URLSearchParams(location.search))
-            : { perSide: 80 };
+            ? D.Scenario.parseOpts(params)
+            : { perSide: 80, fog: false };
           D.Scenario.startMassArmies(game, opts);
         } else {
+          // Re-apply ?fog=0 before start so startSkirmish vision is correct
+          if (D.applyUrlFeatures) D.applyUrlFeatures(params);
           D.Game.startSkirmish(game, D.MAPS.skirmish_large || D.MAPS.skirmish1, {
             startMode: D.UI.selectedStartMode(),
           });
         }
+        // Always re-assert URL fog after start (mass defaults off; ?fog=1 forces on)
+        if (D.applyUrlFeatures) D.applyUrlFeatures(params);
+        if (kind === 'mass') {
+          const f = params.get('fog');
+          if (f === '1' || f === 'true') D.config.features.fog = true;
+          else D.config.features.fog = false; // mass default
+        }
+        if (D.refreshFogState) D.refreshFogState(game);
+        if (D.showBuildRev) D.showBuildRev();
         lastSelSig = '';
         D.UI.hideMenu();
         D.UI.hideLobby();
@@ -242,6 +254,13 @@
         D.UI.refresh(game);
         D.Renderer.rebuildTerrain(game);
         if (D.Save) D.Save.write(game);
+        D.Game.pushMessage(
+          game,
+          'Build ' +
+            ((D.buildRev && D.buildRev()) || '?') +
+            ' · FOW ' +
+            (D.config.features.fog ? 'ON' : 'OFF')
+        );
       }
 
       $('btn-start')?.addEventListener('click', () => startLocalSkirmish('normal'));

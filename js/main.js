@@ -3,24 +3,86 @@
   'use strict';
   const D = window.Dune2;
 
-  function boot() {
-    const params = new URLSearchParams(location.search);
+  /** Apply URL feature flags. Call at boot and after any skirmish start. */
+  function applyUrlFeatures(params) {
+    params = params || new URLSearchParams(location.search);
+    // fog=0 / fog=false → off; fog=1 / fog=true → on
+    const fog = params.get('fog');
+    if (fog === '0' || fog === 'false') {
+      D.config.features.fog = false;
+    } else if (fog === '1' || fog === 'true') {
+      D.config.features.fog = true;
+    }
+    if (params.get('ai') === '0') {
+      D.config.features.ai = false;
+    }
     if (params.get('debug') === '1') {
       D.config.features.debugCheats = true;
       const el = document.getElementById('debug-overlay');
       if (el) el.classList.add('visible');
-    }
-    if (params.get('fog') === '0') {
-      D.config.features.fog = false;
-    }
-    if (params.get('ai') === '0') {
-      D.config.features.ai = false;
     }
     if (params.get('mcv') === '1' || params.get('start') === 'mcv') {
       if (!D.config.skirmish) D.config.skirmish = {};
       D.config.skirmish.startMode = 'mcv';
       const cb = document.getElementById('opt-mcv-start');
       if (cb) cb.checked = true;
+    }
+  }
+
+  /** After toggling features.fog, refresh fog buffers so the view matches. */
+  function refreshFogState(game) {
+    if (!game || !game.map || !D.Map) return;
+    if (!game.fog) D.Map.initFog(game);
+    const owners =
+      D.Seats && D.Seats.active
+        ? D.Seats.active(game)
+        : ['player', 'enemy'];
+    for (const o of owners) {
+      D.Map.recomputeFog(game, o);
+    }
+    game._fogDrawDirty = true;
+  }
+
+  function showBuildRev(extra) {
+    const el = document.getElementById('build-rev');
+    if (!el) return;
+    const rev = (D.buildRev && D.buildRev()) || (D.BUILD && D.BUILD.rev) || '?';
+    const server = extra && extra.serverRev;
+    let text = 'rev ' + rev;
+    if (server) {
+      text += server === rev ? ' · server ok' : ' · server ' + server + ' ⚠';
+      el.classList.toggle('mismatch', server !== rev);
+    }
+    el.textContent = text;
+    el.title =
+      'Client: ' +
+      rev +
+      (D.BUILD && D.BUILD.time ? '\nBuilt: ' + D.BUILD.time : '') +
+      (server ? '\nServer: ' + server : '') +
+      '\nFOW: ' +
+      (D.config.features.fog ? 'ON' : 'OFF') +
+      '\n?fog=0 disables fog of war';
+  }
+
+  function boot() {
+    const params = new URLSearchParams(location.search);
+    applyUrlFeatures(params);
+    showBuildRev();
+
+    // Fetch live server stamp (overrides static fallback if host injects it)
+    if (location.protocol !== 'file:') {
+      fetch('/api/version', { cache: 'no-store' })
+        .then((r) => r.json())
+        .then((v) => {
+          if (v && v.rev) {
+            D.BUILD = D.BUILD || {};
+            // Prefer server-injected script; this is a second opinion for UI
+            D.BUILD.serverRev = v.rev;
+            D.BUILD.serverTime = v.buildTime;
+            showBuildRev({ serverRev: v.rev });
+          }
+        })
+        .catch(() => {});
     }
 
     const game = D.Game.create();
@@ -63,12 +125,25 @@
       game.localOwner = 'player';
       const opts = D.Scenario.parseOpts(params);
       D.Scenario.startMassArmies(game, opts);
+      // Re-assert URL/mass fog and refresh vision (defends against save/order bugs)
+      applyUrlFeatures(params);
+      if (opts.fog === false) D.config.features.fog = false;
+      if (opts.fog === true) D.config.features.fog = true;
+      refreshFogState(game);
+      showBuildRev();
       if (D.UI) {
         D.UI.hideMenu();
         D.UI.refresh(game);
       }
       if (D.Renderer) D.Renderer.rebuildTerrain(game);
       if (D.Save) D.Save.write(game);
+      D.Game.pushMessage(
+        game,
+        'Build ' +
+          ((D.buildRev && D.buildRev()) || '?') +
+          ' · FOW ' +
+          (D.config.features.fog ? 'ON' : 'OFF')
+      );
     } else if (replayId && D.Replay && D.UI) {
       // Deep-link to a match recording
       (async () => {
@@ -97,8 +172,20 @@
     }
 
     // expose for console debugging
-    window.__dune2 = { game, D };
+    window.__dune2 = {
+      game,
+      D,
+      applyUrlFeatures,
+      refreshFogState,
+      showBuildRev,
+    };
+    window.__dune2Rev = D.buildRev ? D.buildRev() : '?';
   }
+
+  // Export helpers for UI skirmish start
+  D.applyUrlFeatures = applyUrlFeatures;
+  D.refreshFogState = refreshFogState;
+  D.showBuildRev = showBuildRev;
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', boot);

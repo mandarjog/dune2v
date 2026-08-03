@@ -57,6 +57,7 @@
       <aside id="sidebar">
         <!-- Always visible: header / economy -->
         <div class="sidebar-top">
+          <div id="build-rev" class="build-rev" title="Client build revision">rev …</div>
           <div class="sidebar-title-row">
             <h1>Dune II</h1>
             <span id="mp-speed-wrap" class="mp-speed-wrap hidden">
@@ -98,7 +99,7 @@
           <div id="unit-menu"></div>
           <div id="build-menu"></div>
           <div class="hint">
-            <b>A</b> attack-move · <b>S</b> stop · <b>M</b> move · Ctrl/⌘+click<br />
+            <b>A</b> attack-move · <b>S</b> stop · <b>M</b> move · <b>F</b> follow · Ctrl/⌘+click<br />
             <button type="button" id="btn-help-sidebar" class="linkish">Controls (?)</button>
           </div>
         </div>
@@ -155,7 +156,8 @@
           <code>?scenario=mass</code>
           or
           <code>?scenario=mass&amp;armies=120</code>
-          (units per side, FOW/AI as usual)
+          — FOW <b>off</b> by default (see enemy turrets). Use
+          <code>?fog=1</code> for fog, <code>?ai=0</code> to pause AI.
         </p>
         <label class="start-mode-row" for="opt-mcv-start">
           <input type="checkbox" id="opt-mcv-start" />
@@ -212,7 +214,7 @@
           <h3>Mouse / trackpad</h3>
           <table class="help-table">
             <tr><td>Click / drag</td><td>Select / box-select</td></tr>
-            <tr><td><b>Right-click</b></td><td>Move / attack enemy / harvest</td></tr>
+            <tr><td><b>Right-click</b></td><td>Move / attack enemy / <b>follow friendly</b> / harvest</td></tr>
             <tr><td><b>Ctrl+click</b> or <b>⌘+click</b></td><td>Same as right-click — <b>move</b> (trackpad)</td></tr>
             <tr><td><b>Alt+click</b></td><td>Attack-move to ground (trackpad)</td></tr>
             <tr><td><b>Ctrl+Shift+click</b></td><td>Attack-move (trackpad alternate)</td></tr>
@@ -223,13 +225,14 @@
             <tr><td><b>A</b></td><td>Attack-move (or attack enemy under cursor). With units selected, does <b>not</b> pan.</td></tr>
             <tr><td><b>S</b> / <b>.</b></td><td>Stop. With units selected, does <b>not</b> pan.</td></tr>
             <tr><td><b>M</b> / <b>G</b></td><td>Move to tile under cursor (great on trackpad)</td></tr>
+            <tr><td><b>F</b></td><td>Follow unit under cursor (own or <b>visible</b> enemy). With units selected. During build placement, F still confirms place.</td></tr>
             <tr><td><b>H</b></td><td>Harvest (selected harvesters → nearest spice)</td></tr>
             <tr><td><b>E</b></td><td>Deploy selected MCV</td></tr>
             <tr><td><b>Ctrl+1–9</b> / <b>1–9</b></td><td>Assign / recall control group</td></tr>
             <tr><td><b>Arrows</b></td><td>Pan camera (always)</td></tr>
             <tr><td><b>WASD</b></td><td>Pan when <b>nothing</b> selected; A/S become orders when units are selected</td></tr>
             <tr><td><b>Enter</b></td><td>Focus multiplayer chat</td></tr>
-            <tr><td><b>Space</b> / <b>F</b></td><td>Confirm building placement under cursor</td></tr>
+            <tr><td><b>Space</b> / <b>F</b></td><td>Confirm building placement under cursor (when placing)</td></tr>
             <tr><td><b>Esc</b></td><td>Close help / cancel placement / pause (SP)</td></tr>
             <tr><td><b>?</b> or <b>/</b></td><td>This help</td></tr>
             <tr><td><b>+</b> / <b>-</b></td><td>Game speed (SP)</td></tr>
@@ -237,6 +240,7 @@
           <h3>Trackpad quick start</h3>
           <p>
             Select units → hover destination → <b>A</b> attack-move or <b>M</b> move.
+            Hover a unit → <b>F</b> to follow (or right-click a friendly).
             Or <b>Ctrl/⌘+click</b> to move, <b>Alt+click</b> to attack-move.
             Pan with <b>arrow keys</b> or minimap while an army is selected.
           </p>
@@ -430,6 +434,8 @@
     </div>
 
     <!-- Script order matches DESIGN.md dependencies -->
+    <!-- version.js is served fresh by the Node host with the git short SHA -->
+    <script src="js/version.js"></script>
     <script src="js/config.js"></script>
     <script src="js/seats.js"></script>
     <script src="js/rng.js"></script>

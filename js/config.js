@@ -55,6 +55,10 @@
       pathGoalSlop: 2.25,
       /** Give up move if stuck this long with no progress (seconds). */
       stuckGiveUpSec: 6,
+      /** Follow order: hold this many tiles from the target unit. */
+      followStandoff: 1.75,
+      /** Follow: repath when target moved this far from last path aim. */
+      followRepathDist: 1.25,
     },
 
     economy: {

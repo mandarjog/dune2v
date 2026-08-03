@@ -25,6 +25,35 @@ const ROOT = process.env.STATIC_ROOT
   ? path.resolve(process.env.STATIC_ROOT)
   : path.resolve(__dirname, '..');
 
+/** Git short SHA (or env from Fly/CI). Shown in /health, /js/version.js, WS hello. */
+function resolveGitRev() {
+  const env =
+    process.env.GIT_COMMIT ||
+    process.env.COMMIT_SHA ||
+    process.env.FLY_IMAGE_REF ||
+    process.env.SOURCE_VERSION ||
+    '';
+  if (env) {
+    // FLY_IMAGE_REF is often registry.fly.io/app:deployment-01H… — keep tail
+    const m = String(env).match(/([0-9a-f]{7,40})/i);
+    if (m) return m[1].slice(0, 12);
+    return String(env).slice(0, 24);
+  }
+  try {
+    return require('child_process')
+      .execSync('git rev-parse --short HEAD', {
+        cwd: ROOT,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      })
+      .trim();
+  } catch {
+    return 'unknown';
+  }
+}
+const BUILD_REV = resolveGitRev();
+const BUILD_TIME = new Date().toISOString();
+
 const PROTOCOL = 7; // 2–5 player FFA seats
 const MAX_SEATS = 5;
 const MIN_START = 2;
@@ -108,6 +137,8 @@ function serveStatic(req, res) {
         ok: true,
         service: 'dune2v',
         protocol: PROTOCOL,
+        rev: BUILD_REV,
+        buildTime: BUILD_TIME,
         rooms: rooms.size,
         feedback: feedbackStore.count(),
       }),
@@ -116,6 +147,40 @@ function serveStatic(req, res) {
         'Cache-Control': 'no-store',
       }
     );
+  }
+
+  // Client revision stamp — always fresh (no cache)
+  if (urlPath === '/js/version.js' || urlPath === '/api/version') {
+    if (urlPath === '/api/version') {
+      return send(
+        res,
+        200,
+        JSON.stringify({
+          ok: true,
+          service: 'dune2v',
+          rev: BUILD_REV,
+          buildTime: BUILD_TIME,
+          protocol: PROTOCOL,
+        }),
+        {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Cache-Control': 'no-store',
+        }
+      );
+    }
+    const body =
+      '/* dune2v build */\n' +
+      '(function(g){var D=g.Dune2=g.Dune2||{};D.BUILD={rev:' +
+      JSON.stringify(BUILD_REV) +
+      ',time:' +
+      JSON.stringify(BUILD_TIME) +
+      ',protocol:' +
+      PROTOCOL +
+      ',source:"server"};})(typeof window!=="undefined"?window:globalThis);\n';
+    return send(res, 200, body, {
+      'Content-Type': 'text/javascript; charset=utf-8',
+      'Cache-Control': 'no-store',
+    });
   }
 
   if (urlPath === '/api/recordings' && req.method === 'GET') {
@@ -247,9 +312,15 @@ function serveStatic(req, res) {
     const ext = path.extname(filePath).toLowerCase();
     const type = MIME[ext] || 'application/octet-stream';
     const stream = fs.createReadStream(filePath);
+    // HTML + JS change often during playtest — do not cache-stale the client
+    const noCache =
+      ext === '.html' || ext === '.js' || ext === '.css' || ext === '.json';
     res.writeHead(200, {
       'Content-Type': type,
-      'Cache-Control': ext === '.html' ? 'no-cache' : 'public, max-age=300',
+      'Cache-Control': noCache
+        ? 'no-cache, no-store, must-revalidate'
+        : 'public, max-age=300',
+      'X-Dune2-Rev': BUILD_REV,
     });
     stream.pipe(res);
     stream.on('error', () => {
@@ -1065,6 +1136,8 @@ function setupWs(server) {
       type: 'hello',
       service: 'dune2v',
       protocol: PROTOCOL,
+      rev: BUILD_REV,
+      buildTime: BUILD_TIME,
       message: 'Server-authoritative MP. create | join | spectate | cmd | set_name',
     });
 
@@ -1077,17 +1150,32 @@ function setupWs(server) {
         return;
       }
 
+      // Stamp client rev from any first message (create/join/spectate/cmd)
+      if (msg.clientRev && !ws.clientRev) {
+        ws.clientRev = String(msg.clientRev).slice(0, 32);
+        console.log(
+          `[ws] client rev=${ws.clientRev} server rev=${BUILD_REV}` +
+            (ws.clientRev !== BUILD_REV ? ' ⚠ MISMATCH' : ' (match)')
+        );
+      }
+
       if (msg.type === 'ping') {
-        sendJson(ws, { type: 'pong', t: msg.t || Date.now() });
+        sendJson(ws, { type: 'pong', t: msg.t || Date.now(), rev: BUILD_REV });
         return;
       }
 
       if (msg.type === 'create') {
+        console.log(
+          `[ws] create name=${msg.name || '?'} clientRev=${msg.clientRev || ws.clientRev || '?'}`
+        );
         createRoom(ws, msg.playerId, msg.name);
         return;
       }
 
       if (msg.type === 'join') {
+        console.log(
+          `[ws] join room=${msg.room} name=${msg.name || '?'} clientRev=${msg.clientRev || ws.clientRev || '?'}`
+        );
         // Optional role: 'spectator' reuses join shape
         if (msg.role === 'spectator') {
           joinSpectate(ws, msg.room, msg.playerId, msg.name);
@@ -1098,6 +1186,9 @@ function setupWs(server) {
       }
 
       if (msg.type === 'spectate') {
+        console.log(
+          `[ws] spectate room=${msg.room} clientRev=${msg.clientRev || ws.clientRev || '?'}`
+        );
         joinSpectate(ws, msg.room, msg.playerId, msg.name);
         return;
       }
@@ -1440,7 +1531,9 @@ function runRecordingCleanup(reason) {
 }
 
 server.listen(PORT, HOST, () => {
-  console.log(`[dune2v] http://${HOST}:${PORT}  static=${ROOT}  ws=/ws  protocol=${PROTOCOL}`);
+  console.log(
+    `[dune2v] http://${HOST}:${PORT}  static=${ROOT}  ws=/ws  protocol=${PROTOCOL}  rev=${BUILD_REV}`
+  );
   // Immediate sweep of leftover 0-cmd stubs on volume
   runRecordingCleanup('boot');
   setInterval(() => runRecordingCleanup('interval'), PRUNE_SHORT_MS).unref();

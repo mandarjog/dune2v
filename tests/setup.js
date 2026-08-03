@@ -20,6 +20,7 @@ const files = [
   'js/combat.js',
   'js/ai.js',
   'js/game.js',
+  'js/version.js',
   'js/scenario.js',
   'maps/skirmish1.js',
   'maps/skirmish_large.js',

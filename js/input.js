@@ -415,6 +415,63 @@
         return;
       }
 
+      // F — follow unit under cursor (placement mode already handled F above)
+      if (e.code === 'KeyF') {
+        const units = selectedUnits(game);
+        if (!units.length) {
+          D.Game.pushMessage(
+            game,
+            'Select unit(s), hover a unit, then F to follow.'
+          );
+          e.preventDefault();
+          return;
+        }
+        const ht = game.hoverTile;
+        if (!ht || ht.tx == null) {
+          D.Game.pushMessage(game, 'Hover a unit, then F to follow.');
+          e.preventDefault();
+          return;
+        }
+        const hit = pickAt(game, ht.tx + 0.5, ht.ty + 0.5);
+        if (!hit || hit.kind !== 'unit') {
+          D.Game.pushMessage(game, 'Follow target must be a unit (own or visible enemy).');
+          e.preventDefault();
+          return;
+        }
+        const target = hit.entity;
+        const o = me(game);
+        // Enemy must be visible (pickAt already hides fogged enemies, double-check)
+        if (
+          target.owner !== o &&
+          D.Combat &&
+          D.Combat.canSee &&
+          !D.Combat.canSee(game, o, target.x, target.y)
+        ) {
+          D.Game.pushMessage(game, 'Cannot follow — target not visible.');
+          e.preventDefault();
+          return;
+        }
+        const ids = units.map((u) => u.id).filter((id) => id !== target.id);
+        if (!ids.length) {
+          D.Game.pushMessage(game, 'Cannot follow self — select other units.');
+          e.preventDefault();
+          return;
+        }
+        issueOrder(game, ids, { type: 'follow', targetId: target.id });
+        const tName =
+          (D.config.units[target.type] && D.config.units[target.type].name) ||
+          target.type;
+        D.Game.pushMessage(
+          game,
+          'Following ' +
+            tName +
+            (target.owner === o ? '' : ' (enemy)') +
+            '.'
+        );
+        e.preventDefault();
+        return;
+      }
+
       // M / G — move to cursor (trackpad-friendly)
       // A — attack-move / attack under cursor (classic RTS; no pan when units selected)
       if (e.code === 'KeyM' || e.code === 'KeyG' || e.code === 'KeyA') {
@@ -763,12 +820,31 @@
       const hit = pickAt(game, world.x, world.y);
 
       // attack enemy
-      if (hit && hit.entity.owner === enemy) {
+      if (hit && hit.kind === 'unit' && hit.entity.owner === enemy) {
         issueOrder(
           game,
           units.map((u) => u.id),
           { type: 'attack', targetId: hit.entity.id }
         );
+        return;
+      }
+      // attack enemy building
+      if (hit && hit.kind === 'building' && hit.entity.owner === enemy) {
+        issueOrder(
+          game,
+          units.map((u) => u.id),
+          { type: 'attack', targetId: hit.entity.id }
+        );
+        return;
+      }
+
+      // right-click friendly unit → follow
+      if (hit && hit.kind === 'unit' && hit.entity.owner === me(game)) {
+        const target = hit.entity;
+        const ids = units.map((u) => u.id).filter((id) => id !== target.id);
+        if (ids.length) {
+          issueOrder(game, ids, { type: 'follow', targetId: target.id });
+        }
         return;
       }
 

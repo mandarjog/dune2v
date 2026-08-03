@@ -276,6 +276,48 @@
     return true;
   }
 
+  function followStandoff() {
+    return (D.config.path && D.config.path.followStandoff) != null
+      ? D.config.path.followStandoff
+      : 1.75;
+  }
+
+  function followRepathDist() {
+    return (D.config.path && D.config.path.followRepathDist) != null
+      ? D.config.path.followRepathDist
+      : 1.25;
+  }
+
+  /**
+   * Goal near a follow target: standoff ring, stable per-unit angle to reduce stacking.
+   * @param {object} target unit
+   * @param {object} follower unit
+   * @param {number} [slotIndex] optional group index for ring spacing
+   */
+  function followGoal(target, follower, slotIndex) {
+    const standoff = followStandoff();
+    const idx = slotIndex != null ? slotIndex : follower.id || 0;
+    const ang = ((idx * 2.399963) % (Math.PI * 2)) + (follower.id || 0) * 0.17;
+    let gx = target.x + Math.cos(ang) * standoff;
+    let gy = target.y + Math.sin(ang) * standoff;
+    return { x: gx, y: gy };
+  }
+
+  /** True if follower's owner can see target (friendly always; enemy needs FOW). */
+  function canFollowTarget(game, owner, target) {
+    if (!target || target.hp <= 0) return false;
+    // Buildings not supported in v1
+    if (target.tileW != null) return false;
+    if (target.owner === owner) return true;
+    if (D.Combat && D.Combat.canSee) {
+      return D.Combat.canSee(game, owner, target.x, target.y);
+    }
+    if (D.Map && D.Map.isVisible) {
+      return D.Map.isVisible(game, owner, Math.floor(target.x), Math.floor(target.y));
+    }
+    return true;
+  }
+
   /**
    * Aggressive repath when empty-path / stuck: personal slot → group click → alts.
    * @returns {boolean} true if a non-empty path was assigned
@@ -466,6 +508,22 @@
         if (order.type === 'stop') {
           clearOrder(u);
           if (u.harvest) u.harvest.state = 'idle';
+          continue;
+        }
+
+        if (order.type === 'follow' && order.targetId != null && D.Entities) {
+          // Never follow yourself
+          if (u.id === order.targetId) continue;
+          const t = D.Entities.getById(game, order.targetId);
+          const owner = order._owner || u.owner;
+          if (!canFollowTarget(game, owner, t)) continue;
+          setOrder(u, { type: 'follow', targetId: order.targetId });
+          const goal = followGoal(t, u);
+          if (D.Path && game.map) {
+            u.path = D.Path.find(game.map, u.x, u.y, goal.x, goal.y) || [];
+          }
+          u._followAimX = goal.x;
+          u._followAimY = goal.y;
           continue;
         }
 
@@ -745,6 +803,49 @@
               markStuck(game, u, 'path', dt);
             }
           }
+          continue;
+        }
+
+        if (order.type === 'follow') {
+          const target = D.Entities.getById(game, order.targetId);
+          if (!target || target.hp <= 0 || target.tileW != null) {
+            clearStuck(u);
+            clearOrder(u);
+            continue;
+          }
+          // Enemy must stay visible — no fog-chasing
+          if (!canFollowTarget(game, u.owner, target)) {
+            clearStuck(u);
+            clearOrder(u);
+            continue;
+          }
+          const standoff = followStandoff();
+          const dist = Math.hypot(u.x - target.x, u.y - target.y);
+          // Close enough to ring: hold, face target
+          if (dist <= standoff + 0.35) {
+            u.path = [];
+            clearStuck(u);
+            const dx = target.x - u.x;
+            const dy = target.y - u.y;
+            if (dx * dx + dy * dy > 1e-6) {
+              u.facing = (Math.atan2(dy, dx) + Math.PI * 2) % (Math.PI * 2);
+            }
+            continue;
+          }
+          const goal = followGoal(target, u);
+          const aimMoved =
+            u._followAimX == null ||
+            Math.hypot(goal.x - (u._followAimX || 0), goal.y - (u._followAimY || 0)) >
+              followRepathDist();
+          if (aimMoved || !u.path || !u.path.length) {
+            u._followAimX = goal.x;
+            u._followAimY = goal.y;
+            // Force repath when leader moved
+            if (aimMoved) u.path = [];
+            D.Orders.ensurePath(game, u, goal.x, goal.y, () => repaths++ < maxRepaths);
+          }
+          D.Orders.followPath(game, u, dt);
+          clearStuck(u);
           continue;
         }
 
