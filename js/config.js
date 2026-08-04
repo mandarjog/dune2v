@@ -45,10 +45,10 @@
        * Group move: unique goal slots around the click so units don't stack
        * (stacking also makes combat look like splash — damage is still per-unit).
        */
-      formationSpacing: 1.0,
+      formationSpacing: 1.15,
       /** Soft push only when fully stopped (never while following a path). */
-      separationRadius: 0.5,
-      separationStrength: 0.25,
+      separationRadius: 0.7,
+      separationStrength: 0.45,
       /** Min ticks between A* repaths for one unit (stops vibration near bases). */
       repathCooldownTicks: 16,
       /** How close path end may be to goal before we skip repath. */

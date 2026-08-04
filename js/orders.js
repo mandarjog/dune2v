@@ -113,9 +113,9 @@
   }
 
   /**
-   * Soft separation ONLY for units that have finished pathing.
-   * Never push units that still have a path — that fights followPath and causes
-   * vibration / wedge-and-repath loops around bases.
+   * Soft separation for units that are not actively pathing.
+   * - Never push units that still have a path (fights followPath / vibration).
+   * - Idle units (no move order) get a stronger unstack so group-arrivals don't pile.
    *
    * Runs in the sim (SP + server MP). Pure client-side separation cannot work for
    * multiplayer: the next server snapshot overwrites positions.
@@ -123,16 +123,16 @@
   function applySeparation(game, dt) {
     const units = game.units;
     if (!units || units.length < 2) return;
-    if ((game.tick | 0) % 4 !== 0) return;
+    if ((game.tick | 0) % 3 !== 0) return;
 
     const r =
       (D.config.path && D.config.path.separationRadius) != null
         ? D.config.path.separationRadius
-        : 0.5;
+        : 0.65;
     const strength =
       (D.config.path && D.config.path.separationStrength) != null
         ? D.config.path.separationStrength
-        : 0.25;
+        : 0.4;
     const r2 = r * r;
     const cell = 1;
     const buckets = new Map();
@@ -142,9 +142,8 @@
       if (u.hp <= 0) continue;
       // Critical: no separation while following a path
       if (u.path && u.path.length > 0) continue;
-      // Idle or order complete only
+      // Still on a point-move with empty path (crawling) — don't fight crawl
       if (u.order && (u.order.type === 'move' || u.order.type === 'attack-move')) {
-        // still walking to goal without path — leave alone (stuck recovery handles)
         continue;
       }
       list.push(u);
@@ -783,15 +782,20 @@
             (D.config.path && D.config.path.arrivalDist) != null
               ? D.config.path.arrivalDist + 0.35
               : 0.5;
-          // Also accept arriving near original group click (formation slot unreachable)
           const groupD =
             order.groupX != null
               ? Math.hypot(u.x - order.groupX, u.y - order.groupY)
               : Infinity;
           const d = Math.hypot(u.x - order.x, u.y - order.y);
 
-          // Close enough to formation slot OR group click → done
-          if (d < arrive || groupD < arrive + 0.55) {
+          // Arrive at *personal* formation slot only.
+          // (Old "near group click" finish made whole armies stack on one tile.)
+          // Only fall back to group click after recovery already abandoned the slot.
+          const slotAbandoned = !!(u._groupGoalTried || u._altGoalTried);
+          if (
+            d < arrive ||
+            (slotAbandoned && groupD < arrive + 0.4)
+          ) {
             u.path = [];
             clearStuck(u);
             if (order.type === 'move') clearOrder(u);

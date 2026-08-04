@@ -50,6 +50,54 @@ describe('group move formation', () => {
     }
   });
 
+  it('group of 20 does not stack on one tile after arriving', () => {
+    const game = Dune2.Game.create();
+    Dune2.Game.startSkirmish(game, Dune2.MAPS.skirmish_large, {
+      owners: ['player', 'enemy'],
+      startMode: 'mcv',
+    });
+    Dune2.config.features.fog = false;
+    Dune2.config.features.ai = false;
+    const ids = [];
+    for (let i = 0; i < 20; i++) {
+      const u = Dune2.Entities.createUnit(
+        game,
+        'combatTank',
+        'player',
+        40 + (i % 5) * 0.9,
+        50 + Math.floor(i / 5) * 0.9
+      );
+      ids.push(u.id);
+    }
+    Dune2.Orders.issue(game, ids, { type: 'move', x: 55.5, y: 50.5 });
+    // Let them arrive (tanks ~1.2 tiles/s, ~15 tile trip → need ~15s+)
+    for (let i = 0; i < 280; i++) Dune2.Game.tick(game, 0.05);
+    // Idle separation unstack if any landed tight
+    for (let i = 0; i < 40; i++) Dune2.Game.tick(game, 0.05);
+
+    const cells = new Set();
+    let minX = 1e9,
+      maxX = -1e9,
+      minY = 1e9,
+      maxY = -1e9;
+    for (const id of ids) {
+      const u = game.units.find((x) => x.id === id);
+      assert.ok(u && u.hp > 0);
+      cells.add(Math.floor(u.x) + ',' + Math.floor(u.y));
+      minX = Math.min(minX, u.x);
+      maxX = Math.max(maxX, u.x);
+      minY = Math.min(minY, u.y);
+      maxY = Math.max(maxY, u.y);
+    }
+    // Must not all sit on one or two tiles
+    assert.ok(
+      cells.size >= 10,
+      'spread across tiles got ' + cells.size + ' unique cells'
+    );
+    const span = Math.hypot(maxX - minX, maxY - minY);
+    assert.ok(span >= 2.5, 'formation span got ' + span.toFixed(2));
+  });
+
   it('combat damages only the targeted unit id (not all stacked)', () => {
     const game = Dune2.Game.create();
     Dune2.Game.startSkirmish(game, Dune2.MAPS.skirmish_large, {
