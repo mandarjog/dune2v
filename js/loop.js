@@ -90,6 +90,8 @@
         if (game.tick % 4 === 0 || game.phase !== 'playing' || mpHud) D.UI.refresh(game);
         D.UI.updateDebug(game);
       }
+      // SP + MP client health → server (stuck armies, heartbeats)
+      if (D.Telemetry && D.Telemetry.tick) D.Telemetry.tick(game, nowMs);
 
       // Autosave every ~15s (or ~30s if huge army — localStorage JSON is expensive)
       if (

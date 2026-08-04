@@ -16,6 +16,7 @@ SCRIPTS=(
   "$ROOT/js/pathfinding.js"
   "$ROOT/js/entities.js"
   "$ROOT/js/orders.js"
+  "$ROOT/js/telemetry.js"
   "$ROOT/js/economy.js"
   "$ROOT/js/combat.js"
   "$ROOT/js/ai.js"

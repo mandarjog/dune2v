@@ -400,18 +400,22 @@
 
     let best = null;
     let bestNd = dist + 1;
+    let any = null;
     for (const [sx, sy] of dirs) {
       const len = Math.hypot(sx, sy) || 1;
       const nx = u.x + (sx / len) * step;
       const ny = u.y + (sy / len) * step;
       if (!D.Map.isWalkable(game.map, Math.floor(nx), Math.floor(ny))) continue;
       const nd = Math.hypot(tx - nx, ty - ny);
+      if (!any) any = { nx, ny, sx: sx / len, sy: sy / len };
       if (nd < bestNd) {
         bestNd = nd;
         best = { nx, ny, sx: sx / len, sy: sy / len };
       }
     }
-    if (!best || bestNd >= dist - 1e-4) return false;
+    // Prefer progress toward goal; if boxed in, take any walkable step (escape)
+    if (!best || bestNd >= dist - 1e-4) best = any;
+    if (!best) return false;
     u.x = best.nx;
     u.y = best.ny;
     u.facing = (Math.atan2(best.sy, best.sx) + Math.PI * 2) % (Math.PI * 2);
@@ -665,6 +669,16 @@
         game.stats.pathLastBackend =
           (D.Path.metrics && D.Path.metrics.lastBackend) || b.backend || 'astar';
         game.stats.pathLastFlowBuildMs = flowMs;
+        if (D.Telemetry && D.Telemetry.orderIssue && pointMovers.length) {
+          D.Telemetry.orderIssue(
+            game,
+            pointMovers.length,
+            order.type,
+            game.stats.pathLastBackend,
+            game.stats.pathLastIssueOk,
+            wallish
+          );
+        }
       } else if (pathBatch) {
         D.Path.endBatch();
       }
@@ -1022,8 +1036,16 @@
       if (allowRepath && !allowRepath()) return;
       unstickStart(game, u);
       const path = D.Path.find(game.map, u.x, u.y, tx, ty);
-      u.path = path || [];
-      u._lastRepathTick = game.tick;
+      // Critical: never wipe an existing path (incl. crawl micro-paths) when
+      // A* fails — that caused permanent stuck (empty→crawl→ensurePath clears).
+      if (path && path.length) {
+        u.path = path;
+        u._lastRepathTick = game.tick;
+      } else if (empty) {
+        u.path = [];
+        u._lastRepathTick = game.tick;
+      }
+      // else keep previous path and do not bump cooldown hard-fail
     },
 
     followPath(game, u, dt) {

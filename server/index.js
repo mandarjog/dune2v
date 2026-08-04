@@ -296,6 +296,84 @@ function serveStatic(req, res) {
       });
   }
 
+  // Client telemetry (SP skirmish + MP browser) — stuck armies, heartbeats
+  if (urlPath === '/api/telemetry' && req.method === 'POST') {
+    return readJsonBody(req, 16000)
+      .then((body) => {
+        const kind = String(body.kind || 'event')
+          .replace(/[^a-z0-9_]/gi, '')
+          .slice(0, 32) || 'event';
+        const entry = {
+          at: Date.now(),
+          kind,
+          rev: body.rev ? String(body.rev).slice(0, 24) : null,
+          session: body.session ? String(body.session).slice(0, 40) : null,
+          multiplayer: !!body.multiplayer,
+          phase: body.phase ? String(body.phase).slice(0, 24) : null,
+          tick: body.tick | 0,
+          units: body.units | 0,
+          stuckPath: body.stuckPath | 0,
+          stuckOther: body.stuckOther | 0,
+          pathStuck: body.pathStuck | 0,
+          fps: body.fps | 0,
+          scenario: body.scenario ? String(body.scenario).slice(0, 32) : null,
+          message: body.message ? String(body.message).slice(0, 200) : null,
+          n: body.n | 0,
+          orderType: body.orderType ? String(body.orderType).slice(0, 24) : null,
+          backend: body.backend ? String(body.backend).slice(0, 24) : null,
+          ok: body.ok | 0,
+          ms: body.ms | 0,
+          stuckSample: Array.isArray(body.stuckSample)
+            ? body.stuckSample.slice(0, 8)
+            : null,
+          href: body.href ? String(body.href).slice(0, 300) : null,
+          ua: String(req.headers['user-agent'] || '').slice(0, 160),
+          ip: String(req.headers['fly-client-ip'] || req.socket.remoteAddress || '').slice(0, 80),
+        };
+        // Log interesting events always; heartbeats only when stuck
+        if (kind === 'stuck_path' || kind === 'order_issue' || (kind === 'heartbeat' && entry.stuckPath >= 3)) {
+          console.log(
+            `[telemetry] ${kind} rev=${entry.rev || '?'} mp=${entry.multiplayer} ` +
+              `tick=${entry.tick} units=${entry.units} stuckPath=${entry.stuckPath || entry.pathStuck} ` +
+              `fps=${entry.fps}` +
+              (entry.message ? ' ' + entry.message : '') +
+              (entry.n ? ` n=${entry.n} via=${entry.backend}` : '')
+          );
+        } else if (kind === 'heartbeat') {
+          // quieter: only mark presence
+          if ((entry.tick | 0) % 2000 < 50) {
+            console.log(
+              `[telemetry] heartbeat rev=${entry.rev || '?'} mp=${entry.multiplayer} tick=${entry.tick} units=${entry.units}`
+            );
+          }
+        }
+        // Persist stuck events to disk for later review
+        if (kind === 'stuck_path' || kind === 'order_issue') {
+          feedbackStore.append(
+            Object.assign({ type: 'telemetry' }, entry)
+          );
+        }
+        return send(
+          res,
+          200,
+          JSON.stringify({ ok: true }),
+          {
+            'Content-Type': 'application/json; charset=utf-8',
+            'Cache-Control': 'no-store',
+          }
+        );
+      })
+      .catch((err) => {
+        const code = err && err.message === 'too_large' ? 413 : 400;
+        return send(
+          res,
+          code,
+          JSON.stringify({ ok: false, error: String(err.message || err) }),
+          { 'Content-Type': 'application/json; charset=utf-8' }
+        );
+      });
+  }
+
   if (urlPath.startsWith('/ws')) {
     return send(res, 426, 'Upgrade Required', { 'Content-Type': 'text/plain' });
   }
