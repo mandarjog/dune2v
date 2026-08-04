@@ -923,7 +923,7 @@ function sendMatchSync(ws, room, { reconnected, spectator }) {
   const names = snap.names || roomNames(room);
   sendJson(ws, {
     type: 'start',
-    seed: 42,
+    seed: room.mapSeed != null ? room.mapSeed : (room.sim && room.sim.seed) || 0,
     map: 'skirmish_large',
     authority: 'server',
     reconnected: !!reconnected,
@@ -974,9 +974,13 @@ function startMatchNow(room, opts) {
 
   const snap = roomSnapshot(room);
   const names = snap.names || roomNames(room);
+  // Random map seed (unique per match; stored on room for reconnect / logs)
+  if (room.mapSeed == null) {
+    room.mapSeed = ((Math.random() * 0x7fffffff) | 0) >>> 0;
+  }
   const startMsg = {
     type: 'start',
-    seed: 42,
+    seed: room.mapSeed,
     map: 'skirmish_large',
     authority: 'server',
     speed: 2,
@@ -997,7 +1001,12 @@ function startMatchNow(room, opts) {
   });
 
   room.speedPending = null;
-  const sim = new RoomSim(room.id, { names, owners, startMode });
+  const sim = new RoomSim(room.id, {
+    names,
+    owners,
+    startMode,
+    seed: room.mapSeed,
+  });
   room.sim = sim;
   sim.onState = (payload, tick, extra) => {
     const wire = JSON.stringify({
@@ -1031,7 +1040,7 @@ function startMatchNow(room, opts) {
   try {
     sim.start();
     console.log(
-      `[room ${room.id}] server sim started owners=${owners.join(',')} n=${owners.length}`
+      `[room ${room.id}] server sim started owners=${owners.join(',')} n=${owners.length} mapSeed=${room.mapSeed}`
     );
     return true;
   } catch (err) {

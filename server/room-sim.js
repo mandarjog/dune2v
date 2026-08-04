@@ -36,8 +36,13 @@ class RoomSim {
     const D = this.D;
     D.config.features.ai = false;
     D.config.features.debugCheats = false;
-    // Fixed seed for deterministic re-sim replay
-    if (D.config.seed == null) D.config.seed = 42;
+    // Random map per match (or fixed seed when replaying / meta.seed set)
+    const seed =
+      this.meta.seed != null
+        ? this.meta.seed >>> 0
+        : ((Math.random() * 0x7fffffff) | 0) >>> 0;
+    this.seed = seed;
+    D.config.seed = seed;
 
     this.game = D.Game.create();
     this.game.multiplayer = true;
@@ -47,13 +52,21 @@ class RoomSim {
       this.meta.owners && this.meta.owners.length
         ? this.meta.owners
         : ['player', 'enemy'];
-    D.Game.startSkirmish(this.game, D.MAPS.skirmish_large || D.MAPS.skirmish1, {
+    const mapDef =
+      D.MAPS.generateSkirmishLarge
+        ? D.MAPS.generateSkirmishLarge(seed)
+        : D.MAPS.skirmish_large || D.MAPS.skirmish1;
+    D.Game.startSkirmish(this.game, mapDef, {
       owners,
       names: this.meta.names || null,
       startMode: this.meta.startMode === 'mcv' ? 'mcv' : 'base',
+      seed,
+      forceGenerate: false, // already generated above
+      generateMap: false,
     });
     this.game.multiplayer = true;
     this.game._serverSim = true;
+    this.game.rngSeed = seed;
     this.running = true;
     this.speed = DEFAULT_SPEED;
     this.game.netSpeed = DEFAULT_SPEED;
@@ -63,7 +76,7 @@ class RoomSim {
       names: this.meta.names || {},
       owners: owners.slice(),
       baseDt: BASE_DT,
-      seed: D.config.seed,
+      seed: seed,
     });
     // One full init snapshot (map + starting units) — not per-frame dumps
     const initState = this._serializeInit();

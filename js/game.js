@@ -171,7 +171,16 @@
     startSkirmish(game, mapDef, opts) {
       opts = opts || {};
       D.Entities.resetIds();
-      D.rng.seed(D.config.seed);
+      // Match seed: opts.seed > config.seed (MP randomizes; SP keeps config default)
+      const seed =
+        opts.seed != null
+          ? opts.seed >>> 0
+          : D.config.seed != null
+            ? D.config.seed >>> 0
+            : 42;
+      D.config.seed = seed;
+      D.rng.seed(seed);
+      game.rngSeed = seed;
       game.phase = 'playing';
       game.tick = 0;
       game.winner = null;
@@ -223,7 +232,26 @@
         game.localOwner = owners[0];
       }
 
-      game.map = D.Map.createFromDef(mapDef);
+      // Prefer a fresh procedural map when a generator is available and seed set
+      let def = mapDef;
+      if (
+        (!def || def.id === 'skirmish_large') &&
+        D.MAPS &&
+        typeof D.MAPS.generateSkirmishLarge === 'function' &&
+        opts.generateMap !== false
+      ) {
+        // MP always regenerates; SP regenerates when opts.seed provided
+        if (opts.forceGenerate || opts.seed != null) {
+          def = D.MAPS.generateSkirmishLarge(seed);
+        } else if (!def) {
+          def = D.MAPS.skirmish_large || D.MAPS.skirmish1;
+        }
+      }
+      if (!def) def = D.MAPS.skirmish_large || D.MAPS.skirmish1;
+      game.mapDefId = def.id || 'skirmish_large';
+      game.map = D.Map.createFromDef(def);
+      // Keep spawns from the def used (generator may jitter)
+      mapDef = def;
       D.Map.initFog(game);
 
       if (startMode === 'mcv') {
