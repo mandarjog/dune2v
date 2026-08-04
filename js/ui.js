@@ -329,6 +329,22 @@
         D.UI.refreshSpeedHud(boundGame);
       });
 
+      $('btn-mp-resign')?.addEventListener('click', () => {
+        if (!boundGame || !boundGame.multiplayer || boundGame.spectator) return;
+        if (!D.Net) return;
+        if (!confirm('Resign and become a spectator? Your base will be removed.')) return;
+        D.Net.resign();
+      });
+      $('btn-mp-end-match')?.addEventListener('click', () => {
+        if (!boundGame || !boundGame.multiplayer || !D.Net) return;
+        if (!D.Net.isHost(boundGame)) {
+          D.Game.pushMessage(boundGame, 'Only the host can end the match.');
+          return;
+        }
+        if (!confirm('End match for everyone and close the room?')) return;
+        D.Net.endMatch();
+      });
+
       $('btn-end-watch')?.addEventListener('click', () => {
         D.UI.watchRecording(D.UI.lastRecordingId());
       });
@@ -597,6 +613,7 @@
             const spec = !!(game && game.spectator);
             D.UI.setChatVisible(!!(game && game.multiplayer));
             D.UI.setMpSpeedVisible(!!(game && game.multiplayer && !spec && game.phase === 'playing'));
+            D.UI.refreshMpMatchActions(game);
             D.UI.refreshMatchup(game);
             D.UI.refreshSpeedHud(game);
             D.UI.refresh(game);
@@ -607,6 +624,7 @@
             D.UI.setMpSpeedVisible(
               !!(game && game.multiplayer && !spec && game.phase === 'playing')
             );
+            D.UI.refreshMpMatchActions(game);
             if (spec) {
               D.UI.hideLiveMatches();
               D.UI.hideMenu();
@@ -618,9 +636,19 @@
               }
             }
           }
+          if (ev === 'resigned') {
+            D.UI.setMpSpeedVisible(false);
+            D.UI.refreshMpMatchActions(game);
+            D.UI.refresh(game);
+          }
+          if (ev === 'player_resigned') {
+            D.UI.refreshMatchup(game);
+            D.UI.refreshMpMatchActions(game);
+          }
           if (ev === 'left' || ev === 'disconnect') {
             D.UI.setChatVisible(false);
             D.UI.setMpSpeedVisible(false);
+            D.UI.refreshMpMatchActions(null);
             D.UI.hideSpeedModal();
           }
           if (ev === 'chat') {
@@ -949,19 +977,43 @@
       if (wrap) wrap.classList.toggle('hidden', !show);
     },
 
+    /** Resign / End match buttons during live MP. */
+    refreshMpMatchActions(game) {
+      const wrap = $('mp-match-actions');
+      const btnResign = $('btn-mp-resign');
+      const btnEnd = $('btn-mp-end-match');
+      if (!wrap) return;
+      const mp =
+        game &&
+        game.multiplayer &&
+        !game.replay &&
+        (game.phase === 'playing' || game.phase === 'paused');
+      wrap.classList.toggle('hidden', !mp);
+      if (!mp) return;
+      const spec = !!game.spectator;
+      if (btnResign) btnResign.classList.toggle('hidden', spec);
+      if (btnEnd) {
+        const host = D.Net && D.Net.isHost && D.Net.isHost(game);
+        btnEnd.classList.toggle('hidden', !host || spec);
+      }
+    },
+
     /** Show speed dropdown for SP (instant) or MP (request). Hidden in menu. */
     updateSpeedControl(game) {
       if (!game) {
         D.UI.setMpSpeedVisible(false);
+        D.UI.refreshMpMatchActions(null);
         return;
       }
       if (game.replay || game.spectator) {
         D.UI.setMpSpeedVisible(false);
+        D.UI.refreshMpMatchActions(game);
         return;
       }
       const playing = game.phase === 'playing' || game.phase === 'paused';
       D.UI.setMpSpeedVisible(playing);
       D.UI.syncSpeedSelect(game);
+      D.UI.refreshMpMatchActions(game);
       const sel = els.mpSpeedSelect || $('mp-speed-select');
       if (sel) {
         sel.title = game.multiplayer

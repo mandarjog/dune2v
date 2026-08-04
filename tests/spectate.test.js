@@ -125,6 +125,47 @@ describe('live API + spectator WS', () => {
     assert.ok(data.protocol >= 6, 'protocol bumped for spectate');
   });
 
+  it('host can end lobby; resign makes spectator and last player wins', async () => {
+    const host = await openWs(wsUrl);
+    await waitMsg(host, 'hello');
+    host.send(
+      JSON.stringify({
+        type: 'create',
+        playerId: 'p_end_host',
+        name: 'HostEnd',
+      })
+    );
+    const j1 = await waitMsg(host, 'joined');
+    const room = j1.room;
+    const guest = await openWs(wsUrl);
+    await waitMsg(guest, 'hello');
+    guest.send(
+      JSON.stringify({
+        type: 'join',
+        room,
+        playerId: 'p_end_guest',
+        name: 'GuestEnd',
+      })
+    );
+    await waitMsg(guest, 'joined');
+    host.send(JSON.stringify({ type: 'start_match', startMode: 'base' }));
+    await waitMsg(host, 'start');
+    await waitMsg(guest, 'start');
+
+    // Guest resigns → spectator
+    guest.send(JSON.stringify({ type: 'resign' }));
+    const resigned = await waitMsg(guest, 'resigned');
+    assert.equal(resigned.spectator, true);
+    // Room should end — only host left
+    const end = await waitMsg(host, 'match_end', 6000);
+    assert.ok(end);
+    assert.equal(end.winner, 'player'); // host seat
+    assert.equal(end.reason, 'last_player');
+
+    host.close();
+    guest.close();
+  });
+
   it('lists room after host create; spectate rejects cmds and does not take seat', async () => {
     const host = await openWs(wsUrl);
     await waitMsg(host, 'hello');

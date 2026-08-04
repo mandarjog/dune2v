@@ -189,6 +189,16 @@
       }
     },
 
+    /** Host: end match and kill room (all players). */
+    endMatch() {
+      return D.Net._send({ type: 'end_match' });
+    },
+
+    /** Player: resign → become spectator; last player standing ends room. */
+    resign() {
+      return D.Net._send({ type: 'resign' });
+    },
+
     isMultiplayer(game) {
       return !!(game && game.multiplayer);
     },
@@ -588,6 +598,31 @@
         D.Net._applyRoster(msg);
         D.Net.status = 'lobby';
         D.Net._emit('lobby_wait', msg);
+        return;
+      }
+
+      if (msg.type === 'resigned') {
+        D.Net.role = 'spectator';
+        D.Net.seat = null;
+        D.Net._applyRoster(msg);
+        const game = D.Net.game;
+        if (game) {
+          game.spectator = true;
+          game.netRole = 'spectator';
+          // Keep camera; FOW off via spectator flag
+          D.Game.pushMessage(game, 'You resigned — now spectating.');
+        }
+        D.Net._emit('resigned', msg);
+        return;
+      }
+
+      if (msg.type === 'player_resigned') {
+        D.Net._applyRoster(msg);
+        const game = D.Net.game;
+        if (game && msg.name) {
+          D.Game.pushMessage(game, (msg.name || 'A player') + ' resigned.');
+        }
+        D.Net._emit('player_resigned', msg);
         return;
       }
 

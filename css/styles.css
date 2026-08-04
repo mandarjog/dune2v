@@ -161,6 +161,39 @@ body {
 }
 
 /* Must win over .hidden when toggled visible */
+.mp-match-actions {
+  display: flex;
+  gap: 6px;
+  margin: 4px 0 6px;
+  flex-wrap: wrap;
+}
+.mp-match-actions.hidden {
+  display: none;
+}
+.btn-mp-act {
+  font-size: 11px;
+  padding: 3px 8px;
+  background: #2a2520;
+  border: 1px solid var(--panel-border);
+  color: var(--text);
+  border-radius: 3px;
+  cursor: pointer;
+}
+.btn-mp-act:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.btn-mp-act.danger {
+  border-color: #8a3030;
+  color: #e08080;
+}
+.btn-mp-act.danger:hover {
+  background: #3a1818;
+}
+.btn-mp-act.hidden {
+  display: none;
+}
+
 .mp-speed-wrap {
   display: none;
   flex-direction: row;

@@ -75,6 +75,8 @@ const ROOM_IDLE_MS = 60 * 60 * 1000;
 const RECONNECT_GRACE_MS = 15 * 60 * 1000;
 /** Started match with 0 connected players this long → destroy (sim is paused immediately). */
 const EMPTY_MATCH_MS = 3 * 60 * 1000;
+/** Admin UI + kill API. Set ADMIN_TOKEN env in production. */
+const ADMIN_TOKEN = process.env.ADMIN_TOKEN || 'dune2-admin';
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -296,6 +298,147 @@ function serveStatic(req, res) {
           { 'Content-Type': 'application/json; charset=utf-8' }
         );
       });
+  }
+
+  // ── Admin: list / kill rooms ─────────────────────────────────
+  // GET  /admin-dune2?token=…          → simple HTML console
+  // GET  /admin-dune2/api?token=…      → JSON rooms
+  // POST /admin-dune2/kill?token=…     body { room } or ?room=
+  // POST /admin-dune2/kill-all?token=…
+  if (urlPath === '/admin-dune2' || urlPath === '/admin-dune2/') {
+    if (!adminAuthorized(req)) {
+      return send(res, 401, 'Unauthorized — pass ?token=', {
+        'Content-Type': 'text/plain; charset=utf-8',
+      });
+    }
+    const rows = [];
+    for (const room of rooms.values()) {
+      const snap = roomSnapshot(room);
+      rows.push(
+        `<tr>
+          <td><b>${snap.room}</b></td>
+          <td>${snap.title ? String(snap.title).replace(/</g, '') : '—'}</td>
+          <td>${snap.started ? snap.phase || 'playing' : 'lobby'}</td>
+          <td>${snap.players}</td>
+          <td>${snap.spectators}</td>
+          <td>${snap.tick != null ? snap.tick : '—'}</td>
+          <td>${room.sim && room.sim.isPaused ? 'paused' : room.sim ? 'running' : '—'}</td>
+          <td>
+            <a href="/admin-dune2/kill?token=${encodeURIComponent(ADMIN_TOKEN)}&room=${encodeURIComponent(snap.room)}"
+               onclick="return confirm('Kill room ${snap.room}?')">Kill</a>
+          </td>
+        </tr>`
+      );
+    }
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/><title>dune2v admin</title>
+<style>
+body{font-family:system-ui,sans-serif;background:#111;color:#ddd;padding:20px}
+table{border-collapse:collapse;width:100%;max-width:960px}
+th,td{border:1px solid #444;padding:6px 10px;text-align:left}
+th{background:#222}
+button,a.btn{background:#c0392b;color:#fff;border:0;padding:4px 10px;cursor:pointer;border-radius:3px;text-decoration:none;font-size:13px}
+a{color:#6af}
+.meta{color:#888;font-size:12px;margin-bottom:12px}
+</style></head><body>
+<h1>dune2v admin</h1>
+<p class="meta">rev=${BUILD_REV} · rooms=${rooms.size} ·
+<a class="btn" href="/admin-dune2/kill-all?token=${encodeURIComponent(ADMIN_TOKEN)}"
+  onclick="return confirm('Kill ALL rooms?')">Kill all rooms</a>
+ · <a href="/admin-dune2?token=${encodeURIComponent(ADMIN_TOKEN)}">Refresh</a>
+</p>
+<table>
+<thead><tr><th>Room</th><th>Title</th><th>Phase</th><th>Players</th><th>Specs</th><th>Tick</th><th>Sim</th><th></th></tr></thead>
+<tbody>
+${rows.length ? rows.join('\n') : '<tr><td colspan="8">No rooms</td></tr>'}
+</tbody></table>
+</body></html>`;
+    return send(res, 200, html, {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Cache-Control': 'no-store',
+    });
+  }
+
+  if (urlPath === '/admin-dune2/api') {
+    if (!adminAuthorized(req)) {
+      return send(res, 401, JSON.stringify({ ok: false, error: 'unauthorized' }), {
+        'Content-Type': 'application/json; charset=utf-8',
+      });
+    }
+    const list = [];
+    for (const room of rooms.values()) {
+      const snap = roomSnapshot(room);
+      list.push({
+        ...snap,
+        paused: !!(room.sim && room.sim.isPaused),
+        mapSeed: room.mapSeed || null,
+      });
+    }
+    return send(
+      res,
+      200,
+      JSON.stringify({ ok: true, rev: BUILD_REV, rooms: list }),
+      { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }
+    );
+  }
+
+  if (
+    (urlPath === '/admin-dune2/kill' || urlPath === '/admin-dune2/kill-all') &&
+    (req.method === 'POST' || req.method === 'GET')
+  ) {
+    if (!adminAuthorized(req)) {
+      return send(res, 401, JSON.stringify({ ok: false, error: 'unauthorized' }), {
+        'Content-Type': 'application/json; charset=utf-8',
+      });
+    }
+    const url = new URL(req.url || '/', 'http://localhost');
+    const wantHtml = (req.headers.accept || '').includes('text/html') || req.method === 'GET';
+    if (urlPath === '/admin-dune2/kill-all') {
+      const ids = [...rooms.keys()];
+      for (const id of ids) {
+        const room = rooms.get(id);
+        if (room) endMatchRoom(room, { winner: null, reason: 'admin_kill' });
+        else rooms.delete(id);
+      }
+      console.log(`[admin] kill-all n=${ids.length}`);
+      if (wantHtml) {
+        res.writeHead(302, {
+          Location: '/admin-dune2?token=' + encodeURIComponent(ADMIN_TOKEN),
+        });
+        return res.end();
+      }
+      return send(
+        res,
+        200,
+        JSON.stringify({ ok: true, killed: ids }),
+        { 'Content-Type': 'application/json; charset=utf-8' }
+      );
+    }
+    const roomId = String(url.searchParams.get('room') || '')
+      .trim()
+      .toUpperCase();
+    const room = rooms.get(roomId);
+    if (!room) {
+      return send(
+        res,
+        404,
+        JSON.stringify({ ok: false, error: 'no_room', room: roomId }),
+        { 'Content-Type': 'application/json; charset=utf-8' }
+      );
+    }
+    endMatchRoom(room, { winner: null, reason: 'admin_kill' });
+    console.log(`[admin] kill room=${roomId}`);
+    if (wantHtml) {
+      res.writeHead(302, {
+        Location: '/admin-dune2?token=' + encodeURIComponent(ADMIN_TOKEN),
+      });
+      return res.end();
+    }
+    return send(
+      res,
+      200,
+      JSON.stringify({ ok: true, room: roomId }),
+      { 'Content-Type': 'application/json; charset=utf-8' }
+    );
   }
 
   // Client telemetry (SP skirmish + MP browser) — stuck armies, heartbeats
@@ -650,6 +793,199 @@ function stopSim(room) {
     room.sim.stop();
     room.sim = null;
   }
+}
+
+function adminAuthorized(req, body) {
+  const url = new URL(req.url || '/', 'http://localhost');
+  const q = url.searchParams.get('token') || url.searchParams.get('key') || '';
+  const header = String(req.headers['x-admin-token'] || '');
+  const fromBody = body && body.token != null ? String(body.token) : '';
+  const got = q || header || fromBody;
+  return got && got === ADMIN_TOKEN;
+}
+
+/** Connected player seats (not spectators). */
+function connectedPlayerSeats(room) {
+  const out = [];
+  for (const [seat, slot] of room.slots) {
+    if (slot && slot.connected) out.push(seat);
+  }
+  return out;
+}
+
+/**
+ * End a started match: optional winner, broadcast match_end, stop sim, destroy room.
+ * @param {object} room
+ * @param {{ winner?: string|null, reason?: string }} [opts]
+ */
+function endMatchRoom(room, opts) {
+  opts = opts || {};
+  if (!room) return false;
+  const winner = opts.winner != null ? opts.winner : null;
+  const reason = opts.reason || 'ended';
+  let recordingId = null;
+  if (room.sim) {
+    if (room.sim.game) {
+      room.sim.game.winner = winner;
+      room.sim.game.phase = winner ? 'ended' : 'draw';
+    }
+    // stop() finishes recording
+    const prevRec = room.sim.recordingId;
+    const info = room.sim.stop();
+    recordingId = (info && info.id) || prevRec || null;
+    room.sim = null;
+  }
+  room.started = true;
+  broadcastRoom(
+    room,
+    {
+      type: 'match_end',
+      phase: winner ? 'ended' : 'draw',
+      winner,
+      reason,
+      recordingId,
+      ...roomSnapshot(room),
+    },
+    null
+  );
+  // Close clients after a tick so they receive match_end
+  setTimeout(() => {
+    try {
+      for (const slot of room.slots.values()) {
+        try {
+          if (slot.ws) {
+            sendJson(slot.ws, { type: 'left', reason: 'match_ended' });
+            slot.ws.close();
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+      if (room.spectators) {
+        for (const spec of room.spectators.values()) {
+          try {
+            if (spec.ws) {
+              sendJson(spec.ws, { type: 'left', reason: 'match_ended' });
+              spec.ws.close();
+            }
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+    rooms.delete(room.id);
+  }, 400);
+  console.log(
+    `[room ${room.id}] match ended reason=${reason} winner=${winner || 'none'}`
+  );
+  return true;
+}
+
+/**
+ * If fewer than 2 connected players remain in a started match, end it.
+ * Sole survivor wins; zero survivors → draw.
+ */
+function checkSoloOrEmptyEnd(room) {
+  if (!room || !room.started) return false;
+  const alive = connectedPlayerSeats(room);
+  if (alive.length >= 2) return false;
+  if (alive.length === 1) {
+    endMatchRoom(room, { winner: alive[0], reason: 'last_player' });
+    return true;
+  }
+  endMatchRoom(room, { winner: null, reason: 'no_players' });
+  return true;
+}
+
+function eliminateSeatInSim(room, seat) {
+  const game = room.sim && room.sim.game;
+  if (!game || !seat) return;
+  const D = room.sim.D;
+  game.eliminated = game.eliminated || {};
+  game.eliminated[seat] = game.tick || 1;
+  if (D && D.Entities) {
+    for (const u of [...(game.units || [])]) {
+      if (u.owner === seat) D.Entities.removeUnit(game, u);
+    }
+    for (const b of [...(game.buildings || [])]) {
+      if (b.owner === seat) D.Entities.removeBuilding(game, b);
+    }
+  }
+  if (D && D.Economy) {
+    try {
+      D.Economy.tickPower(game);
+      D.Economy.recalcSpiceCap(game);
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+/**
+ * Convert a connected player into a spectator (resign).
+ * Returns { ok, error? }
+ */
+function resignToSpectator(ws) {
+  const room = ws.roomRef;
+  if (!room) return { ok: false, error: 'not_in_room' };
+  if (!room.started || !room.sim) return { ok: false, error: 'not_started' };
+  if (isSpectatorWs(ws) || !ws.seat) return { ok: false, error: 'already_spectator' };
+
+  const seat = ws.seat;
+  const playerId = ws.playerId;
+  const name = ws.displayName || 'Commander';
+  const wasHost = ws.role === 'host';
+
+  eliminateSeatInSim(room, seat);
+
+  // Free seat
+  room.slots.delete(seat);
+  ensureHostRole(room);
+
+  // Re-bind as spectator
+  ws.seat = null;
+  ws.role = 'spectator';
+  ws.isSpectator = true;
+  if (!room.spectators) room.spectators = new Map();
+  room.spectators.set(playerId, {
+    playerId,
+    name,
+    ws,
+    connected: true,
+  });
+
+  touch(room);
+  broadcastRoom(
+    room,
+    {
+      type: 'player_resigned',
+      seat,
+      playerId,
+      name,
+      ...roomSnapshot(room),
+    },
+    null
+  );
+  sendJson(ws, {
+    type: 'resigned',
+    seat,
+    spectator: true,
+    role: 'spectator',
+    ...roomSnapshot(room),
+  });
+
+  // If host resigned, promote another connected player
+  if (wasHost) ensureHostRole(room);
+
+  // Last player standing ends the room
+  if (checkSoloOrEmptyEnd(room)) {
+    return { ok: true, ended: true };
+  }
+  syncSimAudience(room);
+  return { ok: true, ended: false };
 }
 
 /** Pause sim when nobody is connected so abandoned rooms don't starve live matches. */
@@ -1404,8 +1740,15 @@ function setupWs(server) {
             intentional: true,
             ...roomSnapshot(left.room),
           });
+          // Started match: if ≤1 player remains, end room
+          if (left.room.started) {
+            if (!checkSoloOrEmptyEnd(left.room)) {
+              syncSimAudience(left.room);
+            }
+          }
         } else if (left && !left.empty && left.room && left.spectator) {
           broadcastRoom(left.room, { type: 'roster', ...roomSnapshot(left.room) }, null);
+          syncSimAudience(left.room);
         }
         sendJson(ws, { type: 'left' });
         return;
@@ -1448,6 +1791,49 @@ function setupWs(server) {
         if (!ok) {
           sendJson(ws, { type: 'error', error: 'start_failed' });
         }
+        return;
+      }
+
+      // Host ends the match and destroys the room
+      if (msg.type === 'end_match') {
+        if (isSpectatorWs(ws)) {
+          sendJson(ws, { type: 'error', error: 'spectator' });
+          return;
+        }
+        const slot = ws.seat && room.slots.get(ws.seat);
+        const isHost = (slot && slot.role === 'host') || ws.role === 'host';
+        if (!isHost) {
+          sendJson(ws, { type: 'error', error: 'not_host' });
+          return;
+        }
+        if (!room.started) {
+          // Lobby: notify everyone and destroy
+          broadcastRoom(room, { type: 'left', reason: 'host_ended' }, null);
+          for (const slot of room.slots.values()) {
+            try {
+              if (slot.ws) slot.ws.close();
+            } catch {
+              /* ignore */
+            }
+          }
+          destroyRoom(room);
+          return;
+        }
+        endMatchRoom(room, { winner: null, reason: 'host_ended' });
+        return;
+      }
+
+      // Player resigns → spectator; last player standing ends the room
+      if (msg.type === 'resign') {
+        if (isSpectatorWs(ws) || !ws.seat) {
+          sendJson(ws, { type: 'error', error: 'already_spectator' });
+          return;
+        }
+        if (!room.started) {
+          sendJson(ws, { type: 'error', error: 'not_started' });
+          return;
+        }
+        resignToSpectator(ws);
         return;
       }
 
