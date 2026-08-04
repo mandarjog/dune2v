@@ -157,17 +157,23 @@ class RoomSim {
     }
     let info = null;
     if (this._rec) {
+      const endPhase = this.game ? this.game.phase || 'unknown' : 'unknown';
+      const endWinner = this.game && this.game.winner != null ? this.game.winner : null;
       if (this.game) {
+        // Winner is required for correct replay end UI (phase alone is host-neutral
+        // "ended"/"draw" and used to make every Watch look like a draw or flip seats).
         recordings.appendEvent(this._rec, {
           t: this.game.tick,
           type: 'end',
-          phase: this.game.phase || 'unknown',
+          phase: endPhase,
+          winner: endWinner,
         });
       }
       info = recordings.finish(
         this._rec,
-        this.game ? this.game.phase : 'unknown',
-        this.game ? this.game.tick : 0
+        endPhase,
+        this.game ? this.game.tick : 0,
+        { winner: endWinner }
       );
       this._lastRecordingId = (info && info.id) || this._rec.id;
       this._rec = null;

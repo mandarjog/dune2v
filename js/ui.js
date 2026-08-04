@@ -1050,11 +1050,16 @@
         return;
       }
       try {
+        // Capture seat before async + Replay.start → Net.leave()
+        const viewAs =
+          (D.Net && D.Net.seat) ||
+          (boundGame && !boundGame.spectator ? boundGame.localOwner : null) ||
+          null;
         D.UI.hideEnd();
         D.UI.hideMenu();
         D.UI.hideReplays();
         const rec = await D.Replay.load(id);
-        if (!D.Replay.start(boundGame, rec)) {
+        if (!D.Replay.start(boundGame, rec, { viewAs })) {
           throw new Error('start_failed');
         }
       } catch (err) {
@@ -1347,6 +1352,14 @@
             escapeHtml(names.enemy || 'Harkonnen') +
             '</strong><br/><span class="meta">' +
             escapeHtml(it.phase || '') +
+            (it.winner
+              ? ' · winner ' +
+                escapeHtml(
+                  D.Seats && D.Seats.label
+                    ? D.Seats.label(it.winner, it.names || names)
+                    : it.winner
+                )
+              : '') +
             ' · ~' +
             mins +
             ' min · ' +
@@ -1807,11 +1820,15 @@
         : D.Seats
           ? D.Seats.label(D.Game.foe(game), names)
           : 'Opponent';
-      if (game.spectator) {
+      if (game.spectator || game.replay) {
         h2.textContent = 'Match over';
         p.textContent =
-          (game.winner ? winLabel + ' wins.' : 'Ended.') +
-          ' Esc returns to menu.';
+          (game.winner
+            ? winLabel + ' wins.'
+            : local === 'draw'
+              ? 'Draw — no houses remain.'
+              : 'Ended.') +
+          (game.replay ? ' Esc exits replay.' : ' Esc returns to menu.');
       } else if (local === 'draw') {
         h2.textContent = 'Draw';
         p.textContent = 'No houses remain. The desert claims all.';
@@ -2073,11 +2090,13 @@
         D.UI.showEliminatedBanner(game, true);
       }
 
+      // Replay uses the scrub bar + one status line — do not re-open Draw/Victory.
       if (
-        game.phase === 'victory' ||
-        game.phase === 'defeat' ||
-        game.phase === 'ended' ||
-        game.phase === 'draw'
+        !game.replay &&
+        (game.phase === 'victory' ||
+          game.phase === 'defeat' ||
+          game.phase === 'ended' ||
+          game.phase === 'draw')
       ) {
         if (els.endModal?.classList.contains('hidden')) D.UI.showEnd(game);
       }

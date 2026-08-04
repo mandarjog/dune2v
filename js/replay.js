@@ -71,12 +71,18 @@
       return data.recording;
     },
 
-    start(game, recording) {
+    start(game, recording, opts) {
       if (!game || !recording) return false;
-      D.Replay.stop(game);
+      opts = opts || {};
 
       const events = recording.events || recording.frames || [];
       if (!events.length) return false;
+
+      // Capture viewer seat BEFORE leave() clears Net.seat — otherwise every
+      // Watch forces localOwner='player' and flips victory/defeat for guests.
+      const viewSeat = D.Replay._resolveViewSeat(game, recording, opts);
+
+      D.Replay.stop(game);
 
       // Drop MP socket so leftover state snapshots cannot stomp the replay
       // (host often still connected after match_end; guest may already have left).
@@ -104,23 +110,41 @@
       D.Replay._isCmd = isCmd;
       D.Replay._frameIndex = 0;
       D.Replay._scrubbing = false;
+      D.Replay._endShown = false;
+      D.Replay._viewSeat = viewSeat;
       // Pre-fix recordings: serialize() called nextId() every snapshot and on
       // init, so live entity ids (produce buildingId, order unit ids) do not
       // match a clean re-sim. Emulate those burns so cmds resolve.
       D.Replay._idBurnCompat = recording.idStable !== true;
 
+      // Authoritative winner from meta (end event applied later may refine)
+      const metaWinner =
+        recording.winner !== undefined && recording.winner !== null
+          ? recording.winner
+          : null;
+
       game.multiplayer = false;
       game.replay = true;
       game._serverSim = true; // allow Game.tick
       game.phase = 'playing';
+      game.winner = null;
       game.playerNames = recording.names || null;
-      game.localOwner = 'player';
+      // Prefer the seat the viewer actually played; else neutral spectator framing
+      if (viewSeat) {
+        game.localOwner = viewSeat;
+        game.spectator = false;
+      } else {
+        game.localOwner = 'player';
+        game.spectator = true; // showEnd → "Match over · X wins" not flipped Victory
+      }
       game.netRole = null;
       game.speedMult = 1;
       game.placement = null;
       game.selection = game.selection || { ids: [], box: null };
       game.selection.ids = [];
       game.selection.box = null;
+      if (metaWinner != null) game._recordingWinner = metaWinner;
+      else game._recordingWinner = null;
       // Spectator: renderer skips FOW via game.replay (sim FOW stays on for accuracy)
 
       if (isCmd) {
@@ -175,6 +199,66 @@
       return true;
     },
 
+    /**
+     * Who is watching: opts.viewAs > Net.seat > game.localOwner (if still set
+     * from the match) > null (objective spectator).
+     */
+    _resolveViewSeat(game, recording, opts) {
+      opts = opts || {};
+      const seats =
+        (recording && recording.owners) ||
+        (game && game.activeOwners) ||
+        null;
+      const valid = (s) => {
+        if (!s || typeof s !== 'string') return null;
+        if (D.Seats && D.Seats.isSeat && !D.Seats.isSeat(s)) return null;
+        if (seats && seats.length && seats.indexOf(s) < 0) return null;
+        return s;
+      };
+      return (
+        valid(opts.viewAs) ||
+        valid(D.Net && D.Net.seat) ||
+        valid(game && !game.spectator ? game.localOwner : null) ||
+        null
+      );
+    },
+
+    /** Apply recorded end outcome without thrashing draw/victory from re-sim alone. */
+    _applyEndOutcome(game, ev) {
+      const rec = D.Replay.recording || {};
+      let winner = null;
+      if (ev && ev.winner !== undefined && ev.winner !== null) winner = ev.winner;
+      else if (rec.winner !== undefined && rec.winner !== null) winner = rec.winner;
+      else if (game._recordingWinner != null) winner = game._recordingWinner;
+      else if (game.winner != null) winner = game.winner;
+      else winner = D.Replay._inferWinnerFromState(game);
+
+      const phaseHint = (ev && ev.phase) || rec.phase || game.phase;
+      if (phaseHint === 'draw' && winner == null) {
+        game.phase = 'draw';
+        game.winner = null;
+      } else if (winner != null) {
+        game.winner = winner;
+        game.phase = 'ended';
+      } else if (phaseHint === 'victory' || phaseHint === 'defeat') {
+        // Legacy 1v1: phase was host-relative (player seat)
+        game.phase = 'ended';
+        game.winner = phaseHint === 'victory' ? 'player' : 'enemy';
+      } else if (phaseHint === 'ended') {
+        game.phase = 'ended';
+      } else {
+        game.phase = phaseHint || 'ended';
+      }
+      D.Replay._playing = false;
+    },
+
+    _inferWinnerFromState(game) {
+      if (!game || !D.Game || !D.Game.isDefeated) return null;
+      const owners = D.Seats ? D.Seats.active(game) : ['player', 'enemy'];
+      const alive = owners.filter((o) => !D.Game.isDefeated(game, o));
+      return alive.length === 1 ? alive[0] : null;
+    },
+
     _bootCmd(game, events) {
       const init = events.find((e) => e.type === 'init');
       if (init && init.state) {
@@ -209,6 +293,15 @@
       game._serverSim = true;
       game.multiplayer = false;
       game.phase = 'playing';
+      game.winner = null;
+      // Preserve view seat / spectator mode across seek reboots
+      if (D.Replay._viewSeat) {
+        game.localOwner = D.Replay._viewSeat;
+        game.spectator = false;
+      } else {
+        game.localOwner = game.localOwner || 'player';
+        game.spectator = true;
+      }
       game.placement = null;
       if (game.selection) {
         game.selection.ids = [];
@@ -258,12 +351,16 @@
       D.Replay.events = [];
       D.Replay.eventIndex = 0;
       D.Replay._scrubbing = false;
+      D.Replay._endShown = false;
+      D.Replay._viewSeat = null;
       if (game) {
         game.replay = false;
         game._serverSim = false;
         game._replaySeeking = false;
         game.placement = null;
         game.phase = 'menu';
+        game.spectator = false;
+        game._recordingWinner = null;
       }
       if (D.UI) D.UI.showReplayBar(false);
       try {
@@ -370,8 +467,7 @@
         } else if (ev.type === 'speed') {
           // Match wall-clock speed changes are ignored; viewer controls speed.
         } else if (ev.type === 'end') {
-          game.phase = ev.phase || game.phase;
-          D.Replay._playing = false;
+          D.Replay._applyEndOutcome(game, ev);
           return true;
         }
       }
@@ -412,16 +508,16 @@
 
         const t = game.tick | 0;
         if (D.Replay._applyEventsAtTick(game, t)) {
-          D.Game.pushMessage(
-            game,
-            'Replay finished (' + (game.phase || 'end') + '). Esc → menu.'
-          );
-          if (D.UI) D.UI.refreshReplayScrub(game);
+          D.Replay._finishReplay(game);
           return;
         }
 
         if (game.phase !== 'playing') {
+          // Re-sim hit checkWinLoss before the recorded end event — keep winner
+          // if present, then prefer meta/end winner when we catch up.
           D.Replay._playing = false;
+          D.Replay._preferRecordingWinner(game);
+          D.Replay._finishReplay(game);
           return;
         }
 
@@ -435,8 +531,8 @@
 
         if (D.Replay.eventIndex >= D.Replay.events.length && game.phase === 'playing') {
           if (game.tick > (D.Replay.recording.durationTicks || 0) + 40) {
-            D.Replay._playing = false;
-            D.Game.pushMessage(game, 'Replay finished. Esc → menu.');
+            D.Replay._preferRecordingWinner(game);
+            D.Replay._finishReplay(game);
           }
         }
       }
@@ -490,6 +586,41 @@
       if (army.length === 1) return [army[0].id];
       if (army.length === 0 && harvs.length === 1) return [harvs[0].id];
       return [];
+    },
+
+    /** Prefer live-match winner stored on the recording over a desynced re-sim. */
+    _preferRecordingWinner(game) {
+      const rec = D.Replay.recording || {};
+      const w =
+        rec.winner != null
+          ? rec.winner
+          : game._recordingWinner != null
+            ? game._recordingWinner
+            : null;
+      if (w != null) {
+        game.winner = w;
+        if (game.phase === 'draw' || game.phase === 'playing') game.phase = 'ended';
+      }
+    },
+
+    _finishReplay(game) {
+      D.Replay._playing = false;
+      D.Replay._preferRecordingWinner(game);
+      // One-shot status line (avoid "draw" spam from repeated refresh/showEnd)
+      if (!D.Replay._endShown) {
+        D.Replay._endShown = true;
+        let label = game.phase || 'end';
+        if (game.winner != null) {
+          label =
+            (D.Seats && D.Seats.label
+              ? D.Seats.label(game.winner, game.playerNames)
+              : game.winner) + ' wins';
+        } else if (game.phase === 'draw') {
+          label = 'draw';
+        }
+        D.Game.pushMessage(game, 'Replay finished (' + label + '). Esc → menu.');
+      }
+      if (D.UI) D.UI.refreshReplayScrub(game);
     },
 
     _applyCmd(game, seat, payload) {

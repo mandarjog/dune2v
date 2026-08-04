@@ -7,7 +7,7 @@
  *   /data/recordings/{id}.jsonl   — one event per line:
  *     { "t":0, "type":"init", "state":{...} }     // map + starting entities once
  *     { "t":42, "type":"cmd", "seat":"player", "payload":{...} }
- *     { "t":900, "type":"end", "phase":"victory" }
+ *     { "t":900, "type":"end", "phase":"ended", "winner":"enemy" }
  *
  * Replay re-simulates from init + cmds (tiny on disk).
  */
@@ -59,6 +59,7 @@ function begin(meta) {
     endedAt: 0,
     durationTicks: 0,
     phase: 'playing',
+    winner: null,
     baseDt: meta.baseDt || 0.05,
     seed: meta.seed != null ? meta.seed : 42,
     format: 'cmd-v1',
@@ -91,6 +92,7 @@ function writeMeta(rec) {
     endedAt: rec.endedAt,
     durationTicks: rec.durationTicks,
     phase: rec.phase,
+    winner: rec.winner != null ? rec.winner : null,
     baseDt: rec.baseDt,
     seed: rec.seed,
     format: rec.format || 'cmd-v1',
@@ -160,10 +162,19 @@ function removeRecording(id) {
   return ok;
 }
 
-function finish(rec, phase, durationTicks) {
+/**
+ * Finalize a recording.
+ * @param {object} rec
+ * @param {string} phase
+ * @param {number} durationTicks
+ * @param {{ winner?: string|null }} [opts]
+ */
+function finish(rec, phase, durationTicks, opts) {
   if (!rec || rec._closed) return null;
+  opts = opts || {};
   rec._closed = true;
   rec.phase = phase || 'unknown';
+  if (opts.winner !== undefined) rec.winner = opts.winner;
   rec.durationTicks = durationTicks || 0;
   rec.endedAt = Date.now();
   if (rec._fd != null) {
@@ -189,13 +200,14 @@ function finish(rec, phase, durationTicks) {
   pruneOld();
   pruneShort();
   console.log(
-    `[recordings] saved ${rec.id} format=${rec.format} events=${rec.events} cmds=${cmds} ticks=${rec.durationTicks} phase=${rec.phase}`
+    `[recordings] saved ${rec.id} format=${rec.format} events=${rec.events} cmds=${cmds} ticks=${rec.durationTicks} phase=${rec.phase} winner=${rec.winner || 'none'}`
   );
   return {
     id: rec.id,
     events: rec.events,
     cmds: rec.cmds || 0,
     phase: rec.phase,
+    winner: rec.winner != null ? rec.winner : null,
   };
 }
 

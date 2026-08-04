@@ -479,6 +479,10 @@
 
       if (alive.length >= 2) return;
 
+      // Replay re-sim can desync (missing cmds / id drift). Recorded end+winner
+      // is authoritative — do not flip to draw/ended mid-stream or spam Victory.
+      if (game.replay) return;
+
       if (alive.length === 1) {
         game.winner = alive[0];
         // Neutral end phase for MP/server: clients derive victory/defeat from winner.
