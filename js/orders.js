@@ -366,6 +366,65 @@
     return false;
   }
 
+  /**
+   * Last-resort crawl: one walkable step toward (tx,ty) so armies never freeze solid
+   * when A-star or flow fails (chokes, spam repath budget, bad formation slots).
+   * @returns {boolean} true if the unit moved
+   */
+  function stepToward(game, u, tx, ty, dt) {
+    if (!game.map || !D.Map) return false;
+    unstickStart(game, u);
+    const def = D.config.units[u.type];
+    const speed = def ? def.speed : 1;
+    const step = Math.min(speed * (dt || 0.05), 0.95);
+    const dx = tx - u.x;
+    const dy = ty - u.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist < 0.08) return false;
+
+    const ux = dx / dist;
+    const uy = dy / dist;
+    // Toward goal, then diagonals/sides, then any walkable neighbor
+    const dirs = [
+      [ux, uy],
+      [ux - uy * 0.5, uy + ux * 0.5],
+      [ux + uy * 0.5, uy - ux * 0.5],
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+      [1, 1],
+      [1, -1],
+      [-1, 1],
+      [-1, -1],
+    ];
+
+    let best = null;
+    let bestNd = dist + 1;
+    for (const [sx, sy] of dirs) {
+      const len = Math.hypot(sx, sy) || 1;
+      const nx = u.x + (sx / len) * step;
+      const ny = u.y + (sy / len) * step;
+      if (!D.Map.isWalkable(game.map, Math.floor(nx), Math.floor(ny))) continue;
+      const nd = Math.hypot(tx - nx, ty - ny);
+      if (nd < bestNd) {
+        bestNd = nd;
+        best = { nx, ny, sx: sx / len, sy: sy / len };
+      }
+    }
+    if (!best || bestNd >= dist - 1e-4) return false;
+    u.x = best.nx;
+    u.y = best.ny;
+    u.facing = (Math.atan2(best.sy, best.sx) + Math.PI * 2) % (Math.PI * 2);
+    // Micro-waypoint ahead so the next tick still has a path to follow
+    const mx = u.x + best.sx * 0.9;
+    const my = u.y + best.sy * 0.9;
+    if (D.Map.isWalkable(game.map, Math.floor(mx), Math.floor(my))) {
+      u.path = [{ x: mx, y: my }];
+    }
+    return true;
+  }
+
   function stuckMessage(u) {
     const name = (D.config.units[u.type] && D.config.units[u.type].name) || u.type;
     const tips = {
@@ -435,8 +494,9 @@
   /** Flag unit stuck + throttle a sidebar message (SP / local sim only). */
   function markStuck(game, u, reason, dt) {
     u._stuckSince = (u._stuckSince || 0) + (dt || 0);
-    // Require ~2.5s of continuous stuck before flashing/message (was 1.5 — too noisy)
-    if (u._stuckSince < 2.5) return;
+    // Path stuck: wait longer — crawl recovery often unsticks within a few seconds
+    const need = reason === 'path' ? 3.5 : 2.5;
+    if (u._stuckSince < need) return;
     const was = u.stuck;
     const prevReason = u.stuckReason;
     u.stuck = true;
@@ -738,10 +798,14 @@
             continue;
           }
 
-          // Empty path + no progress: full recovery (group goal / alts), bypass cooldown
+          // Empty path: recover immediately (don't wait — feels frozen in MP)
           const noProg = u._noProgressSec || 0;
-          if ((!u.path || !u.path.length) && noProg > 0.35) {
+          if (!u.path || !u.path.length) {
             recoverPath(game, u, order, () => repaths++ < maxRepaths);
+            // Still empty → crawl one step so the army never hard-freezes
+            if ((!u.path || !u.path.length) && d > arrive) {
+              stepToward(game, u, order.x, order.y, dt);
+            }
           } else {
             D.Orders.ensurePath(game, u, order.x, order.y, () => repaths++ < maxRepaths);
           }
@@ -753,15 +817,22 @@
             clearStuck(u);
           } else {
             u._noProgressSec = (u._noProgressSec || 0) + dt;
+            // No movement this tick with a path: try crawl (path may be wedged)
+            if ((!u.path || !u.path.length || noProg > 0.4) && d > arrive) {
+              if (stepToward(game, u, order.x, order.y, dt)) {
+                u._noProgressSec = 0;
+                clearStuck(u);
+              }
+            }
           }
 
           if (!u.path.length) {
             const giveUp =
               (D.config.path && D.config.path.stuckGiveUpSec) != null
                 ? D.config.path.stuckGiveUpSec
-                : 6;
-            // Staged recovery: alt personal → group → give up
-            if ((u._noProgressSec || 0) > 0.8 && !(u._altGoalTried)) {
+                : 8;
+            // Staged recovery: alt personal → group → keep crawling (don't hard-clear early)
+            if ((u._noProgressSec || 0) > 1.0 && !(u._altGoalTried)) {
               const alt = alternateGoal(game.map, order.x, order.y, { x: u.x, y: u.y }, 10);
               if (alt) {
                 u.order = Object.assign({}, order, { x: alt.x, y: alt.y });
@@ -774,7 +845,7 @@
                 u._altGoalTried = true;
               }
             } else if (
-              (u._noProgressSec || 0) > 2.0 &&
+              (u._noProgressSec || 0) > 2.5 &&
               !(u._groupGoalTried) &&
               order.groupX != null
             ) {
@@ -789,17 +860,17 @@
               u.path = [];
               recoverPath(game, u, u.order, () => repaths++ < maxRepaths);
             } else if ((u._noProgressSec || 0) > giveUp) {
-              // Stop fighting the choke — clear move so they hold and can be re-ordered
+              // Give up formal path but keep attack-move; clear red stuck so they can fight
               clearStuck(u);
               if (order.type === 'move') clearOrder(u);
               else {
-                // attack-move: keep order but idle path so combat can still acquire
                 u.path = [];
               }
               u._noProgressSec = 0;
               u._altGoalTried = false;
               u._groupGoalTried = false;
-            } else if (d > arrive && (u._noProgressSec || 0) > 2.0) {
+            } else if (d > arrive && (u._noProgressSec || 0) > 3.5) {
+              // Only flash stuck after crawl+recover had time (was too eager)
               markStuck(game, u, 'path', dt);
             }
           }

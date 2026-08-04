@@ -359,7 +359,37 @@
      * @returns {{ ok:number, fail:number, field:object|null, buildMs:number }}
      */
     assignGroupFlow(map, units, x1, y1) {
-      const field = D.Path.buildFlowField(map, x1, y1);
+      // Reuse recent field when player spam-clicks near the same goal (saves ~20ms/issue)
+      const now =
+        typeof performance !== 'undefined' && performance.now
+          ? performance.now()
+          : Date.now();
+      const goal = resolveGoal(map, x1, y1);
+      let field = null;
+      const cache = D.Path._flowCache;
+      if (
+        cache &&
+        cache.map === map &&
+        goal &&
+        cache.gx === goal.gx &&
+        cache.gy === goal.gy &&
+        now - cache.t < 600
+      ) {
+        field = cache.field;
+        D.Path.metrics.lastFlowBuildMs = 0;
+        D.Path.metrics.lastBackend = 'flow-cache';
+      } else {
+        field = D.Path.buildFlowField(map, x1, y1);
+        if (field && goal) {
+          D.Path._flowCache = {
+            map,
+            gx: goal.gx,
+            gy: goal.gy,
+            field,
+            t: now,
+          };
+        }
+      }
       let ok = 0;
       let fail = 0;
       if (!field) {
@@ -386,8 +416,10 @@
           }
         }
       }
-      D.Path.metrics.lastBackend = 'flow';
-      return { ok, fail, field, buildMs: field.buildMs };
+      if (D.Path.metrics.lastBackend !== 'flow-cache') {
+        D.Path.metrics.lastBackend = 'flow';
+      }
+      return { ok, fail, field, buildMs: field.buildMs || 0 };
     },
 
     /**
