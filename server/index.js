@@ -73,6 +73,8 @@ const ROOM_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const ROOM_IDLE_MS = 60 * 60 * 1000;
 /** Keep a disconnected seat reserved so the same playerId can reclaim it. */
 const RECONNECT_GRACE_MS = 15 * 60 * 1000;
+/** Started match with 0 connected players this long → destroy (sim is paused immediately). */
+const EMPTY_MATCH_MS = 3 * 60 * 1000;
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -575,6 +577,8 @@ function listLiveMatches() {
     // Show rooms with at least one connected client or a running match
     if (players < 1 && specs < 1 && !room.started) continue;
     const snap = roomSnapshot(room);
+    // Hide fully empty abandoned sims from the list (still reclaimable briefly)
+    if (snap.players === 0 && snap.spectators === 0 && snap.started) continue;
     matches.push({
       room: snap.room,
       title: snap.title,
@@ -589,6 +593,7 @@ function listLiveMatches() {
       open: !!snap.spectateOpen,
       tick: snap.tick,
       ageMs: Math.max(0, now - (room.createdAt || room.touched || now)),
+      paused: !!(room.sim && room.sim.isPaused),
     });
   }
   // Lobbies first (joinable), then started; then by activity
@@ -644,6 +649,26 @@ function stopSim(room) {
   if (room && room.sim) {
     room.sim.stop();
     room.sim = null;
+  }
+}
+
+/** Pause sim when nobody is connected so abandoned rooms don't starve live matches. */
+function syncSimAudience(room) {
+  if (!room || !room.sim || !room.started) return;
+  const players = connectedCount(room);
+  const specs = spectatorCount(room);
+  if (players === 0 && specs === 0) {
+    if (!room.sim.isPaused) {
+      room.sim.pause('empty');
+      room.emptySince = room.emptySince || Date.now();
+      console.log(`[room ${room.id}] sim paused (no players/spectators)`);
+    }
+  } else {
+    room.emptySince = null;
+    if (room.sim.isPaused) {
+      room.sim.resume();
+      console.log(`[room ${room.id}] sim resumed (audience back)`);
+    }
   }
 }
 
@@ -1130,8 +1155,9 @@ function joinExisting(ws, roomId, playerId, name) {
     ws
   );
 
+  syncSimAudience(room);
   if (room.started && room.sim) {
-    // Resume into live match
+    // Resume into live match (and unpause if room was empty)
     sendMatchSync(ws, room, { reconnected: true });
   } else {
     maybeStartMatch(room);
@@ -1231,6 +1257,7 @@ function joinSpectate(ws, roomId, playerId, name) {
   }
 
   bindSpectator(ws, room, pid, displayName);
+  syncSimAudience(room);
 
   const snap = roomSnapshot(room);
   sendJson(ws, {
@@ -1598,8 +1625,10 @@ function setupWs(server) {
           reconnectGraceMs: RECONNECT_GRACE_MS,
           ...roomSnapshot(left.room),
         });
+        syncSimAudience(left.room);
       } else if (left && !left.empty && left.room && left.spectator) {
         broadcastRoom(left.room, { type: 'roster', ...roomSnapshot(left.room) }, null);
+        syncSimAudience(left.room);
       }
       console.log(`[ws] disconnect (clients=${wss.clients.size} rooms=${rooms.size})`);
     });
@@ -1621,16 +1650,25 @@ function setupWs(server) {
       }
 
       const noOneHome = connectedCount(room) === 0;
+      const noSpecs = spectatorCount(room) === 0;
       const stale = now - room.touched > ROOM_IDLE_MS;
       const empty = room.slots.size === 0;
-      // Spectators alone never keep a room
-      const onlySpectators = empty || (noOneHome && spectatorCount(room) >= 0 && room.slots.size === 0);
+      // Pause sim while empty (CPU protection); destroy after EMPTY_MATCH_MS
+      if (room.started && noOneHome && noSpecs) {
+        syncSimAudience(room);
+        const emptyFor = room.emptySince ? now - room.emptySince : 0;
+        if (emptyFor >= EMPTY_MATCH_MS) {
+          console.log(`[room ${id}] destroying abandoned match (empty ${Math.round(emptyFor / 1000)}s)`);
+          stopSim(room);
+          rooms.delete(id);
+          continue;
+        }
+      }
 
       if (
         empty ||
-        onlySpectators ||
         (noOneHome && stale) ||
-        (noOneHome && !room.started)
+        (noOneHome && !room.started && noSpecs)
       ) {
         stopSim(room);
         for (const slot of room.slots.values()) {
@@ -1652,7 +1690,7 @@ function setupWs(server) {
         rooms.delete(id);
       }
     }
-  }, 60_000).unref();
+  }, 15_000).unref();
 
   return wss;
 }

@@ -29,6 +29,8 @@ class RoomSim {
     this._rec = null;
     /** After first full map blob, omit tiles/spice from live snapshots. */
     this._mapSent = false;
+    this.paused = false;
+    this._pauseReason = null;
   }
 
   start() {
@@ -101,9 +103,35 @@ class RoomSim {
       clearInterval(this.timer);
       this.timer = null;
     }
-    if (!this.running) return;
+    if (!this.running || this.paused) return;
     const ms = Math.max(10, (BASE_DT * 1000) / this.speed);
     this.timer = setInterval(() => this._tick(), ms);
+  }
+
+  /**
+   * Pause wall-clock ticks (room empty / abandoned). Keeps game state for reconnect.
+   * Critical on single-machine hosts: two abandoned sims will starve the live match.
+   */
+  pause(reason) {
+    if (this.paused) return;
+    this.paused = true;
+    this._pauseReason = reason || 'empty';
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = null;
+    }
+  }
+
+  /** Resume ticks after a player reconnects. */
+  resume() {
+    if (!this.paused) return;
+    this.paused = false;
+    this._pauseReason = null;
+    if (this.running) this._armTimer();
+  }
+
+  get isPaused() {
+    return !!this.paused;
   }
 
   setSpeed(mult) {
