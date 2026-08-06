@@ -70,7 +70,7 @@ describe('live API + spectator WS', () => {
   let wsUrl;
 
   before(async () => {
-    port = 18000 + ((Math.random() * 1000) | 0);
+    port = 22000 + (process.pid % 500) + ((Math.random() * 200) | 0);
     base = 'http://127.0.0.1:' + port;
     wsUrl = 'ws://127.0.0.1:' + port + '/ws';
     child = spawn(process.execPath, [path.join(__dirname, '..', 'server', 'index.js')], {

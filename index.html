@@ -311,6 +311,18 @@
       </div>
     </div>
 
+    <!-- Mid-match rejoin consent (after opponent refresh/back) -->
+    <div id="rejoin-modal" class="modal-backdrop hidden">
+      <div class="modal">
+        <h2>Rejoin request</h2>
+        <p id="rejoin-modal-text">A player wants to rejoin the match.</p>
+        <div class="actions">
+          <button type="button" id="btn-rejoin-accept" class="primary">Accept</button>
+          <button type="button" id="btn-rejoin-reject">Decline</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Replays browser -->
     <div id="replays-modal" class="modal-backdrop hidden">
       <div class="modal modal-wide">
@@ -329,8 +341,9 @@
       <div class="modal modal-wide">
         <h2>Live matches</h2>
         <p class="hint">
-          <b>Lobby</b> rooms: Join as a player before the host starts.
-          <b>In progress</b>: Spectate only (fog off, no orders).
+          <b>Lobby</b>: Join before the host starts.
+          <b>In progress</b>: Spectate, or <b>Rejoin</b> if you refreshed/backed out
+          (same browser auto-returns; otherwise one player must Accept).
         </p>
         <div id="live-list" class="replays-list"></div>
         <p id="live-status" class="hint"></p>

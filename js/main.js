@@ -32,7 +32,8 @@
   /** After toggling features.fog, refresh fog buffers so the view matches. */
   function refreshFogState(game) {
     if (!game || !game.map || !D.Map) return;
-    if (!game.fog) D.Map.initFog(game);
+    // Always wipe explored when re-applying FOW so fog=0 → fog=1 cannot leave full map open
+    D.Map.initFog(game);
     const owners =
       D.Seats && D.Seats.active
         ? D.Seats.active(game)
@@ -107,10 +108,17 @@
     // Shareable multiplayer room: ?room=ABC123 → name prompt, then join
     // Spectate: ?spectate=CODE · live list: ?live=1
     // Mass-army SP stress: ?scenario=mass&armies=100
-    const room = (params.get('room') || '').trim().toUpperCase();
+    // After refresh/back: session may still know last room
+    const remembered =
+      D.Net && D.Net.loadRememberedRoom ? D.Net.loadRememberedRoom() : null;
+    const room = (params.get('room') || remembered || '').trim().toUpperCase();
     const spectateRoom = (params.get('spectate') || '').trim().toUpperCase();
     const showLive = params.get('live') === '1' || params.get('live') === 'true';
     const replayId = (params.get('replay') || '').trim();
+    if (remembered && !params.get('room') && room === remembered && D.UI) {
+      // Soft hint — join prompt still asks for name
+      console.log('[dune2] resuming room from session after refresh/back:', remembered);
+    }
     const scenario = (params.get('scenario') || params.get('mass') || '').toLowerCase();
     const wantMass =
       scenario === 'mass' ||

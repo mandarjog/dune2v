@@ -54,7 +54,7 @@ function resolveGitRev() {
 const BUILD_REV = resolveGitRev();
 const BUILD_TIME = new Date().toISOString();
 
-const PROTOCOL = 7; // 2–5 player FFA seats
+const PROTOCOL = 8; // mid-match rejoin + consent
 const MAX_SEATS = 5;
 const MIN_START = 2;
 const MAX_SPECTATORS = 8;
@@ -73,6 +73,8 @@ const ROOM_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const ROOM_IDLE_MS = 60 * 60 * 1000;
 /** Keep a disconnected seat reserved so the same playerId can reclaim it. */
 const RECONNECT_GRACE_MS = 15 * 60 * 1000;
+/** Pending rejoin requests expire if nobody accepts. */
+const REJOIN_REQUEST_MS = 90 * 1000;
 /** Started match with 0 connected players this long → destroy (sim is paused immediately). */
 const EMPTY_MATCH_MS = 3 * 60 * 1000;
 /** Admin UI + kill API. Set ADMIN_TOKEN env in production. */
@@ -562,6 +564,7 @@ ${rows.length ? rows.join('\n') : '<tr><td colspan="8">No rooms</td></tr>'}
  *   ws: import('ws').WebSocket | null,
  *   connected: boolean,
  *   disconnectedAt: number | null,
+ *   originalPlayerId?: string | null,
  * }} SeatSlot
  * @typedef {{
  *   playerId: string,
@@ -571,6 +574,15 @@ ${rows.length ? rows.join('\n') : '<tr><td colspan="8">No rooms</td></tr>'}
  * }} SpecSlot
  * @typedef {{
  *   id: string,
+ *   requestId: string,
+ *   seat: string,
+ *   playerId: string,
+ *   name: string,
+ *   ws: import('ws').WebSocket,
+ *   createdAt: number,
+ * }} RejoinRequest
+ * @typedef {{
+ *   id: string,
  *   slots: Map<string, SeatSlot>,
  *   spectators: Map<string, SpecSlot>,
  *   started: boolean,
@@ -578,6 +590,7 @@ ${rows.length ? rows.join('\n') : '<tr><td colspan="8">No rooms</td></tr>'}
  *   createdAt: number,
  *   sim: import('./room-sim').RoomSim | null,
  *   allowSpectate: 'open' | 'off',
+ *   rejoinRequests?: Map<string, RejoinRequest>,
  * }} Room
  */
 
@@ -673,9 +686,11 @@ function roomSnapshot(room) {
     };
     if (slot.connected) connected++;
   }
-  const reclaimable = [...room.slots.values()].some(
-    (s) => !s.connected && s.disconnectedAt && Date.now() - s.disconnectedAt < RECONNECT_GRACE_MS
-  );
+  const disconnectedSeats = [];
+  for (const [seat, s] of room.slots) {
+    if (!s.connected) disconnectedSeats.push(seat);
+  }
+  const reclaimable = disconnectedSeats.length > 0;
   const specs = spectatorCount(room);
   const names = roomNames(room);
   let phase = null;
@@ -691,6 +706,8 @@ function roomSnapshot(room) {
   const seatsTaken = room.slots.size;
   const canJoinSeat =
     !room.started && (seatsTaken < MAX_SEATS || reclaimable);
+  // Mid-match: vacant (disconnected) seats can be reclaimed / requested
+  const canRejoin = !!(room.started && room.sim && reclaimable);
   return {
     room: room.id,
     title: room.title || null,
@@ -701,6 +718,8 @@ function roomSnapshot(room) {
     started: room.started,
     open: canJoinSeat, // joinable as a player (lobby + free seat)
     canJoin: canJoinSeat,
+    canRejoin,
+    disconnectedSeats,
     spectateOpen,
     spectators: specs,
     phase,
@@ -731,6 +750,8 @@ function listLiveMatches() {
       players: snap.players,
       spectators: snap.spectators,
       canJoin: !!snap.canJoin,
+      canRejoin: !!snap.canRejoin,
+      disconnectedSeats: snap.disconnectedSeats || [],
       canSpectate: !!snap.spectateOpen,
       // legacy: "open" meant spectate; keep for old clients as canSpectate
       open: !!snap.spectateOpen,
@@ -760,7 +781,16 @@ function makeRoom(id) {
     createdAt: now,
     sim: null,
     allowSpectate: 'open',
+    rejoinRequests: new Map(),
   };
+}
+
+function newRejoinRequestId() {
+  return (
+    'rj_' +
+    Date.now().toString(36) +
+    Math.random().toString(36).slice(2, 8)
+  );
 }
 
 function isSpectatorWs(ws) {
@@ -1122,7 +1152,9 @@ function detachWs(ws, intentional) {
   ws.role = null;
   ws.isSpectator = false;
 
-  if (intentional && seat) {
+  // Mid-match: never free the seat on leave/drop — army stays, rejoin possible.
+  // Lobby: intentional leave frees the seat for someone else.
+  if (intentional && seat && !room.started) {
     room.slots.delete(seat);
   }
 
@@ -1184,13 +1216,16 @@ function bindSeat(ws, room, seat, playerId, name, role) {
     }
   }
 
+  const prevSlot = room.slots.get(seat);
   const slot = {
     playerId,
     name,
-    role: role || (seat === 'player' ? 'host' : 'guest'),
+    role: role || (prevSlot && prevSlot.role) || (seat === 'player' ? 'host' : 'guest'),
     ws,
     connected: true,
     disconnectedAt: null,
+    originalPlayerId:
+      (prevSlot && (prevSlot.originalPlayerId || prevSlot.playerId)) || playerId,
   };
   room.slots.set(seat, slot);
   // Player seat takes priority — drop any spectator entry for this id
@@ -1293,7 +1328,8 @@ function sendMatchSync(ws, room, { reconnected, spectator }) {
     names,
   });
   if (room.sim) {
-    const payload = room.sim.snapshot();
+    // Always full map on rejoin — lean snapshots omit tiles after first broadcast
+    const payload = room.sim.snapshot({ fullMap: true });
     if (payload) {
       sendJson(ws, {
         type: 'state',
@@ -1302,9 +1338,306 @@ function sendMatchSync(ws, room, { reconnected, spectator }) {
         speed: room.sim.speed,
         ts: Date.now(),
         reconnected: !!reconnected,
+        fullMap: true,
       });
     }
   }
+}
+
+/**
+ * Seats that are still in the match but currently offline (refresh / back / drop).
+ */
+function disconnectedSeatsIn(room) {
+  const out = [];
+  if (!room) return out;
+  for (const [seat, slot] of room.slots) {
+    if (slot && !slot.connected) out.push(seat);
+  }
+  return out;
+}
+
+function canAutoReclaim(slot, playerId) {
+  if (!slot || !playerId) return false;
+  if (slot.playerId === playerId) return true;
+  if (slot.originalPlayerId && slot.originalPlayerId === playerId) return true;
+  return false;
+}
+
+/**
+ * Finish a rejoin: bind seat, notify room, full state sync.
+ */
+function completeRejoin(ws, room, seat, playerId, name, { consented }) {
+  const prev = room.slots.get(seat);
+  bindSeat(ws, room, seat, playerId, name, prev ? prev.role : 'guest');
+  syncSimAudience(room);
+  const snap = roomSnapshot(room);
+  sendJson(ws, {
+    type: 'joined',
+    protocol: PROTOCOL,
+    playerId: ws.playerId,
+    name: ws.displayName,
+    seat: ws.seat,
+    role: ws.role,
+    reconnected: true,
+    consented: !!consented,
+    ...snap,
+  });
+  broadcastRoom(
+    room,
+    {
+      type: 'peer_reconnected',
+      playerId: ws.playerId,
+      name: ws.displayName,
+      seat: ws.seat,
+      consented: !!consented,
+      ...roomSnapshot(room),
+    },
+    ws
+  );
+  if (room.started && room.sim) {
+    sendMatchSync(ws, room, { reconnected: true });
+  }
+  console.log(
+    `[room ${room.id}] rejoin seat=${seat} name=${name} consented=${!!consented}`
+  );
+}
+
+/**
+ * Request to reclaim a disconnected seat mid-match.
+ * Same playerId → auto. Otherwise any one connected player must accept.
+ */
+function requestRejoin(ws, roomId, playerId, name, preferSeat) {
+  const id = String(roomId || '')
+    .trim()
+    .toUpperCase()
+    .slice(0, 16);
+  if (!id) {
+    sendJson(ws, { type: 'error', error: 'bad_room' });
+    return;
+  }
+  const room = getRoom(id);
+  if (!room) {
+    sendJson(ws, { type: 'error', error: 'no_room', room: id });
+    return;
+  }
+  if (!room.started || !room.sim) {
+    sendJson(ws, {
+      type: 'error',
+      error: 'not_started',
+      message: 'Match is not in progress — use Join instead.',
+    });
+    return;
+  }
+
+  const pid = sanitizePlayerId(playerId);
+  const displayName = sanitizeName(name);
+
+  // Leave other rooms
+  if (ws.roomRef && ws.roomRef !== room) {
+    detachWs(ws, true);
+  }
+  // Already seated in this room
+  if (ws.roomRef === room && ws.seat && !isSpectatorWs(ws) && room.slots.get(ws.seat)?.connected) {
+    sendJson(ws, { type: 'error', error: 'already_playing' });
+    return;
+  }
+
+  // Prefer explicit seat, else own reclaim seat, else first disconnected
+  let seat = preferSeat && room.slots.has(preferSeat) ? preferSeat : null;
+  if (!seat) seat = findReclaimSeat(room, pid);
+  if (!seat) {
+    const disc = disconnectedSeatsIn(room);
+    seat = disc[0] || null;
+  }
+  if (!seat || !room.slots.has(seat)) {
+    sendJson(ws, {
+      type: 'error',
+      error: 'no_open_seat',
+      message: 'No disconnected seat to rejoin. Spectate instead.',
+    });
+    return;
+  }
+
+  const slot = room.slots.get(seat);
+  if (slot.connected && slot.ws && slot.ws !== ws && slot.ws.readyState === 1) {
+    sendJson(ws, { type: 'error', error: 'seat_taken' });
+    return;
+  }
+
+  // Original player (refresh / same browser): auto-reclaim — no vote needed
+  if (canAutoReclaim(slot, pid)) {
+    // Drop spectator binding if any
+    if (isSpectatorWs(ws) || (ws.roomRef === room && !ws.seat)) {
+      detachWs(ws, true);
+    }
+    completeRejoin(ws, room, seat, pid, displayName, { consented: false });
+    return;
+  }
+
+  // Need consent from any currently connected player
+  const approvers = connectedCount(room);
+  if (approvers < 1) {
+    // Nobody home to consent — allow reclaim if grace still open on empty room
+    if (
+      slot.disconnectedAt &&
+      Date.now() - slot.disconnectedAt < RECONNECT_GRACE_MS
+    ) {
+      completeRejoin(ws, room, seat, pid, displayName, { consented: false });
+      return;
+    }
+    sendJson(ws, {
+      type: 'error',
+      error: 'no_players_to_consent',
+      message: 'No one left in the room to approve your rejoin.',
+    });
+    return;
+  }
+
+  if (!room.rejoinRequests) room.rejoinRequests = new Map();
+  // One pending request per player
+  for (const [rid, req] of [...room.rejoinRequests.entries()]) {
+    if (req.playerId === pid || req.ws === ws) {
+      room.rejoinRequests.delete(rid);
+    }
+  }
+
+  const requestId = newRejoinRequestId();
+  room.rejoinRequests.set(requestId, {
+    id: requestId,
+    seat,
+    playerId: pid,
+    name: displayName,
+    ws,
+    createdAt: Date.now(),
+  });
+  // Park requester without a seat (they'll get joined on accept)
+  ws.pendingRejoinRoom = room.id;
+  ws.pendingRejoinId = requestId;
+  ws.playerId = pid;
+  ws.displayName = displayName;
+
+  sendJson(ws, {
+    type: 'rejoin_pending',
+    requestId,
+    room: room.id,
+    seat,
+    message: 'Waiting for a player in the match to accept…',
+    ...roomSnapshot(room),
+  });
+
+  // Notify all connected players (not spectators for simplicity — players decide)
+  for (const s of room.slots.values()) {
+    if (!s.connected || !s.ws || s.ws.readyState !== 1) continue;
+    sendJson(s.ws, {
+      type: 'rejoin_request',
+      requestId,
+      room: room.id,
+      seat,
+      fromPlayerId: pid,
+      fromName: displayName,
+      seatLabel: HOUSE_FOR_SEAT[seat] || seat,
+      expiresInMs: REJOIN_REQUEST_MS,
+    });
+  }
+  console.log(
+    `[room ${room.id}] rejoin_request ${requestId} seat=${seat} from=${displayName}`
+  );
+}
+
+function respondRejoin(ws, requestId, accept) {
+  const room = ws.roomRef;
+  if (!room || !room.rejoinRequests) {
+    sendJson(ws, { type: 'error', error: 'no_request' });
+    return;
+  }
+  if (isSpectatorWs(ws) || !ws.seat) {
+    sendJson(ws, { type: 'error', error: 'spectator' });
+    return;
+  }
+  const req = room.rejoinRequests.get(requestId);
+  if (!req) {
+    sendJson(ws, { type: 'error', error: 'request_expired' });
+    return;
+  }
+  if (Date.now() - req.createdAt > REJOIN_REQUEST_MS) {
+    room.rejoinRequests.delete(requestId);
+    try {
+      sendJson(req.ws, {
+        type: 'rejoin_result',
+        ok: false,
+        reason: 'expired',
+        message: 'Rejoin request expired.',
+      });
+    } catch {
+      /* ignore */
+    }
+    sendJson(ws, { type: 'error', error: 'request_expired' });
+    return;
+  }
+
+  room.rejoinRequests.delete(requestId);
+
+  if (!accept) {
+    try {
+      sendJson(req.ws, {
+        type: 'rejoin_result',
+        ok: false,
+        reason: 'declined',
+        byName: ws.displayName || 'Player',
+        message: (ws.displayName || 'A player') + ' declined your rejoin.',
+      });
+    } catch {
+      /* ignore */
+    }
+    sendJson(ws, { type: 'rejoin_result', ok: false, reason: 'you_declined', requestId });
+    // Tell other potential approvers to dismiss
+    broadcastRoom(
+      room,
+      { type: 'rejoin_resolved', requestId, accepted: false },
+      null
+    );
+    return;
+  }
+
+  // Accept: seat must still be disconnected
+  const slot = room.slots.get(req.seat);
+  if (!slot || (slot.connected && slot.ws && slot.ws.readyState === 1 && slot.ws !== req.ws)) {
+    try {
+      sendJson(req.ws, {
+        type: 'rejoin_result',
+        ok: false,
+        reason: 'seat_taken',
+        message: 'That seat is no longer available.',
+      });
+    } catch {
+      /* ignore */
+    }
+    return;
+  }
+
+  // If requester socket died, abort
+  if (!req.ws || req.ws.readyState !== 1) {
+    sendJson(ws, { type: 'error', error: 'requester_gone' });
+    return;
+  }
+
+  broadcastRoom(
+    room,
+    { type: 'rejoin_resolved', requestId, accepted: true, seat: req.seat },
+    null
+  );
+
+  completeRejoin(req.ws, room, req.seat, req.playerId, req.name, {
+    consented: true,
+  });
+  sendJson(ws, {
+    type: 'rejoin_result',
+    ok: true,
+    reason: 'accepted',
+    requestId,
+    seat: req.seat,
+    name: req.name,
+  });
 }
 
 /**
@@ -1444,20 +1777,16 @@ function joinExisting(ws, roomId, playerId, name) {
   let reconnected = false;
 
   if (seat) {
-    reconnected = room.started || !!(room.slots.get(seat) && !room.slots.get(seat).connected);
+    reconnected =
+      room.started || !!(room.slots.get(seat) && !room.slots.get(seat).connected);
     const prev = room.slots.get(seat);
+    // Same playerId reclaiming after refresh/back — always allowed
     bindSeat(ws, room, seat, pid, displayName, prev ? prev.role : undefined);
+  } else if (room.started) {
+    // Match in progress: try rejoin (auto if original player, else consent flow)
+    requestRejoin(ws, id, pid, displayName, null);
+    return;
   } else {
-    // No new seats after the match has started — spectate instead
-    if (room.started) {
-      sendJson(ws, {
-        type: 'error',
-        error: 'match_started',
-        room: id,
-        message: 'Match already started — use Spectate from Live matches.',
-      });
-      return;
-    }
     seat = findOpenSeat(room);
     if (!seat) {
       sendJson(ws, { type: 'error', error: 'room_full', room: id });
@@ -1728,29 +2057,52 @@ function setupWs(server) {
         return;
       }
 
-      // Intentional leave — free seat (no reconnect reservation); spectators just drop
+      // Leave: lobby frees seat; mid-match keeps seat reserved (refresh/back recoverable)
       if (msg.type === 'leave') {
-        const left = detachWs(ws, true);
+        const roomBefore = ws.roomRef;
+        const wasStarted = !!(roomBefore && roomBefore.started);
+        // Mid-match leave is soft so the player can rejoin; lobby is hard free
+        const left = detachWs(ws, !wasStarted);
         if (left && !left.empty && left.room && !left.spectator) {
-          broadcastRoom(left.room, {
-            type: 'peer_left',
-            playerId: left.playerId,
-            seat: left.seat,
-            name: left.name || null,
-            intentional: true,
-            ...roomSnapshot(left.room),
-          });
-          // Started match: if ≤1 player remains, end room
-          if (left.room.started) {
-            if (!checkSoloOrEmptyEnd(left.room)) {
-              syncSimAudience(left.room);
-            }
+          if (wasStarted) {
+            broadcastRoom(left.room, {
+              type: 'peer_disconnected',
+              playerId: left.playerId,
+              seat: left.seat,
+              name: left.name || null,
+              intentional: true,
+              reconnectGraceMs: RECONNECT_GRACE_MS,
+              message:
+                (left.name || 'Player') +
+                ' left — they can rejoin with the room link (you may need to Accept).',
+              ...roomSnapshot(left.room),
+            });
+            syncSimAudience(left.room);
+          } else {
+            broadcastRoom(left.room, {
+              type: 'peer_left',
+              playerId: left.playerId,
+              seat: left.seat,
+              name: left.name || null,
+              intentional: true,
+              ...roomSnapshot(left.room),
+            });
           }
         } else if (left && !left.empty && left.room && left.spectator) {
           broadcastRoom(left.room, { type: 'roster', ...roomSnapshot(left.room) }, null);
           syncSimAudience(left.room);
         }
         sendJson(ws, { type: 'left' });
+        return;
+      }
+
+      if (msg.type === 'rejoin_request') {
+        requestRejoin(ws, msg.room || (ws.roomRef && ws.roomRef.id), msg.playerId, msg.name, msg.seat);
+        return;
+      }
+
+      if (msg.type === 'rejoin_response') {
+        respondRejoin(ws, msg.requestId, msg.accept !== false && msg.accept !== 0);
         return;
       }
 
@@ -2024,14 +2376,38 @@ function setupWs(server) {
   setInterval(() => {
     const now = Date.now();
     for (const [id, room] of rooms) {
-      // Drop expired reservations
-      for (const [seat, slot] of [...room.slots.entries()]) {
-        if (
-          !slot.connected &&
-          slot.disconnectedAt &&
-          now - slot.disconnectedAt >= RECONNECT_GRACE_MS
-        ) {
-          room.slots.delete(seat);
+      // Expire pending rejoin votes
+      if (room.rejoinRequests) {
+        for (const [rid, req] of [...room.rejoinRequests.entries()]) {
+          if (now - req.createdAt >= REJOIN_REQUEST_MS) {
+            room.rejoinRequests.delete(rid);
+            try {
+              if (req.ws && req.ws.readyState === 1) {
+                sendJson(req.ws, {
+                  type: 'rejoin_result',
+                  ok: false,
+                  reason: 'expired',
+                  message: 'Rejoin request timed out.',
+                });
+              }
+            } catch {
+              /* ignore */
+            }
+            broadcastRoom(room, { type: 'rejoin_resolved', requestId: rid, accepted: false }, null);
+          }
+        }
+      }
+      // Lobby only: free expired disconnect reservations.
+      // Mid-match: keep seats forever so refresh/back can rejoin until match ends.
+      if (!room.started) {
+        for (const [seat, slot] of [...room.slots.entries()]) {
+          if (
+            !slot.connected &&
+            slot.disconnectedAt &&
+            now - slot.disconnectedAt >= RECONNECT_GRACE_MS
+          ) {
+            room.slots.delete(seat);
+          }
         }
       }
 

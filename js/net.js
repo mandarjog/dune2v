@@ -32,6 +32,8 @@
 
   const NAME_KEY = 'dune2_player_name';
   const PLAYER_ID_KEY = 'dune2_player_id';
+  /** Last in-progress room for post-refresh rejoin (session only). */
+  const LAST_ROOM_KEY = 'dune2_last_room';
   const NAME_MAX = 20;
 
   function sanitizeName(raw) {
@@ -82,6 +84,47 @@
     _intentionalLeave: false,
     _reconnectAttempts: 0,
     _reconnectTimer: 0,
+    _pendingRejoin: null,
+
+    rememberRoom(code) {
+      const c = String(code || '')
+        .trim()
+        .toUpperCase();
+      if (!c) return;
+      try {
+        sessionStorage.setItem(
+          LAST_ROOM_KEY,
+          JSON.stringify({ room: c, at: Date.now() })
+        );
+      } catch (e) {
+        /* ignore */
+      }
+    },
+
+    clearRememberedRoom() {
+      try {
+        sessionStorage.removeItem(LAST_ROOM_KEY);
+      } catch (e) {
+        /* ignore */
+      }
+    },
+
+    loadRememberedRoom() {
+      try {
+        const raw = sessionStorage.getItem(LAST_ROOM_KEY);
+        if (!raw) return null;
+        const o = JSON.parse(raw);
+        if (!o || !o.room) return null;
+        // Drop after 2 hours
+        if (o.at && Date.now() - o.at > 2 * 60 * 60 * 1000) {
+          sessionStorage.removeItem(LAST_ROOM_KEY);
+          return null;
+        }
+        return String(o.room).toUpperCase();
+      } catch (e) {
+        return null;
+      }
+    },
 
     loadStoredName() {
       try {
@@ -303,6 +346,7 @@
     leave() {
       D.Net._intentionalLeave = true;
       D.Net._clearReconnectTimer();
+      // Keep session room so a mistaken leave can still rejoin from Live
       if (D.Net.ws && D.Net.ws.readyState === 1) {
         try {
           D.Net.ws.send(JSON.stringify({ type: 'leave' }));
@@ -333,6 +377,7 @@
       D.Net._wantSpectate = false;
       D.Net._createOnOpen = false;
       D.Net._pendingTitle = '';
+      D.Net._pendingRejoin = null;
       if (D.Net.game) {
         D.Net.game.multiplayer = false;
         D.Net.game.spectator = false;
@@ -343,6 +388,39 @@
         D.Net.game.roomCode = null;
       }
       D.Net._emit('left');
+    },
+
+    /**
+     * Request mid-match rejoin (after refresh/back). Same browser playerId
+     * auto-reclaims; otherwise waits for one connected player to Accept.
+     */
+    requestRejoin(roomCode, name, seat) {
+      const code = String(roomCode || D.Net.room || D.Net.loadRememberedRoom() || '')
+        .trim()
+        .toUpperCase();
+      if (!code) {
+        D.Net.lastError = 'No room to rejoin';
+        D.Net._emit('error', { error: 'bad_room' });
+        return;
+      }
+      if (name != null) D.Net.saveName(name);
+      else D.Net.loadStoredName();
+      D.Net.loadPlayerId();
+      D.Net._intentionalLeave = false;
+      D.Net._createOnOpen = false;
+      D.Net._wantSpectate = false;
+      D.Net._wantRoom = code;
+      D.Net._pendingRejoin = { room: code, seat: seat || null };
+      D.Net.rememberRoom(code);
+      D.Net._connect();
+    },
+
+    respondRejoin(requestId, accept) {
+      return D.Net._send({
+        type: 'rejoin_response',
+        requestId,
+        accept: !!accept,
+      });
     },
 
     _clearReconnectTimer() {
@@ -447,6 +525,17 @@
               clientRev: rev,
             })
           );
+        } else if (D.Net._wantRoom && D.Net._pendingRejoin) {
+          ws.send(
+            JSON.stringify({
+              type: 'rejoin_request',
+              room: D.Net._wantRoom,
+              playerId,
+              name,
+              seat: D.Net._pendingRejoin.seat || null,
+              clientRev: rev,
+            })
+          );
         } else if (D.Net._wantRoom) {
           ws.send(
             JSON.stringify({
@@ -530,7 +619,62 @@
           D.Game.pushMessage(D.Net.game, 'Room not found.');
         } else if (msg.error === 'spectate_off') {
           D.Game.pushMessage(D.Net.game, 'Spectating is disabled for that room.');
+        } else if (msg.error === 'no_open_seat') {
+          D.Game.pushMessage(
+            D.Net.game,
+            msg.message || 'No seat to rejoin — Spectate or wait for a disconnect.'
+          );
+        } else if (msg.error === 'match_started') {
+          D.Game.pushMessage(
+            D.Net.game,
+            msg.message || 'Match already started — try Rejoin or Spectate from Live.'
+          );
         }
+        return;
+      }
+
+      if (msg.type === 'rejoin_pending') {
+        D.Net.status = 'lobby';
+        D.Net.room = msg.room || D.Net._wantRoom;
+        D.Net._pendingRejoin = null;
+        D.Game.pushMessage(
+          D.Net.game,
+          msg.message ||
+            'Rejoin requested — waiting for a player in the match to Accept…'
+        );
+        if (D.UI && D.UI.showLobby) {
+          D.UI.showLobby('Waiting for rejoin approval…');
+        }
+        D.Net._emit('rejoin_pending', msg);
+        return;
+      }
+
+      if (msg.type === 'rejoin_request') {
+        // Another player wants back in — show Accept/Decline
+        D.Net._emit('rejoin_request', msg);
+        return;
+      }
+
+      if (msg.type === 'rejoin_result') {
+        D.Net._pendingRejoin = null;
+        if (!msg.ok) {
+          D.Game.pushMessage(
+            D.Net.game,
+            msg.message ||
+              (msg.reason === 'declined'
+                ? 'Rejoin was declined.'
+                : 'Rejoin failed (' + (msg.reason || '?') + ').')
+          );
+          if (D.UI && D.UI.hideLobby) D.UI.hideLobby();
+          if (D.UI && D.UI.showMenu) D.UI.showMenu();
+        }
+        D.Net._emit('rejoin_result', msg);
+        return;
+      }
+
+      if (msg.type === 'rejoin_resolved') {
+        if (D.UI && D.UI.hideRejoinModal) D.UI.hideRejoinModal();
+        D.Net._emit('rejoin_resolved', msg);
         return;
       }
 
@@ -539,6 +683,11 @@
         D.Net.roomTitle = msg.title || null;
         D.Net.seat = msg.seat != null ? msg.seat : null;
         D.Net.role = msg.role;
+        D.Net._pendingRejoin = null;
+        if (msg.room && msg.started !== false && (msg.started || msg.reconnected)) {
+          D.Net.rememberRoom(msg.room);
+        }
+        if (msg.room && !msg.spectator) D.Net.rememberRoom(msg.room);
         const isSpec = msg.role === 'spectator' || msg.spectator === true;
         if (msg.playerId) {
           D.Net.playerId = msg.playerId;
@@ -706,6 +855,7 @@
         if (msg.recordingId) {
           D.Net.lastRecordingId = msg.recordingId;
         }
+        D.Net.clearRememberedRoom();
         const game = D.Net.game;
         if (game) {
           if (msg.winner !== undefined) game.winner = msg.winner;
@@ -800,6 +950,10 @@
       const hadMap = !!game.map;
       const ok = D.Save.applyNetState(game, msg.payload, {
         localOwner: isSpec ? 'player' : D.Net.seat || game.localOwner || 'player',
+        roomId: D.Net.room || game.roomCode || null,
+        reconnected: !!msg.reconnected,
+        fullMap: !!msg.fullMap,
+        resetFog: !!msg.reconnected || !!msg.fullMap || !hadMap,
       });
       if (!ok) {
         console.warn('[net] applyNetState failed', msg.tick);
@@ -811,6 +965,10 @@
       game.netRole = isSpec ? 'spectator' : D.Net.role;
       game.localOwner = isSpec ? 'player' : D.Net.seat || game.localOwner || 'player';
       game._serverSim = false;
+      if (D.Net.room) {
+        game.roomCode = D.Net.room;
+        D.Net.rememberRoom(D.Net.room);
+      }
       if (game.phase === 'menu') game.phase = 'playing';
 
       // Process server alerts (under attack, elimination) → chat HUD + flash

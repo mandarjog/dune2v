@@ -306,6 +306,17 @@
         D.UI.hideSpeedModal();
       });
 
+      $('btn-rejoin-accept')?.addEventListener('click', () => {
+        const id = D.UI._rejoinRequestId;
+        if (D.Net && id) D.Net.respondRejoin(id, true);
+        D.UI.hideRejoinModal();
+      });
+      $('btn-rejoin-reject')?.addEventListener('click', () => {
+        const id = D.UI._rejoinRequestId;
+        if (D.Net && id) D.Net.respondRejoin(id, false);
+        D.UI.hideRejoinModal();
+      });
+
       els.mpSpeedSelect?.addEventListener('change', () => {
         const v = Number(els.mpSpeedSelect.value);
         if (!boundGame || !Number.isFinite(v)) return;
@@ -669,6 +680,22 @@
             D.Game.pushMessage(
               game,
               (data.byName || 'Opponent') + ' declined ' + data.speed + '× speed.'
+            );
+          }
+          if (ev === 'rejoin_request') {
+            D.UI.showRejoinRequest(data);
+          }
+          if (ev === 'rejoin_resolved') {
+            D.UI.hideRejoinModal();
+          }
+          if (ev === 'rejoin_pending') {
+            D.UI.hideMenu();
+            D.UI.hideLiveMatches();
+          }
+          if (ev === 'peer_reconnected' && data && data.consented) {
+            D.Game.pushMessage(
+              game,
+              (data.name || 'Player') + ' rejoined (you accepted).'
             );
           }
           if (ev === 'match_end') {
@@ -1068,6 +1095,35 @@
       }
     },
 
+    showRejoinRequest(msg) {
+      if (!msg || !msg.requestId) return;
+      D.UI._rejoinRequestId = msg.requestId;
+      const modal = $('rejoin-modal');
+      const text = $('rejoin-modal-text');
+      const who = msg.fromName || 'A player';
+      const seat =
+        msg.seatLabel ||
+        (D.Seats && D.Seats.label ? D.Seats.label(msg.seat) : msg.seat) ||
+        'their seat';
+      if (text) {
+        text.textContent =
+          who +
+          ' wants to rejoin as ' +
+          seat +
+          ' (likely refreshed or hit Back). Accept to let them control their army again?';
+      }
+      modal?.classList.remove('hidden');
+      D.Game.pushMessage(
+        boundGame,
+        who + ' requests rejoin — Accept or Decline in the dialog.'
+      );
+    },
+
+    hideRejoinModal() {
+      D.UI._rejoinRequestId = null;
+      $('rejoin-modal')?.classList.add('hidden');
+    },
+
     showSpeedRequest(msg) {
       if (!boundGame || !msg) return;
       // Requester already knows
@@ -1286,13 +1342,31 @@
             actions.appendChild(btnJoin);
           }
 
+          // In progress with a disconnected seat → Rejoin (refresh/back recovery)
+          if (it.started && it.canRejoin) {
+            const btnRe = document.createElement('button');
+            btnRe.type = 'button';
+            btnRe.className = 'primary';
+            btnRe.textContent = 'Rejoin';
+            btnRe.title =
+              'Return to a disconnected seat. Same browser auto-returns; otherwise one player must Accept.';
+            btnRe.addEventListener('click', () => {
+              if (!D.Net || !it.room) return;
+              D.UI.hideLiveMatches();
+              D.UI.hideMenu();
+              D.UI.showLobby('Requesting rejoin to ' + (title || it.room) + '…');
+              D.Net.requestRejoin(it.room, playerName());
+            });
+            actions.appendChild(btnRe);
+          }
+
           // Spectate: in progress, or lobby while waiting
           const canSpec =
             it.canSpectate !== false && it.open !== false;
           if (canSpec) {
             const btnSpec = document.createElement('button');
             btnSpec.type = 'button';
-            btnSpec.className = it.started ? 'primary' : '';
+            btnSpec.className = it.started && !it.canRejoin ? 'primary' : '';
             btnSpec.textContent = 'Spectate';
             btnSpec.addEventListener('click', () => {
               if (!D.Net || !it.room) return;

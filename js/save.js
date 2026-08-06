@@ -226,10 +226,20 @@
       const keepGroups = game.controlGroups;
       const keepPlacement = game.placement;
       const keepHover = game.hoverTile;
+      const roomId = opts && opts.roomId != null ? opts.roomId : null;
+      const roomChanged =
+        !!(roomId && game._fogRoomId && game._fogRoomId !== roomId);
+      // Rejoin / new room / full map: rebuild world so fog from a prior match
+      // does not leave half the map "explored" under FOW.
+      const forceReload =
+        !!(opts && (opts.resetFog || opts.reconnected || opts.fullMap)) || roomChanged;
       const firstLoad =
+        forceReload ||
         !game.map ||
         game.map.width !== data.map.width ||
-        game.map.height !== data.map.height;
+        game.map.height !== data.map.height ||
+        // Lean snapshots omit tiles — only firstLoad when we actually have tiles
+        (!game.map && !data.map.tiles);
 
       // Snapshot stuck flags before replace (for MP toast on client)
       const prevStuck = {};
@@ -241,8 +251,11 @@
         }
       }
 
-      if (firstLoad) {
+      // Need tiles for a true reload; otherwise patch entities only
+      if (firstLoad && data.map.tiles) {
         if (!D.Save.loadInto(game, data)) return false;
+      } else if (!game.map && !data.map.tiles) {
+        return false;
       } else {
         D.Save._patchFromNet(game, data);
       }
@@ -260,7 +273,7 @@
       if (data.playerNames) game.playerNames = { ...data.playerNames };
       if (data.alerts) game.alerts = data.alerts.slice();
 
-      if (keepCam && !firstLoad) {
+      if (keepCam && !(firstLoad && data.map.tiles)) {
         game.camera.x = keepCam.x;
         game.camera.y = keepCam.y;
       }
@@ -271,20 +284,22 @@
       });
       // Preserve in-progress box select
       game.selection.box = keepBox;
-      if (keepGroups) game.controlGroups = keepGroups;
+      if (keepGroups && !(opts && opts.reconnected)) game.controlGroups = keepGroups;
       game.placement = keepPlacement;
       game.hoverTile = keepHover;
 
-      // Live MP snapshots omit fog arrays (bandwidth). Always rebuild vision
-      // from current units/buildings so CY deploy + moving units lift FOW.
-      if (!game.fog) D.Map.initFog(game);
+      // Live MP snapshots omit fog arrays. Always rebuild vision from units.
+      // Wipe explored when room changes / rejoin so prior match FOW cannot leak.
+      if (!game.fog || forceReload || (opts && opts.resetFog)) {
+        D.Map.initFog(game);
+      }
+      if (roomId) game._fogRoomId = roomId;
       const owners =
         D.Seats && D.Seats.active
           ? D.Seats.active(game)
           : ['player', 'enemy'];
       for (const o of owners) {
-        if (game.fog && game.fog[o]) D.Map.recomputeFog(game, o);
-        else D.Map.recomputeFog(game, o);
+        D.Map.recomputeFog(game, o);
       }
 
       // Stuck glow is on the unit; explain why in the message log (server can't toast)

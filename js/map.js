@@ -173,6 +173,8 @@
         game._fogDrawDirty = true;
         return;
       }
+      // When FOW is on, do not carry explored from a prior fog-off frame:
+      // callers that need a clean slate must initFog first.
 
       for (const u of game.units) {
         if (u.owner !== owner || u.hp <= 0) continue;

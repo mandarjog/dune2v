@@ -182,8 +182,20 @@ class RoomSim {
     return info;
   }
 
-  snapshot() {
+  /**
+   * @param {{ fullMap?: boolean }} [opts] fullMap forces tiles/spice (reconnect / rejoin)
+   */
+  snapshot(opts) {
     if (!this.running || !this.game) return null;
+    if (opts && opts.fullMap) {
+      const was = this._mapSent;
+      this._mapSent = false;
+      const data = this._serializeLive();
+      // Keep lean snapshots for everyone else after this one-off full send
+      this._mapSent = true;
+      if (!data) this._mapSent = was;
+      return data;
+    }
     return this._serializeLive();
   }
 
