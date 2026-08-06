@@ -123,7 +123,8 @@
           ? recording.winner
           : null;
 
-      game.multiplayer = false;
+      // Match server: multiplayer + _serverSim so combat/orders take the same branches
+      game.multiplayer = true;
       game.replay = true;
       game._serverSim = true; // allow Game.tick
       game.phase = 'playing';
@@ -291,7 +292,7 @@
       if (D.Map && D.Map.initFog) D.Map.initFog(game);
       game.replay = true;
       game._serverSim = true;
-      game.multiplayer = false;
+      game.multiplayer = true;
       game.phase = 'playing';
       game.winner = null;
       // Preserve view seat / spectator mode across seek reboots
@@ -466,6 +467,8 @@
           D.Replay._applyCmd(game, ev.seat, ev.payload);
         } else if (ev.type === 'speed') {
           // Match wall-clock speed changes are ignored; viewer controls speed.
+        } else if (ev.type === 'keyframe' && ev.state) {
+          D.Replay._applyKeyframe(game, ev.state);
         } else if (ev.type === 'end') {
           D.Replay._applyEndOutcome(game, ev);
           return true;
@@ -538,10 +541,23 @@
       }
     },
 
+    _applyKeyframe(game, state) {
+      if (!state || !D.Save || !D.Save.applyReplayKeyframe) return;
+      D.Save.applyReplayKeyframe(game, state);
+      game.replay = true;
+      game._serverSim = true;
+      game.multiplayer = true;
+      game.phase = 'playing';
+      if (D.Replay._viewSeat) {
+        game.localOwner = D.Replay._viewSeat;
+        game.spectator = false;
+      }
+    },
+
     /**
-     * Resolve unit ids for an order. Old recordings have desynced ids (serialize
-     * nextId burns + projectiles sharing the counter). Fall back by role so the
-     * army still moves/fights in spectator view.
+     * Resolve unit ids for an order. Old recordings (idStable=false) may desync
+     * ids; fall back by role so the army still moves. Stable recordings must use
+     * exact ids — army-wide fallback makes Watch look like a different match.
      */
     _resolveOrderIds(game, owner, ids, order) {
       const wanted = ids || [];
@@ -552,6 +568,11 @@
       }
       if (direct.length === wanted.length && wanted.length > 0) return direct;
 
+      // idStable / modern streams: never invent a different selection
+      if (!D.Replay._idBurnCompat) {
+        return direct;
+      }
+
       const ot = (order && order.type) || 'move';
       const units = game.units.filter((u) => u.owner === owner && u.hp > 0);
       const harvs = units.filter((u) => u.type === 'harvester');
@@ -560,7 +581,6 @@
 
       if (ot === 'deploy') return mcvs.map((u) => u.id);
       if (ot === 'harvest') {
-        // Prefer direct hits; else all harvesters
         if (direct.length) return direct;
         return harvs.map((u) => u.id);
       }
@@ -569,19 +589,16 @@
         if (wanted.length >= 2) return units.map((u) => u.id);
         return direct;
       }
-      // move / attack-move / attack
       if (direct.length && direct.length >= Math.ceil(wanted.length * 0.5)) {
         return direct;
       }
       if (wanted.length >= 2) {
-        // Group order: send the combat force (and harvesters if selection was large)
         const out = army.map((u) => u.id);
         if (wanted.length > army.length) {
           for (const h of harvs) out.push(h.id);
         }
         return out;
       }
-      // Single-unit order with unknown id
       if (direct.length) return direct;
       if (army.length === 1) return [army[0].id];
       if (army.length === 0 && harvs.length === 1) return [harvs[0].id];

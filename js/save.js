@@ -457,6 +457,126 @@
       D.Economy.recalcSpiceCap(game);
     },
 
+    /**
+     * Apply a mid-match replay keyframe: keep terrain, replace entities/economy.
+     * Used so cmd-stream re-sim cannot drift for an entire match.
+     */
+    applyReplayKeyframe(game, data) {
+      if (!game || !game.map || !data) return false;
+      const map = game.map;
+      const n = map.width * map.height;
+
+      if (data.tick != null) game.tick = data.tick | 0;
+      if (data.winner !== undefined) game.winner = data.winner;
+      if (data.activeOwners && data.activeOwners.length) {
+        game.activeOwners = data.activeOwners.slice();
+      }
+      if (data.eliminated) game.eliminated = { ...data.eliminated };
+      else game.eliminated = {};
+      if (data.playerNames) game.playerNames = { ...data.playerNames };
+      if (D.Seats && D.Seats.ensureBuckets) {
+        D.Seats.ensureBuckets(game, game.activeOwners);
+      }
+      // After ensureBuckets so seat credit buckets are not wiped
+      if (data.credits) {
+        for (const k of Object.keys(data.credits)) {
+          game.credits[k] = data.credits[k];
+        }
+      }
+      if (data.spiceCap) {
+        for (const k of Object.keys(data.spiceCap)) {
+          game.spiceCap[k] = data.spiceCap[k];
+        }
+      }
+      if (data.structureBuilder) {
+        for (const k of Object.keys(data.structureBuilder)) {
+          game.structureBuilder[k] = data.structureBuilder[k];
+        }
+      }
+      if (data.rngState != null) D.rng.setState(data.rngState);
+
+      if (data.map && data.map.spiceAmount && map.spiceAmount) {
+        const src = data.map.spiceAmount;
+        const len = Math.min(n, src.length);
+        for (let i = 0; i < len; i++) map.spiceAmount[i] = +src[i] || 0;
+      }
+
+      game.buildings = [];
+      game.units = [];
+      game.projectiles = [];
+      game.fx = [];
+      let maxId = 1;
+
+      for (const raw of data.buildings || []) {
+        maxId = Math.max(maxId, (raw.id | 0) + 1);
+        const b = {
+          id: raw.id,
+          type: raw.type,
+          owner: raw.owner,
+          tileX: raw.tileX,
+          tileY: raw.tileY,
+          tileW: raw.tileW,
+          tileH: raw.tileH,
+          hp: raw.hp,
+          hpMax: raw.hpMax,
+          powered: raw.powered !== false,
+          buildProgress: raw.buildProgress != null ? raw.buildProgress : 1,
+          buildQueue: raw.buildQueue || [],
+          rallyX: raw.rallyX,
+          rallyY: raw.rallyY,
+          dockTileX: raw.dockTileX,
+          dockTileY: raw.dockTileY,
+          primary: false,
+          sight: raw.sight,
+          weapon:
+            raw.weapon ||
+            (D.config.buildings[raw.type]?.weapon ? { cooldownLeft: 0 } : null),
+          costPaid: raw.costPaid || 0,
+        };
+        if (b.weapon && b.weapon.cooldownLeft == null) b.weapon.cooldownLeft = 0;
+        game.buildings.push(b);
+      }
+
+      for (const raw of data.units || []) {
+        maxId = Math.max(maxId, (raw.id | 0) + 1);
+        const def = D.config.units[raw.type];
+        const u = {
+          id: raw.id,
+          type: raw.type,
+          owner: raw.owner,
+          x: raw.x,
+          y: raw.y,
+          hp: raw.hp,
+          hpMax: raw.hpMax || (def ? def.hp : 100),
+          facing: raw.facing || 0,
+          orders: raw.orders || (raw.order ? [raw.order] : []),
+          order: raw.order || null,
+          path: [],
+          weapon: raw.weapon || (def && def.weapon ? { cooldownLeft: 0 } : null),
+          cargo: raw.cargo || 0,
+          cargoMax: raw.cargoMax || (def && def.cargoMax) || 0,
+          harvest: raw.harvest || null,
+          sight: raw.sight || (def && def.sight) || 3,
+          selected: false,
+          repathQueued: false,
+          stuck: !!raw.stuck,
+          stuckReason: raw.stuckReason || null,
+        };
+        if (u.weapon && u.weapon.cooldownLeft == null) u.weapon.cooldownLeft = 0;
+        game.units.push(u);
+      }
+
+      D.Entities.setNextId(Math.max(maxId, data.nextId || 1));
+      D.Map.rebuildBlocked(game);
+      D.Economy.tickPower(game);
+      // Do not recalcSpiceCap from buildings only — keyframe spiceCap is authoritative
+      if (!game.fog) D.Map.initFog(game);
+      const owners = D.Seats ? D.Seats.active(game) : ['player', 'enemy'];
+      for (const o of owners) D.Map.recomputeFog(game, o);
+      game._fogDrawDirty = true;
+      return true;
+    },
+
     /** Apply save into an existing game object. Returns true on success. */
     loadInto(game, data) {
       if (!data || !data.map) return false;

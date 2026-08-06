@@ -131,6 +131,8 @@
     /** Fire once when a large group move is issued. */
     orderIssue(game, n, orderType, backend, ok, ms) {
       if (n < 8) return;
+      // Replay re-issues hundreds of group moves — do not flood /api/telemetry
+      if (game && game.replay) return;
       send(
         'order_issue',
         {

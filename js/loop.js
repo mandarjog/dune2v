@@ -94,9 +94,11 @@
       if (D.Telemetry && D.Telemetry.tick) D.Telemetry.tick(game, nowMs);
 
       // Autosave every ~15s (or ~30s if huge army — localStorage JSON is expensive)
+      // Never during replay (would clobber SP continue with re-sim garbage).
       if (
         D.Save &&
         !game.multiplayer &&
+        !game.replay &&
         game.phase === 'playing' &&
         game.tick > 0
       ) {

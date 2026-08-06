@@ -8,6 +8,8 @@ const STATE_EVERY = 2;
 /** When armies get huge, send snapshots less often to keep WS + JSON cheap. */
 const STATE_EVERY_LARGE = 3;
 const LARGE_UNIT_THRESHOLD = 80;
+/** Cmd-stream re-sim drifts; keyframes re-sync entities every ~15s of sim time. */
+const KEYFRAME_EVERY = 300; // 300 ticks × 0.05s = 15s
 const SPEED_OPTIONS = [0.5, 1, 1.5, 2, 3];
 const DEFAULT_SPEED = 2;
 
@@ -226,6 +228,17 @@ class RoomSim {
       return;
     }
     D.Game.tick(this.game, BASE_DT);
+    // Periodic entity keyframes so Watch/replay does not butterfly-effect for an hour
+    if (this._rec && this.game.tick > 0 && this.game.tick % KEYFRAME_EVERY === 0) {
+      const kf = this._serializeKeyframe();
+      if (kf) {
+        recordings.appendEvent(this._rec, {
+          t: this.game.tick,
+          type: 'keyframe',
+          state: kf,
+        });
+      }
+    }
     this._broadcast(false);
   }
 
@@ -255,6 +268,38 @@ class RoomSim {
       }
     }
     // Cmd-stream replay re-sims combat; keep init tiny
+    data.projectiles = [];
+    data.fx = [];
+    return data;
+  }
+
+  /**
+   * Mid-match resync blob for replay — entities/economy/spice, no terrain tiles.
+   * Replay keeps init map and snaps units/buildings/credits back to server truth.
+   */
+  _serializeKeyframe() {
+    const D = this.D;
+    const data = D.Save.serialize(this.game);
+    if (!data) return null;
+    delete data.camera;
+    delete data.selection;
+    delete data.controlGroups;
+    delete data.messages;
+    delete data.fog;
+    delete data.ai;
+    if (data.map) {
+      // Keep spice (harvest desync is a big visual drift); drop huge static arrays
+      delete data.map.tiles;
+      delete data.map.blocked;
+      delete data.map.spawns;
+      delete data.map.wormZones;
+    }
+    if (data.units) {
+      for (const u of data.units) {
+        delete u.path;
+        // Keep order/harvest so harvesters resume correctly after snap
+      }
+    }
     data.projectiles = [];
     data.fx = [];
     return data;
