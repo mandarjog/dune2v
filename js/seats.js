@@ -109,6 +109,26 @@
       return SEAT_DEFS[D.Seats.index(seat)] || SEAT_DEFS[0];
     },
 
+    /**
+     * Whether this seat's house may build/train a unit or structure.
+     * Defs with no `houses` array are available to everyone.
+     * @param {string} seat
+     * @param {{ houses?: string[] }|null} def
+     */
+    allows(seat, def) {
+      if (!def) return false;
+      const list = def.houses;
+      if (!list || !list.length) return true;
+      const h = D.Seats.houseId(seat);
+      return list.indexOf(h) >= 0;
+    },
+
+    /** House id string: 'atreides' | 'harkonnen' | 'ordos'. */
+    houseId(seat) {
+      const d = D.Seats.def(seat);
+      return (d && d.id) || 'atreides';
+    },
+
     /** House def for a seat (unique color per seat; house id may repeat). */
     house(seat) {
       const d = D.Seats.def(seat);

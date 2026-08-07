@@ -251,6 +251,7 @@
         D.UI.hideMenu();
         D.UI.hideLobby();
         D.UI.hideLiveMatches();
+        D.UI.buildStructureButtons(game);
         D.UI.refresh(game);
         D.Renderer.rebuildTerrain(game);
         if (D.Save) D.Save.write(game);
@@ -627,6 +628,8 @@
             D.UI.refreshMpMatchActions(game);
             D.UI.refreshMatchup(game);
             D.UI.refreshSpeedHud(game);
+            // House specials depend on seat
+            if (game) D.UI.buildStructureButtons(game);
             D.UI.refresh(game);
           }
           if (ev === 'joined') {
@@ -636,6 +639,7 @@
               !!(game && game.multiplayer && !spec && game.phase === 'playing')
             );
             D.UI.refreshMpMatchActions(game);
+            if (game) D.UI.buildStructureButtons(game);
             if (spec) {
               D.UI.hideLiveMatches();
               D.UI.hideMenu();
@@ -2033,12 +2037,15 @@
         'lightFactory',
         'heavyFactory',
         'gunTurret',
+        'longRangeTower',
         'wall',
         'radar',
       ];
+      const owner = me(game);
       for (const type of order) {
         const def = D.config.buildings[type];
         if (!def || !def.buildable) continue;
+        if (D.Seats && D.Seats.allows && !D.Seats.allows(owner, def)) continue;
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'game-btn icon-btn';
@@ -2056,7 +2063,14 @@
         label.innerHTML = `<strong>${def.name}</strong><span class="meta">${def.cost}¢ · ${def.power >= 0 ? '+' : ''}${def.power}⚡</span>`;
         btn.appendChild(icon);
         btn.appendChild(label);
-        btn.title = `${def.name} — ${def.cost} credits`;
+        btn.title =
+          def.name +
+          ' — ' +
+          def.cost +
+          ' credits' +
+          (def.houses && def.houses.length
+            ? ' · ' + (D.Seats && D.Seats.house ? D.Seats.house(owner).name : '') + ' only'
+            : '');
         btn.addEventListener('click', (e) => {
           e.preventDefault();
           e.stopPropagation();
@@ -2298,7 +2312,14 @@
           unitMenu.appendChild(title);
           const g = document.createElement('div');
           g.className = 'btn-grid';
-          for (const ut of def.produces) {
+          const produceTypes =
+            D.Economy.produceList
+              ? D.Economy.produceList(b.type, o)
+              : (def.produces || []).filter((ut) => {
+                  const ud = D.config.units[ut];
+                  return ud && (!D.Seats || !D.Seats.allows || D.Seats.allows(o, ud));
+                });
+          for (const ut of produceTypes) {
             const udef = D.config.units[ut];
             if (!udef) continue;
             const btn = document.createElement('button');
@@ -2312,7 +2333,11 @@
             const label = document.createElement('span');
             label.className = 'btn-label';
             const can = D.Economy.canAfford(game, o, udef.cost);
-            label.innerHTML = `<strong>${udef.name}</strong><span class="meta ${can ? '' : 'cant-afford'}">${udef.cost}¢ · ${udef.buildTime}s${can ? '' : ' — need credits'}</span>`;
+            const houseTag =
+              udef.houses && udef.houses.length
+                ? ' · ' + (D.Seats && D.Seats.house ? D.Seats.house(o).name : 'special')
+                : '';
+            label.innerHTML = `<strong>${udef.name}</strong><span class="meta ${can ? '' : 'cant-afford'}">${udef.cost}¢ · ${udef.buildTime}s${houseTag}${can ? '' : ' — need credits'}</span>`;
             btn.appendChild(icon);
             btn.appendChild(label);
             btn.disabled =

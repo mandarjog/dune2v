@@ -189,7 +189,8 @@
         sight: 3,
         requires: 'windtrap',
         buildable: true,
-        produces: ['infantry', 'trooper'],
+        // saboteur filtered by house (Ordos only)
+        produces: ['infantry', 'trooper', 'saboteur'],
       },
       lightFactory: {
         name: 'Light Factory',
@@ -215,7 +216,8 @@
         sight: 3,
         requires: 'refinery',
         buildable: true,
-        produces: ['combatTank', 'harvester', 'mcv'],
+        // siegeTank filtered by house (Harkonnen only)
+        produces: ['combatTank', 'siegeTank', 'harvester', 'mcv'],
       },
       gunTurret: {
         name: 'Gun Turret',
@@ -236,6 +238,30 @@
           vsI: 0.7,
           vsV: 1.0,
           vsB: 0.5,
+          projectile: true,
+        },
+      },
+      /** Atreides special: long-range defense (2× range, 1.1× damage vs gun turret). */
+      longRangeTower: {
+        name: 'Long Range Tower',
+        cost: 200,
+        power: -25,
+        hp: 180,
+        buildTime: 30,
+        tileW: 1,
+        tileH: 1,
+        sight: 10,
+        requires: 'windtrap',
+        buildable: true,
+        houses: ['atreides'],
+        weapon: {
+          kind: 'shell',
+          damage: 15, // ~1.1× gun turret (14)
+          range: 10.0, // 2× gun turret (5)
+          cooldown: 1.1,
+          vsI: 0.7,
+          vsV: 1.0,
+          vsB: 0.55,
           projectile: true,
         },
       },
@@ -285,6 +311,29 @@
           vsI: 1.0,
           vsV: 0.4,
           vsB: 0.25,
+          projectile: false,
+        },
+      },
+      /** Ordos special: infantry cost, trike HP, 2× infantry damage. */
+      saboteur: {
+        name: 'Saboteur',
+        cost: 60,
+        builtAt: 'barracks',
+        hp: 100,
+        speed: 0.85,
+        armor: 0,
+        sight: 4,
+        buildTime: 14,
+        kind: 'infantry',
+        houses: ['ordos'],
+        weapon: {
+          kind: 'bullet',
+          damage: 8, // 2× infantry
+          range: 2.5,
+          cooldown: 0.75,
+          vsI: 1.0,
+          vsV: 0.5,
+          vsB: 0.45,
           projectile: false,
         },
       },
@@ -372,6 +421,29 @@
           projectile: true,
         },
       },
+      /** Harkonnen special: slow siege armor (0.5× speed, 2× HP, 1.5× dmg, ½ fire rate). */
+      siegeTank: {
+        name: 'Siege Tank',
+        cost: 900,
+        builtAt: 'heavyFactory',
+        hp: 440,
+        speed: 0.6,
+        armor: 3,
+        sight: 4,
+        buildTime: 55,
+        kind: 'vehicle',
+        houses: ['harkonnen'],
+        weapon: {
+          kind: 'shell',
+          damage: 27, // 1.5× combat tank
+          range: 4.5,
+          cooldown: 2.4, // half firing speed (2× cooldown)
+          vsI: 0.5,
+          vsV: 1.1,
+          vsB: 1.2,
+          projectile: true,
+        },
+      },
       harvester: {
         name: 'Harvester',
         cost: 800,
@@ -412,9 +484,11 @@
       productionWeights: {
         infantry: 2,
         trooper: 2,
+        saboteur: 2,
         trike: 2,
         quad: 2,
-        combatTank: 4,
+        combatTank: 3,
+        siegeTank: 2,
       },
       buildOrder: [
         'windtrap',

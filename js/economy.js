@@ -59,8 +59,21 @@
     canBuildType(game, owner, type) {
       const def = D.config.buildings[type];
       if (!def || !def.buildable) return false;
+      if (D.Seats && D.Seats.allows && !D.Seats.allows(owner, def)) return false;
       if (!D.Economy.hasTech(game, owner, def.requires)) return false;
       return D.Economy.canAfford(game, owner, def.cost);
+    },
+
+    /** Units a factory may list for this owner (house specials filtered). */
+    produceList(buildingType, owner) {
+      const def = D.config.buildings[buildingType];
+      if (!def || !def.produces) return [];
+      return def.produces.filter((ut) => {
+        const udef = D.config.units[ut];
+        if (!udef) return false;
+        if (D.Seats && D.Seats.allows && !D.Seats.allows(owner, udef)) return false;
+        return true;
+      });
     },
 
     /** Incomplete structures for this owner (active construction slots). */
@@ -82,6 +95,9 @@
     beginStructure(game, owner, type, tileX, tileY) {
       const def = D.config.buildings[type];
       if (!def || !def.buildable) return { ok: false, reason: 'invalid' };
+      if (D.Seats && D.Seats.allows && !D.Seats.allows(owner, def)) {
+        return { ok: false, reason: 'house' };
+      }
       if (!D.Economy.hasTech(game, owner, def.requires)) {
         return { ok: false, reason: 'tech' };
       }
@@ -134,6 +150,9 @@
       }
       if (!b || b.buildProgress < 1) return { ok: false, reason: 'building' };
       if (udef.builtAt !== b.type) return { ok: false, reason: 'type' };
+      if (D.Seats && D.Seats.allows && !D.Seats.allows(b.owner, udef)) {
+        return { ok: false, reason: 'house' };
+      }
       if (b.buildQueue.length >= 5) return { ok: false, reason: 'queue' };
       if (!D.Economy.charge(game, b.owner, udef.cost)) {
         return { ok: false, reason: 'credits' };

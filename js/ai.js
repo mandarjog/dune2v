@@ -133,6 +133,9 @@
     const weights = D.config.ai.productionWeights;
     const picks = [];
     for (const [type, w] of Object.entries(weights)) {
+      const udef = D.config.units[type];
+      if (!udef) continue;
+      if (D.Seats && D.Seats.allows && !D.Seats.allows(OWNER, udef)) continue;
       for (let i = 0; i < w; i++) picks.push(type);
     }
     const type = D.rng.pick(picks);

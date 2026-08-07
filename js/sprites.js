@@ -350,6 +350,38 @@
     ctx.restore();
   }
 
+  /** Atreides LRT — taller mast + extended barrel. */
+  function drawLongRangeTower(ctx, x, y, w, h, col, opts) {
+    const b = basePad(ctx, x, y, w, h, col, { pad: 0.06 });
+    const cx = b.bx + b.bw / 2;
+    const cy = b.by + b.bh / 2;
+    const r = b.m * 0.32;
+    // pedestal
+    ctx.fillStyle = shade(col, -0.25);
+    ctx.fillRect(cx - r * 0.55, cy - r * 0.1, r * 1.1, r * 1.05);
+    ctx.strokeStyle = '#111';
+    ctx.strokeRect(cx - r * 0.55, cy - r * 0.1, r * 1.1, r * 1.05);
+    // upper ring
+    ctx.fillStyle = shade(col, -0.1);
+    ctx.beginPath();
+    ctx.arc(cx, cy - r * 0.15, r * 0.85, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#111';
+    ctx.stroke();
+    const ang = opts.facing != null ? opts.facing : -Math.PI / 2;
+    ctx.save();
+    ctx.translate(cx, cy - r * 0.15);
+    ctx.rotate(ang);
+    // long thin barrel
+    metal(ctx, r * 0.2, -r * 0.1, r * 1.65, r * 0.2);
+    ctx.fillStyle = '#1a1a1a';
+    ctx.fillRect(r * 1.7, -r * 0.07, r * 0.28, r * 0.14);
+    // muzzle ring
+    ctx.fillStyle = shade(col, 0.15);
+    ctx.fillRect(r * 1.95, -r * 0.1, r * 0.08, r * 0.2);
+    ctx.restore();
+  }
+
   function drawWall(ctx, x, y, w, h, col) {
     const g = ctx.createLinearGradient(x, y, x, y + h);
     g.addColorStop(0, shade(col, 0.15));
@@ -452,6 +484,32 @@
     ctx.fillRect(cx - s * 0.38, cy - s * 0.2, s * 0.26, s * 0.1);
   }
 
+  /** Ordos saboteur — lean infantry with pack / blade. */
+  function drawSaboteur(ctx, x, y, w, h, col) {
+    const cx = x + w / 2;
+    const cy = y + h / 2;
+    const s = Math.min(w, h);
+    // cloaked body (darker)
+    ctx.fillStyle = shade(col, -0.25);
+    ctx.beginPath();
+    ctx.arc(cx, cy + s * 0.08, s * 0.26, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = shade(col, 0.05);
+    ctx.beginPath();
+    ctx.arc(cx, cy - s * 0.2, s * 0.14, 0, Math.PI * 2);
+    ctx.fill();
+    // satchel
+    ctx.fillStyle = '#2a2218';
+    ctx.fillRect(cx - s * 0.32, cy + s * 0.02, s * 0.18, s * 0.22);
+    // blade
+    ctx.strokeStyle = '#c8c8c8';
+    ctx.lineWidth = Math.max(1.5, s * 0.07);
+    ctx.beginPath();
+    ctx.moveTo(cx + s * 0.12, cy + s * 0.05);
+    ctx.lineTo(cx + s * 0.4, cy - s * 0.12);
+    ctx.stroke();
+  }
+
   function drawTrike(ctx, x, y, w, h, col, opts) {
     const cx = x + w / 2;
     const cy = y + h / 2;
@@ -541,6 +599,36 @@
     ctx.restore();
   }
 
+  /** Harkonnen siege tank — wider hull, stubby heavy gun. */
+  function drawSiegeTank(ctx, x, y, w, h, col, opts) {
+    const cx = x + w / 2;
+    const cy = y + h / 2;
+    const s = Math.min(w, h);
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(opts.facing || 0);
+    // heavy treads
+    ctx.fillStyle = '#1a1a1a';
+    ctx.fillRect(-s * 0.48, -s * 0.38, s * 0.96, s * 0.2);
+    ctx.fillRect(-s * 0.48, s * 0.18, s * 0.96, s * 0.2);
+    // bulky hull
+    ctx.fillStyle = shade(col, -0.08);
+    roundRect(ctx, -s * 0.44, -s * 0.26, s * 0.88, s * 0.52, s * 0.05);
+    ctx.fill();
+    ctx.strokeStyle = '#0a0a0a';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    // block turret
+    ctx.fillStyle = shade(col, -0.2);
+    roundRect(ctx, -s * 0.22, -s * 0.2, s * 0.4, s * 0.4, s * 0.04);
+    ctx.fill();
+    // short thick barrel
+    metal(ctx, s * 0.12, -s * 0.1, s * 0.42, s * 0.2);
+    ctx.fillStyle = '#333';
+    ctx.fillRect(s * 0.5, -s * 0.08, s * 0.1, s * 0.16);
+    ctx.restore();
+  }
+
   function drawHarvester(ctx, x, y, w, h, col, opts) {
     const cx = x + w / 2;
     const cy = y + h / 2;
@@ -613,6 +701,7 @@
     lightFactory: drawLightFactory,
     heavyFactory: drawHeavyFactory,
     gunTurret: drawGunTurret,
+    longRangeTower: drawLongRangeTower,
     wall: drawWall,
     radar: drawRadar,
   };
@@ -620,9 +709,11 @@
   const unitDrawers = {
     infantry: drawInfantry,
     trooper: drawTrooper,
+    saboteur: drawSaboteur,
     trike: drawTrike,
     quad: drawQuad,
     combatTank: drawCombatTank,
+    siegeTank: drawSiegeTank,
     harvester: drawHarvester,
     mcv: drawMCV,
   };
