@@ -138,98 +138,106 @@
       </aside>
     </div>
 
-    <!-- Main menu -->
+    <!-- Main menu — wide splash (hero + two columns) -->
     <div id="menu-modal" class="modal-backdrop">
-      <div class="modal modal-wide">
-        <h2>Dune II</h2>
-        <p>
-          Unofficial browser skirmish inspired by Westwood’s Dune II.
-          Harvest spice, build your base, destroy the enemy Construction Yard.
-        </p>
-        <p style="font-size: 12px">
-          Atreides (blue) vs Harkonnen (red) · procedural art
-        </p>
-        <div class="actions">
-          <button id="btn-continue" type="button" style="display: none">Continue</button>
-          <button id="btn-start" type="button">New Skirmish (vs AI)</button>
-          <button
-            id="btn-start-mass"
-            type="button"
-            class="btn-secondary"
-            title="SP vs AI with large pre-built armies (path / late-game test)"
-          >
-            Mass armies (test)
-          </button>
-          <button id="btn-live" type="button">Live matches</button>
-          <button id="btn-replays" type="button">Watch replays</button>
-          <button id="btn-help-menu" type="button">Controls help</button>
-        </div>
-        <p class="hint" style="margin-top: 8px">
-          Stress test:
-          <code>?scenario=mass</code>
-          or
-          <code>?scenario=mass&amp;armies=120</code>
-          — FOW <b>off</b> by default (see enemy turrets). Use
-          <code>?fog=1</code> for fog, <code>?ai=0</code> to pause AI.
-        </p>
-        <label class="start-mode-row" for="opt-mcv-start">
-          <input type="checkbox" id="opt-mcv-start" />
-          <span>MCV-only start <span class="meta">(classic — no free base)</span></span>
-        </label>
-        <div class="mp-block">
-          <div class="section-title" style="margin-top: 14px">Multiplayer (2–5 FFA)</div>
-          <p class="hint" style="margin-bottom: 8px">
-            Pick a name, host a room, share the link. Up to 5 commanders —
-            colors: blue Atreides, red Harkonnen, green Ordos, pink Harkonnen,
-            black Ordos (labels like <b>Ordos-Alex</b>).
-            Default start: CY + Windtrap + Refinery + harvester.
-          </p>
-          <label class="lobby-link-label" for="mp-name-input">Your name</label>
-          <input
-            id="mp-name-input"
-            type="text"
-            maxlength="20"
-            placeholder="Commander"
-            autocomplete="nickname"
-            spellcheck="false"
+      <div class="modal menu-splash" role="dialog" aria-labelledby="menu-title">
+        <div class="menu-hero">
+          <img
+            class="menu-hero-img"
+            src="assets/menu-hero.jpg"
+            width="1280"
+            height="720"
+            alt="Arrakis dunes — Atreides and Harkonnen bases under a golden sky"
           />
-          <label class="lobby-link-label" for="mp-title-input" style="margin-top: 8px"
-            >Match name <span class="meta">(optional — shown in Live list)</span></label
-          >
-          <input
-            id="mp-title-input"
-            type="text"
-            maxlength="40"
-            placeholder="e.g. Friday FFA"
-            autocomplete="off"
-            spellcheck="false"
-          />
-          <div class="actions" style="margin-top: 10px">
-            <button id="btn-mp-host" type="button" class="primary">Host room</button>
+          <div class="menu-hero-overlay">
+            <h1 id="menu-title">Dune II</h1>
+            <p class="menu-tagline">
+              Browser skirmish · harvest the spice · last Construction Yard standing
+            </p>
           </div>
-          <div class="mp-join-row">
+        </div>
+
+        <div class="menu-body">
+          <div class="menu-col menu-col-sp">
+            <div class="section-title">Single player</div>
+            <div class="actions menu-actions">
+              <button id="btn-continue" type="button" style="display: none">Continue</button>
+              <button id="btn-start" type="button" class="primary">New Skirmish (vs AI)</button>
+              <button
+                id="btn-start-mass"
+                type="button"
+                class="btn-secondary"
+                title="SP vs AI with large pre-built armies (path / late-game test)"
+              >
+                Mass armies (test)
+              </button>
+              <button id="btn-help-menu" type="button">Controls</button>
+            </div>
+            <label class="start-mode-row" for="opt-mcv-start">
+              <input type="checkbox" id="opt-mcv-start" />
+              <span>MCV-only start <span class="meta">(no free base)</span></span>
+            </label>
+            <p class="hint menu-house-hint">
+              You: <b class="house-atreides">Atreides</b> (LRT) · AI:
+              <b class="house-harkonnen">Harkonnen</b> (Siege Tank)
+            </p>
+          </div>
+
+          <div class="menu-col menu-col-mp">
+            <div class="section-title">Multiplayer · 2–5 FFA</div>
+            <label class="lobby-link-label" for="mp-name-input">Your name</label>
             <input
-              id="mp-code-input"
+              id="mp-name-input"
               type="text"
-              maxlength="12"
-              placeholder="Room code"
+              maxlength="20"
+              placeholder="Commander"
+              autocomplete="nickname"
+              spellcheck="false"
+            />
+            <label class="lobby-link-label" for="mp-title-input"
+              >Match name <span class="meta">(optional)</span></label
+            >
+            <input
+              id="mp-title-input"
+              type="text"
+              maxlength="40"
+              placeholder="e.g. Friday FFA"
               autocomplete="off"
               spellcheck="false"
             />
-            <button id="btn-mp-join" type="button">Join</button>
+            <div class="actions menu-actions" style="margin-top: 10px">
+              <button id="btn-mp-host" type="button" class="primary">Host room</button>
+              <button id="btn-live" type="button">Live matches</button>
+              <button id="btn-replays" type="button">Replays</button>
+            </div>
+            <div class="mp-join-row">
+              <input
+                id="mp-code-input"
+                type="text"
+                maxlength="12"
+                placeholder="Room code"
+                autocomplete="off"
+                spellcheck="false"
+              />
+              <button id="btn-mp-join" type="button">Join</button>
+            </div>
+            <p class="hint" style="margin-top: 8px">
+              Seats: blue Atreides · red Harkonnen · green Ordos · pink · black.
+              Host starts when ready.
+            </p>
           </div>
-          <p class="hint" style="margin-top: 8px; text-align: left">
-            Or open <b>Live matches</b> to <b>Join</b> a lobby before it starts, or
-            <b>Spectate</b> a game in progress.
-          </p>
         </div>
-        <p class="hint" style="margin-top: 16px">
-          SP autosaves (F5 / Esc pause). MP: share <code>?room=CODE</code>.
-          Spectate: <code>?spectate=CODE</code> · list <code>?live=1</code>.<br />
-          <code>?debug=1</code> · <code>?ai=0</code> · <code>?fog=0</code> · <code>?mcv=1</code> classic start
-        </p>
-        <div class="actions" style="margin-top: 12px">
-          <button id="btn-feedback" type="button">Send feedback</button>
+
+        <div class="menu-footer">
+          <button id="btn-feedback" type="button" class="btn-secondary">Send feedback</button>
+          <details class="menu-advanced">
+            <summary>Advanced / URL flags</summary>
+            <p class="hint">
+              <code>?scenario=mass</code> · <code>?fog=0</code> · <code>?ai=0</code> ·
+              <code>?mcv=1</code> · <code>?room=CODE</code> · <code>?spectate=CODE</code> ·
+              <code>?live=1</code> · <code>?debug=1</code>
+            </p>
+          </details>
         </div>
       </div>
     </div>
