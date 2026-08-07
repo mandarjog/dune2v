@@ -15,6 +15,7 @@ COPY index.html ./
 COPY css ./css
 COPY js ./js
 COPY maps ./maps
+COPY assets ./assets
 COPY dist ./dist
 COPY server ./server
 COPY tools ./tools

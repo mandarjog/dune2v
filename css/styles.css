@@ -960,6 +960,193 @@ button.linkish {
   max-width: 480px;
 }
 
+/* ─── Opening menu: wide landscape splash (not a tall skinny card) ─── */
+.modal.menu-splash {
+  max-width: min(960px, 96vw);
+  width: min(960px, 96vw);
+  max-height: min(92vh, 900px);
+  padding: 0;
+  text-align: left;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  border-width: 2px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.75);
+}
+
+.menu-hero {
+  position: relative;
+  flex: 0 0 auto;
+  width: 100%;
+  aspect-ratio: 16 / 7;
+  max-height: 38vh;
+  min-height: 140px;
+  overflow: hidden;
+  background: #1a1208;
+  border-bottom: 2px solid var(--accent);
+}
+
+.menu-hero-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 40%;
+}
+
+.menu-hero-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding: 18px 24px 16px;
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    transparent 35%,
+    rgba(10, 8, 6, 0.55) 70%,
+    rgba(10, 8, 6, 0.92) 100%
+  );
+  pointer-events: none;
+}
+
+.menu-hero-overlay h1,
+.menu-splash #menu-title {
+  color: var(--accent);
+  font-size: clamp(26px, 4vw, 36px);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin: 0 0 4px;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.85);
+}
+
+.menu-tagline {
+  color: var(--text);
+  font-size: 13px;
+  margin: 0;
+  opacity: 0.9;
+  letter-spacing: 0.02em;
+}
+
+.menu-body {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.menu-col {
+  padding: 16px 20px 14px;
+  text-align: left;
+}
+
+.menu-col-sp {
+  border-right: 1px solid var(--panel-border);
+}
+
+.menu-col .section-title {
+  margin-top: 0;
+  margin-bottom: 10px;
+}
+
+.menu-actions {
+  justify-content: flex-start;
+  margin-bottom: 10px;
+}
+
+.menu-actions button {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.menu-house-hint {
+  margin-top: 10px;
+  margin-bottom: 0;
+  text-align: left;
+}
+
+.house-atreides {
+  color: var(--player);
+}
+.house-harkonnen {
+  color: var(--enemy);
+}
+
+.menu-footer {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 16px;
+  padding: 10px 20px 14px;
+  border-top: 1px solid var(--panel-border);
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.menu-footer .btn-secondary {
+  min-width: 120px;
+}
+
+.menu-advanced {
+  flex: 1 1 200px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.menu-advanced summary {
+  cursor: pointer;
+  color: var(--muted);
+  user-select: none;
+  list-style: none;
+}
+
+.menu-advanced summary::-webkit-details-marker {
+  display: none;
+}
+
+.menu-advanced summary::before {
+  content: '▸ ';
+  color: var(--accent);
+}
+
+.menu-advanced[open] summary::before {
+  content: '▾ ';
+}
+
+.menu-advanced .hint {
+  margin-top: 6px;
+  margin-bottom: 0;
+  text-align: left;
+  line-height: 1.45;
+}
+
+/* Stack on short / narrow viewports */
+@media (max-width: 720px), (max-height: 560px) {
+  .modal.menu-splash {
+    max-width: 96vw;
+    width: 96vw;
+    max-height: 94vh;
+  }
+
+  .menu-hero {
+    aspect-ratio: 16 / 6;
+    max-height: 22vh;
+    min-height: 100px;
+  }
+
+  .menu-body {
+    grid-template-columns: 1fr;
+  }
+
+  .menu-col-sp {
+    border-right: none;
+    border-bottom: 1px solid var(--panel-border);
+  }
+}
+
 .modal button.primary {
   background: #3a3220;
   border-color: var(--accent);
