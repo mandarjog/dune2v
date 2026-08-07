@@ -42,6 +42,8 @@ describe('house special units', () => {
     assert.equal(siege.hp, tank.hp * 2);
     assert.equal(siege.weapon.damage, tank.weapon.damage * 1.5);
     assert.equal(siege.weapon.cooldown, tank.weapon.cooldown * 2);
+    assert.equal(siege.weapon.range, tank.weapon.range * 1.5);
+    assert.ok(siege.sight >= siege.weapon.range, 'sight must cover range for FOW fire');
 
     const inf = Dune2.config.units.infantry;
     const trike = Dune2.config.units.trike;

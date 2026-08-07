@@ -425,7 +425,7 @@
           projectile: true,
         },
       },
-      /** Harkonnen special: slow siege armor (0.5× speed, 2× HP, 1.5× dmg, ½ fire rate). */
+      /** Harkonnen special: slow siege armor (0.5× speed, 2× HP, 1.5× dmg, ½ fire rate, 1.5× range). */
       siegeTank: {
         name: 'Siege Tank',
         cost: 900,
@@ -433,7 +433,8 @@
         hp: 440,
         speed: 0.6,
         armor: 3,
-        sight: 4,
+        // Sight must cover weapon range or FOW blocks fire at max range
+        sight: 6,
         buildTime: 55,
         kind: 'vehicle',
         houses: ['harkonnen'],
@@ -441,7 +442,7 @@
         weapon: {
           kind: 'shell',
           damage: 27, // 1.5× combat tank
-          range: 4.5,
+          range: 6.0, // 1.5× combat tank (4)
           cooldown: 2.4, // half firing speed (2× cooldown)
           vsI: 0.5,
           vsV: 1.1,

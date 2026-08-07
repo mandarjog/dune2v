@@ -157,6 +157,7 @@
           life: p.life,
           kind: p.kind,
           fromTurret: !!p.fromTurret,
+          heavy: !!p.heavy,
         })),
         fx: (game.fx || []).map((f) => ({
           type: f.type,

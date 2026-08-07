@@ -197,28 +197,28 @@
         const s = D.Renderer.worldToScreen(game, p.x, p.y);
         const friendly = p.owner === local;
         const col = friendly ? '#9cf' : '#f96';
-        const big = p.fromTurret || p.kind === 'shell';
-        // Trail toward target for readability
+        const big = p.fromTurret || p.kind === 'shell' || p.heavy;
+        const heavy = !!p.heavy;
+        // Trail toward target for readability (longer for siege / LRT)
         if (p.tx != null && p.ty != null) {
-          const s1 = D.Renderer.worldToScreen(game, p.tx, p.ty);
+          const ang = Math.atan2(p.ty - p.y, p.tx - p.x);
+          const tail = heavy ? 22 : big ? 14 : 8;
           ctx.strokeStyle = col;
-          ctx.globalAlpha = 0.35;
-          ctx.lineWidth = big ? 2 : 1;
+          ctx.globalAlpha = heavy ? 0.55 : 0.35;
+          ctx.lineWidth = heavy ? 3.5 : big ? 2 : 1;
           ctx.beginPath();
           ctx.moveTo(s.x, s.y);
-          // short tail opposite of travel
-          const ang = Math.atan2(p.ty - p.y, p.tx - p.x);
-          ctx.lineTo(s.x - Math.cos(ang) * (big ? 14 : 8), s.y - Math.sin(ang) * (big ? 14 : 8));
+          ctx.lineTo(s.x - Math.cos(ang) * tail, s.y - Math.sin(ang) * tail);
           ctx.stroke();
           ctx.globalAlpha = 1;
         }
         ctx.fillStyle = col;
         ctx.beginPath();
-        ctx.arc(s.x, s.y, big ? 5 : 3.5, 0, Math.PI * 2);
+        ctx.arc(s.x, s.y, heavy ? 7 : big ? 5 : 3.5, 0, Math.PI * 2);
         ctx.fill();
         ctx.strokeStyle = '#fff';
-        ctx.globalAlpha = 0.5;
-        ctx.lineWidth = 1;
+        ctx.globalAlpha = 0.55;
+        ctx.lineWidth = heavy ? 1.5 : 1;
         ctx.stroke();
         ctx.globalAlpha = 1;
       }
@@ -240,8 +240,8 @@
             const s0 = D.Renderer.worldToScreen(game, f.x0, f.y0);
             const s1 = D.Renderer.worldToScreen(game, f.x1, f.y1);
             ctx.strokeStyle = f.color || '#fff';
-            ctx.lineWidth = 2;
-            ctx.globalAlpha = Math.max(0, Math.min(1, f.life * 10));
+            ctx.lineWidth = f.wide ? 3.5 : 2;
+            ctx.globalAlpha = Math.max(0, Math.min(1, f.life * (f.wide ? 6 : 10)));
             ctx.beginPath();
             ctx.moveTo(s0.x, s0.y);
             ctx.lineTo(s1.x, s1.y);

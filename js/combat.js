@@ -95,6 +95,14 @@
     }
   }
 
+  function tracerColor(owner) {
+    return D.Seats && D.Seats.tracer
+      ? D.Seats.tracer(owner)
+      : owner === 'player'
+        ? '#9cf'
+        : '#f96';
+  }
+
   function fireHitscan(game, attacker, target, weapon) {
     applyDamage(game, target, weapon, attacker.owner);
     game.fx = game.fx || [];
@@ -106,20 +114,27 @@
       attacker.tileW != null
         ? D.Entities.buildingCenter(attacker)
         : { x: attacker.x, y: attacker.y };
+    const special = !!(attacker.type && D.config.units[attacker.type]?.special);
     game.fx.push({
       type: 'tracer',
       x0: from.x,
       y0: from.y,
       x1: tc.x,
       y1: tc.y,
-      life: 0.14,
-      color:
-        D.Seats && D.Seats.tracer
-          ? D.Seats.tracer(attacker.owner)
-          : attacker.owner === 'player'
-            ? '#9cf'
-            : '#f96',
+      // Saboteurs / specials: longer brighter beam so fire is obvious
+      life: special ? 0.22 : 0.14,
+      wide: special,
+      color: tracerColor(attacker.owner),
       owner: attacker.owner,
+    });
+    game.fx.push({
+      type: 'muzzle',
+      x: from.x,
+      y: from.y,
+      life: special ? 0.16 : 0.1,
+      r: special ? 0.28 : 0.18,
+      owner: attacker.owner,
+      color: tracerColor(attacker.owner),
     });
   }
 
@@ -132,7 +147,15 @@
       target.tileW != null
         ? D.Entities.buildingCenter(target)
         : { x: target.x, y: target.y };
-    const isTurret = attacker.tileW != null && attacker.type === 'gunTurret';
+    // Structure guns (gun turret + long range tower) and siege shells need long on-screen travel
+    const isStructureGun = attacker.tileW != null && !!(weapon && weapon.projectile);
+    const isSiege = attacker.type === 'siegeTank';
+    const isLrt = attacker.type === 'longRangeTower';
+    const base = D.config.projectileSpeed || 8;
+    let speed = base;
+    if (isLrt) speed = base * 0.45; // long arc — must be readable across 10 tiles
+    else if (isStructureGun) speed = base * 0.7;
+    else if (isSiege) speed = base * 0.55;
     game.projectiles.push({
       id: D.Entities.nextFxId ? D.Entities.nextFxId() : D.Entities.nextId(),
       x: from.x,
@@ -140,15 +163,13 @@
       tx: tc.x,
       ty: tc.y,
       targetId: target.id,
-      // Slightly slower shells = longer on-screen travel (esp. turrets)
-      speed: isTurret
-        ? (D.config.projectileSpeed || 8) * 0.75
-        : D.config.projectileSpeed || 8,
+      speed,
       weapon,
       owner: attacker.owner,
-      life: 3,
-      kind: isTurret ? 'shell' : weapon.kind || 'shell',
-      fromTurret: isTurret,
+      life: isLrt || isSiege ? 4.5 : 3,
+      kind: 'shell',
+      fromTurret: isStructureGun,
+      heavy: isLrt || isSiege,
     });
     // Muzzle flash so fire is obvious even between net snapshots
     game.fx = game.fx || [];
@@ -156,15 +177,10 @@
       type: 'muzzle',
       x: from.x,
       y: from.y,
-      life: 0.12,
-      r: isTurret ? 0.35 : 0.22,
+      life: isLrt || isSiege ? 0.2 : 0.12,
+      r: isLrt ? 0.45 : isSiege ? 0.4 : isStructureGun ? 0.35 : 0.22,
       owner: attacker.owner,
-      color:
-        D.Seats && D.Seats.tracer
-          ? D.Seats.tracer(attacker.owner)
-          : attacker.owner === 'player'
-            ? '#9cf'
-            : '#f96',
+      color: tracerColor(attacker.owner),
     });
   }
 
@@ -285,6 +301,8 @@
         if (!D.Combat.canSee(game, u.owner, tc.x, tc.y)) continue;
         const dist = Math.hypot(u.x - tc.x, u.y - tc.y);
         if (D.Combat.inWeaponRange(def.weapon, dist)) {
+          // Face the target so barrels / infantry aim match the shot
+          u.facing = Math.atan2(tc.y - u.y, tc.x - u.x);
           // Only explicit "attack this id" holds position. Move / attack-move must
           // keep their path — clearing it every tick trapped armies in melees so
           // only units outside gun range obeyed a new group order (~1/3 moved).
