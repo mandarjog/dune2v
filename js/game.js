@@ -534,14 +534,19 @@
       D.Combat.tick(game, dt);
       if (!game.multiplayer && !game.replay) D.AI.tick(game, dt);
       // FOW: full recompute is O(units × sight²). Always update local view;
-      // stagger other owners when the unit count is high.
+      // stagger other owners when unit count is high OR FFA (3+ seats) on server.
       if (!game._replaySeeking) {
         const owners = D.Seats ? D.Seats.active(game) : ['player', 'enemy'];
         const nUnits = game.units ? game.units.length : 0;
         const local = game.localOwner || 'player';
         D.Map.recomputeFog(game, local);
         const others = owners.filter((o) => o !== local);
-        if (nUnits > 60 && others.length) {
+        const stagger =
+          others.length > 0 &&
+          (nUnits > 40 ||
+            owners.length >= 3 ||
+            (game.multiplayer && game._serverSim && nUnits > 20));
+        if (stagger) {
           D.Map.recomputeFog(game, others[game.tick % others.length]);
         } else {
           for (const o of others) D.Map.recomputeFog(game, o);

@@ -367,13 +367,17 @@
       const goal = resolveGoal(map, x1, y1);
       let field = null;
       const cache = D.Path._flowCache;
+      const cacheMs =
+        (D.config && D.config.path && D.config.path.flowCacheMs) != null
+          ? D.config.path.flowCacheMs
+          : 2000;
       if (
         cache &&
         cache.map === map &&
         goal &&
         cache.gx === goal.gx &&
         cache.gy === goal.gy &&
-        now - cache.t < 600
+        now - cache.t < cacheMs
       ) {
         field = cache.field;
         D.Path.metrics.lastFlowBuildMs = 0;

@@ -33,10 +33,17 @@
        * - astar: legacy per-unit A*
        */
       backend: 'hybrid',
-      /** hybrid: use flow field when issuing this many units (or more) to one goal. */
-      flowMinGroup: 5,
+      /**
+       * hybrid: use flow field when issuing this many units (or more) to one goal.
+       * 2+ on Fly shared CPU: one field is cheaper than N long A* (logs showed 60–160ms/A*).
+       */
+      flowMinGroup: 2,
+      /** Reuse flow field for spam-clicks near same goal (ms). */
+      flowCacheMs: 2000,
       // Large FFA armies: old budget of 8 made most units sit idle for seconds
       maxRepathsPerTick: 64,
+      /** Cap recovery A* on server MP so one tick cannot eat 100ms+ */
+      maxRepathsPerTickMp: 20,
       maxNodes: 2048,
       arrivalDist: 0.15,
       /** Safety cap when walking integration field to a waypoint list. */

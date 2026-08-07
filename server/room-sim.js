@@ -7,7 +7,11 @@ const BASE_DT = 0.05; // 20 Hz — must match D.config.DT_SEC
 const STATE_EVERY = 2;
 /** When armies get huge, send snapshots less often to keep WS + JSON cheap. */
 const STATE_EVERY_LARGE = 3;
+/** 3+ player FFA: leaner net rate (serialize is expensive on shared-1-CPU Fly). */
+const STATE_EVERY_FFA = 3;
+const STATE_EVERY_FFA_LARGE = 4;
 const LARGE_UNIT_THRESHOLD = 80;
+const FFA_UNIT_THRESHOLD = 36;
 /** Cmd-stream re-sim drifts; keyframes re-sync entities every ~15s of sim time. */
 const KEYFRAME_EVERY = 300; // 300 ticks × 0.05s = 15s
 const SPEED_OPTIONS = [0.5, 1, 1.5, 2, 3];
@@ -107,7 +111,19 @@ class RoomSim {
     }
     if (!this.running || this.paused) return;
     const ms = Math.max(10, (BASE_DT * 1000) / this.speed);
-    this.timer = setInterval(() => this._tick(), ms);
+    // Skip ticks if previous still running (shared CPU) — better slow than stalled queue
+    this.timer = setInterval(() => {
+      if (this._ticking) {
+        this._skippedTicks = (this._skippedTicks || 0) + 1;
+        return;
+      }
+      this._ticking = true;
+      try {
+        this._tick();
+      } finally {
+        this._ticking = false;
+      }
+    }, ms);
   }
 
   /**
@@ -227,9 +243,33 @@ class RoomSim {
       if (this.onEnd) this.onEnd(phase, { recordingId: recId, winner });
       return;
     }
+    const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
     D.Game.tick(this.game, BASE_DT);
+    const simMs =
+      (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0;
+    this._lastSimMs = simMs;
+    // Budget at 2× is ~25ms/tick; log when we blow it (path + fog + combat)
+    if (simMs >= 20 && this.game.tick % 40 === 0) {
+      const nU = this.game.units ? this.game.units.length : 0;
+      const nB = this.game.buildings ? this.game.buildings.length : 0;
+      const owners =
+        (this.game.activeOwners && this.game.activeOwners.length) || 2;
+      console.log(
+        `[perf] room=${this.roomId} tick=${this.game.tick} simMs=${simMs.toFixed(1)} ` +
+          `units=${nU} bld=${nB} owners=${owners} speed=${this.speed} ` +
+          `pathTick=${(this.game.stats && this.game.stats.pathTickMs) || 0} ` +
+          `skipped=${this._skippedTicks || 0}`
+      );
+      this._skippedTicks = 0;
+    }
     // Periodic entity keyframes so Watch/replay does not butterfly-effect for an hour
-    if (this._rec && this.game.tick > 0 && this.game.tick % KEYFRAME_EVERY === 0) {
+    // Skip keyframe on already-slow ticks (serialize is heavy)
+    if (
+      this._rec &&
+      this.game.tick > 0 &&
+      this.game.tick % KEYFRAME_EVERY === 0 &&
+      simMs < 30
+    ) {
       const kf = this._serializeKeyframe();
       if (kf) {
         recordings.appendEvent(this._rec, {
@@ -245,7 +285,14 @@ class RoomSim {
   _broadcast(force) {
     if (!this.game || !this.onState) return;
     const nU = this.game.units ? this.game.units.length : 0;
-    const every = nU >= LARGE_UNIT_THRESHOLD ? STATE_EVERY_LARGE : STATE_EVERY;
+    const nOwners =
+      (this.game.activeOwners && this.game.activeOwners.length) || 2;
+    let every = STATE_EVERY;
+    if (nOwners >= 3) {
+      every = nU >= FFA_UNIT_THRESHOLD ? STATE_EVERY_FFA_LARGE : STATE_EVERY_FFA;
+    } else if (nU >= LARGE_UNIT_THRESHOLD) {
+      every = STATE_EVERY_LARGE;
+    }
     if (!force && this.game.tick % every !== 0) return;
     const payload = this._serializeLive();
     if (payload) this.onState(payload, this.game.tick, { speed: this.speed });

@@ -737,9 +737,16 @@
     tick(game, dt) {
       let repaths = 0;
       // Scale budget with army size so FFA late-game doesn't stall pathing
-      const base = D.config.path.maxRepathsPerTick || 64;
       const nUnits = game.units ? game.units.length : 0;
-      const maxRepaths = Math.max(base, Math.min(160, Math.ceil(nUnits * 0.35)));
+      let maxRepaths;
+      if (game.multiplayer || game._serverSim) {
+        // Server MP: hard cap — Fly shared-1-CPU logs 60–160ms per path issue
+        const mpBase = D.config.path.maxRepathsPerTickMp || 20;
+        maxRepaths = Math.max(8, Math.min(mpBase, Math.ceil(nUnits * 0.25) || 8));
+      } else {
+        const base = D.config.path.maxRepathsPerTick || 64;
+        maxRepaths = Math.max(base, Math.min(160, Math.ceil(nUnits * 0.35)));
+      }
       if (D.Path && D.Path.beginBatch) D.Path.beginBatch();
 
       for (const u of game.units) {
