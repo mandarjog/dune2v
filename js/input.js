@@ -309,6 +309,15 @@
           D.Game.pushMessage(game, 'Placement cancelled.');
           return;
         }
+        if (game.stickyProduce) {
+          game.stickyProduce = null;
+          if (D.UI) {
+            D.UI.invalidateSelection();
+            D.UI.refresh(game);
+          }
+          D.Game.pushMessage(game, 'Unit type cleared.');
+          return;
+        }
         // Multiplayer: no pause (desyncs host clock)
         if (game.multiplayer) {
           return;
@@ -327,6 +336,7 @@
       if (game.phase !== 'playing') return;
 
       // Confirm structure placement at tile under cursor (Space / Enter / F)
+      // Shift = one-shot (clear type after place); default keeps type selected
       if (
         game.placement &&
         (e.code === 'Space' || e.code === 'Enter' || e.code === 'KeyF')
@@ -334,6 +344,14 @@
         e.preventDefault();
         D.Input.confirmPlacement(game, e.shiftKey);
         return;
+      }
+
+      // Q — re-queue last trained unit type (sticky produce)
+      if (e.code === 'KeyQ' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        if (D.Input.repeatStickyProduce(game)) {
+          e.preventDefault();
+          return;
+        }
       }
 
       // Help
@@ -667,6 +685,7 @@
           game.hoverTile = { tx: Math.floor(world.x), ty: Math.floor(world.y) };
           game.placement.tileX = game.hoverTile.tx;
           game.placement.tileY = game.hoverTile.ty;
+          // shiftKey = one-shot exit placement; default keeps building type selected
           D.Input.confirmPlacement(game, e.shiftKey);
           return;
         }
@@ -915,11 +934,12 @@
         tileX: ht.tx | 0,
         tileY: ht.ty | 0,
       };
+      // Sticky: keep building type until Esc (or Shift+place for one-shot)
       D.Game.pushMessage(
         game,
         'Place ' +
           ((D.config.buildings[type] && D.config.buildings[type].name) || type) +
-          ' — click or Space/F under cursor (Shift keeps placing, Esc cancel)'
+          ' — click or Space/F (stays selected; Shift+place once; Esc cancel)'
       );
     },
 
@@ -927,8 +947,66 @@
       game.placement = null;
     },
 
-    /** Place current structure at hover / placement ghost tile. */
-    confirmPlacement(game, keepPlacing) {
+    /** Train another of the last unit type (sticky produce on selected factory). */
+    repeatStickyProduce(game) {
+      if (!game || game.replay || game.spectator || game.phase !== 'playing') {
+        return false;
+      }
+      const sp = game.stickyProduce;
+      if (!sp || !sp.unitType) return false;
+      let buildingId = sp.buildingId | 0;
+      // Prefer sticky factory if still selected / alive
+      const selB = game.selection.ids
+        .map((id) => game.buildings.find((b) => b.id === id))
+        .filter(Boolean);
+      const o = me(game);
+      let b = game.buildings.find((x) => x.id === buildingId && x.hp > 0);
+      if ((!b || b.owner !== o) && selB.length === 1 && selB[0].owner === o) {
+        b = selB[0];
+        buildingId = b.id;
+        game.stickyProduce.buildingId = buildingId;
+      }
+      if (!b || b.owner !== o || b.buildProgress < 1) return false;
+      const udef = D.config.units[sp.unitType];
+      if (!udef || udef.builtAt !== b.type) return false;
+      let r;
+      if (D.Net) {
+        r = D.Net.command(game, {
+          op: 'produce',
+          buildingId,
+          unitType: sp.unitType,
+        });
+      } else {
+        r = D.Economy.enqueueUnit(game, buildingId, sp.unitType);
+      }
+      if (r && r.ok) {
+        const name = (udef && udef.name) || sp.unitType;
+        D.Game.pushMessage(game, 'Training ' + name);
+        if (D.UI) {
+          D.UI.invalidateSelection();
+          D.UI.refresh(game);
+        }
+        return true;
+      }
+      if (r && !r.deferred) {
+        D.Game.pushMessage(
+          game,
+          r.reason === 'credits'
+            ? 'Not enough credits'
+            : r.reason === 'queue'
+              ? 'Production queue full'
+              : 'Cannot train: ' + (r.reason || '?')
+        );
+      }
+      return !!r;
+    },
+
+    /**
+     * Place current structure at hover / placement ghost tile.
+     * @param {boolean} [oneShot] if true (Shift), clear placement after success.
+     *   Default keeps the building type selected for multi-place.
+     */
+    confirmPlacement(game, oneShot) {
       if (
         !game ||
         game.replay ||
@@ -959,7 +1037,8 @@
         r = D.Economy.beginStructure(game, o, game.placement.type, tx, ty);
       }
       if (r && r.ok) {
-        if (!keepPlacing) game.placement = null;
+        // Default: keep type selected so two towers = two clicks on the map
+        if (oneShot) game.placement = null;
         if (D.UI) D.UI.refresh(game);
         if (r.queue != null && r.maxQueue != null && r.queue > 1) {
           D.Game.pushMessage(game, 'Construction ' + r.queue + '/' + r.maxQueue);

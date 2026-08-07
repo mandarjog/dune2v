@@ -169,6 +169,15 @@
   }
 
   D.Combat = {
+    /** True if distance is within weapon band (respects minRange for artillery). */
+    inWeaponRange(weapon, dist) {
+      if (!weapon) return false;
+      if (dist > weapon.range) return false;
+      const minR = weapon.minRange != null ? weapon.minRange : 0;
+      if (minR > 0 && dist < minR) return false;
+      return true;
+    },
+
     resolveTarget(game, u) {
       // Explicit attack target
       if (u.order && u.order.type === 'attack') {
@@ -192,15 +201,17 @@
 
     /**
      * Nearest hostile in radius.
-     * @param {'weapon'|null} mode  'weapon' = use weapon.range; null = use sight
+     * @param {'weapon'|null} mode  'weapon' = use weapon.range (+ minRange); null = use sight
      */
     findHostileInRadius(game, u, mode) {
       const def = D.config.units[u.type];
       if (!def) return null;
       let radius;
+      let minR = 0;
       if (mode === 'weapon') {
         if (!def.weapon) return null;
         radius = def.weapon.range;
+        minR = def.weapon.minRange != null ? def.weapon.minRange : 0;
       } else {
         radius = def.sight != null ? def.sight : 3;
       }
@@ -210,20 +221,18 @@
         if (o.owner === u.owner || o.hp <= 0) continue;
         if (!D.Combat.canSee(game, u.owner, o.x, o.y)) continue;
         const d = Math.hypot(u.x - o.x, u.y - o.y);
-        if (d < bestD) {
-          bestD = d;
-          best = o;
-        }
+        if (d < minR || d >= bestD) continue;
+        bestD = d;
+        best = o;
       }
       for (const b of game.buildings) {
         if (b.owner === u.owner || b.hp <= 0 || b.type === 'concrete') continue;
         const c = D.Entities.buildingCenter(b);
         if (!D.Combat.canSee(game, u.owner, c.x, c.y)) continue;
         const d = Math.hypot(u.x - c.x, u.y - c.y);
-        if (d < bestD) {
-          bestD = d;
-          best = b;
-        }
+        if (d < minR || d >= bestD) continue;
+        bestD = d;
+        best = b;
       }
       return best;
     },
@@ -275,7 +284,7 @@
         // FOW fire gate: must currently see target tile
         if (!D.Combat.canSee(game, u.owner, tc.x, tc.y)) continue;
         const dist = Math.hypot(u.x - tc.x, u.y - tc.y);
-        if (dist <= def.weapon.range) {
+        if (D.Combat.inWeaponRange(def.weapon, dist)) {
           // Only explicit "attack this id" holds position. Move / attack-move must
           // keep their path — clearing it every tick trapped armies in melees so
           // only units outside gun range obeyed a new group order (~1/3 moved).
@@ -299,17 +308,17 @@
         if (power.ratio < 0.5) continue; // offline
         b.weapon.cooldownLeft = Math.max(0, b.weapon.cooldownLeft - dt);
         const c = D.Entities.buildingCenter(b);
-        // find target in range
+        const minR = def.weapon.minRange != null ? def.weapon.minRange : 0;
+        // find target in [minRange, range] — LRT ignores melee under the barrel
         let best = null;
         let bestD = def.weapon.range + 0.01;
         for (const o of game.units) {
           if (o.owner === b.owner || o.hp <= 0) continue;
           if (!D.Combat.canSee(game, b.owner, o.x, o.y)) continue;
           const d = Math.hypot(c.x - o.x, c.y - o.y);
-          if (d < bestD) {
-            bestD = d;
-            best = o;
-          }
+          if (d < minR || d >= bestD) continue;
+          bestD = d;
+          best = o;
         }
         if (best) {
           const tc = { x: best.x, y: best.y };

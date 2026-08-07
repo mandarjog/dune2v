@@ -33,6 +33,8 @@ describe('house special units', () => {
     const lrt = Dune2.config.buildings.longRangeTower.weapon;
     assert.equal(lrt.range, gun.range * 2);
     assert.ok(Math.abs(lrt.damage - gun.damage * 1.1) < 0.6);
+    assert.ok(lrt.minRange > 0, 'LRT has close-range dead zone');
+    assert.ok(lrt.minRange < lrt.range);
 
     const tank = Dune2.config.units.combatTank;
     const siege = Dune2.config.units.siegeTank;
@@ -47,6 +49,16 @@ describe('house special units', () => {
     assert.equal(sab.cost, inf.cost);
     assert.equal(sab.hp, trike.hp);
     assert.equal(sab.weapon.damage, inf.weapon.damage * 2);
+  });
+
+  it('specials are flagged and LRT refuses close targets', () => {
+    assert.equal(Dune2.config.buildings.longRangeTower.special, true);
+    assert.equal(Dune2.config.units.siegeTank.special, true);
+    assert.equal(Dune2.config.units.saboteur.special, true);
+    const w = Dune2.config.buildings.longRangeTower.weapon;
+    assert.equal(Dune2.Combat.inWeaponRange(w, 2), false);
+    assert.equal(Dune2.Combat.inWeaponRange(w, 5), true);
+    assert.equal(Dune2.Combat.inWeaponRange(w, 11), false);
   });
 
   it('produceList and enqueueUnit respect house', () => {

@@ -160,6 +160,8 @@
           e.stopPropagation();
           const buildingId = Number(produceBtn.dataset.buildingId);
           const unitType = produceBtn.dataset.produce;
+          // Remember type so re-clicks / Space can train more without re-picking
+          game.stickyProduce = { buildingId, unitType };
           let r;
           if (D.Net) {
             r = D.Net.command(game, { op: 'produce', buildingId, unitType });
@@ -168,7 +170,7 @@
           }
           if (r && r.ok) {
             const name = D.config.units[unitType]?.name || unitType;
-            D.Game.pushMessage(game, 'Training ' + name);
+            D.Game.pushMessage(game, 'Training ' + name + ' (click again or Q for more)');
             lastSelSig = '';
             D.UI.refresh(game);
             if (D.Save && !game.multiplayer) D.Save.write(game);
@@ -2342,11 +2344,17 @@
             btn.appendChild(label);
             btn.disabled =
               game.phase !== 'playing' || !can || !!game.replay || !!game.spectator;
+            const sticky =
+              game.stickyProduce &&
+              game.stickyProduce.buildingId === b.id &&
+              game.stickyProduce.unitType === ut;
+            btn.classList.toggle('active', !!sticky);
             btn.title =
               game.replay || game.spectator
                 ? 'View only'
                 : can
-                  ? `Train ${udef.name} (${udef.cost} credits, ${udef.buildTime}s)`
+                  ? `Train ${udef.name} (${udef.cost} credits, ${udef.buildTime}s)` +
+                    (sticky ? ' · selected (Q / click again)' : '')
                   : `Need ${udef.cost} credits (have ${Math.floor(game.credits[o])}, cap ${game.spiceCap[o]}). Build silos to raise cap.`;
             g.appendChild(btn);
           }

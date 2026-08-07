@@ -380,6 +380,7 @@
     ctx.fillStyle = shade(col, 0.15);
     ctx.fillRect(r * 1.95, -r * 0.1, r * 0.08, r * 0.2);
     ctx.restore();
+    drawSpecialFlag(ctx, x, y, w, h, col);
   }
 
   function drawWall(ctx, x, y, w, h, col) {
@@ -447,6 +448,40 @@
     ctx.fill();
   }
 
+  /**
+   * House special marker — small pennant so specials are obvious on the map.
+   * Drawn at top-right of the entity box (world / icon).
+   */
+  function drawSpecialFlag(ctx, x, y, w, h, col) {
+    const s = Math.min(w, h);
+    const fx = x + w * 0.72;
+    const fy = y + h * 0.08;
+    const poleH = s * 0.42;
+    // pole
+    ctx.strokeStyle = '#1a1a1a';
+    ctx.lineWidth = Math.max(1.2, s * 0.05);
+    ctx.beginPath();
+    ctx.moveTo(fx, fy + poleH);
+    ctx.lineTo(fx, fy);
+    ctx.stroke();
+    // pennant
+    ctx.fillStyle = shade(col, 0.15);
+    ctx.beginPath();
+    ctx.moveTo(fx, fy);
+    ctx.lineTo(fx + s * 0.32, fy + s * 0.1);
+    ctx.lineTo(fx, fy + s * 0.2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = '#111';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    // gold tip
+    ctx.fillStyle = '#e8c547';
+    ctx.beginPath();
+    ctx.arc(fx, fy, Math.max(1.5, s * 0.045), 0, Math.PI * 2);
+    ctx.fill();
+  }
+
   // ─── Units ───────────────────────────────────────────────
 
   function drawInfantry(ctx, x, y, w, h, col) {
@@ -508,6 +543,7 @@
     ctx.moveTo(cx + s * 0.12, cy + s * 0.05);
     ctx.lineTo(cx + s * 0.4, cy - s * 0.12);
     ctx.stroke();
+    drawSpecialFlag(ctx, x, y, w, h, col);
   }
 
   function drawTrike(ctx, x, y, w, h, col, opts) {
@@ -627,6 +663,7 @@
     ctx.fillStyle = '#333';
     ctx.fillRect(s * 0.5, -s * 0.08, s * 0.1, s * 0.16);
     ctx.restore();
+    drawSpecialFlag(ctx, x, y, w, h, col);
   }
 
   function drawHarvester(ctx, x, y, w, h, col, opts) {

@@ -254,10 +254,13 @@
         requires: 'windtrap',
         buildable: true,
         houses: ['atreides'],
+        special: true,
         weapon: {
           kind: 'shell',
           damage: 15, // ~1.1× gun turret (14)
           range: 10.0, // 2× gun turret (5)
+          // Artillery dead zone — useless in melee / under the barrel
+          minRange: 4.0,
           cooldown: 1.1,
           vsI: 0.7,
           vsV: 1.0,
@@ -326,6 +329,7 @@
         buildTime: 14,
         kind: 'infantry',
         houses: ['ordos'],
+        special: true,
         weapon: {
           kind: 'bullet',
           damage: 8, // 2× infantry
@@ -433,6 +437,7 @@
         buildTime: 55,
         kind: 'vehicle',
         houses: ['harkonnen'],
+        special: true,
         weapon: {
           kind: 'shell',
           damage: 27, // 1.5× combat tank

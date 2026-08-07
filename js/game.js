@@ -93,6 +93,8 @@
         },
         messages: [],
         placement: null,
+        /** Last train click: { buildingId, unitType } for sticky re-queue (Q / re-click). */
+        stickyProduce: null,
         hoverTile: null,
         rngSeed: D.config.seed,
         stats: {
