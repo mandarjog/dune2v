@@ -216,7 +216,8 @@
      * @returns {{ w,h,gx,gy,cost:Float32Array,next:Int32Array,reached:number }|null}
      * next[i] = linear index of next tile toward goal, or -1 at goal / unreachable
      */
-    buildFlowField(map, x1, y1) {
+    buildFlowField(map, x1, y1, opts) {
+      opts = opts || {};
       const t0 = nowMs();
       const goal = resolveGoal(map, x1, y1);
       if (!goal) {
@@ -240,6 +241,30 @@
       cost[gi] = 0;
       next[gi] = -1;
 
+      // Early-exit: only need paths for unit tiles (not the whole 96×96 desert)
+      let needLeft = 0;
+      const needMark = opts.need && opts.need.length ? new Uint8Array(n) : null;
+      if (needMark) {
+        for (let k = 0; k < opts.need.length; k++) {
+          const ti = opts.need[k] | 0;
+          if (ti < 0 || ti >= n) continue;
+          if (!needMark[ti]) {
+            needMark[ti] = 1;
+            needLeft++;
+          }
+        }
+        if (needMark[gi]) {
+          needMark[gi] = 0;
+          needLeft = Math.max(0, needLeft - 1);
+        }
+      }
+      const maxCost =
+        opts.maxCost != null
+          ? opts.maxCost
+          : (D.config.path && D.config.path.flowMaxCost) != null
+            ? D.config.path.flowMaxCost
+            : 160;
+
       const heap = [];
       heapPush(heap, { i: gi, c: 0 });
       let reached = 1;
@@ -249,6 +274,15 @@
         if (!cur) break;
         // Stale heap entry (decrease-key via re-insert)
         if (cur.c > cost[cur.i]) continue;
+        if (cur.c > maxCost) continue;
+
+        if (needMark && needMark[cur.i]) {
+          needMark[cur.i] = 0;
+          needLeft--;
+          // All unit starts reached → path to goal is fully defined for them
+          if (needLeft <= 0) break;
+        }
+
         const cx = cur.i % w;
         const cy = (cur.i / w) | 0;
         const base = cost[cur.i];
@@ -264,7 +298,7 @@
           // Next step for neighbor toward goal is the current cell.
           const nj = ny * w + nx;
           const tentative = base + edge;
-          if (tentative < cost[nj]) {
+          if (tentative < cost[nj] && tentative <= maxCost) {
             if (cost[nj] === Infinity) reached++;
             cost[nj] = tentative;
             next[nj] = cur.i;
@@ -359,7 +393,7 @@
      * @returns {{ ok:number, fail:number, field:object|null, buildMs:number }}
      */
     assignGroupFlow(map, units, x1, y1) {
-      // Reuse recent field when player spam-clicks near the same goal (saves ~20ms/issue)
+      // Reuse recent field when player spam-clicks near the same goal (saves ~20–160ms/issue)
       const now =
         typeof performance !== 'undefined' && performance.now
           ? performance.now()
@@ -370,23 +404,68 @@
       const cacheMs =
         (D.config && D.config.path && D.config.path.flowCacheMs) != null
           ? D.config.path.flowCacheMs
-          : 2000;
+          : 3500;
+      // Snap cache key so nearby clicks share one field (formation spam / jitter)
+      const snap =
+        (D.config && D.config.path && D.config.path.flowCacheSnap) != null
+          ? D.config.path.flowCacheSnap
+          : 3;
+      const cgx = goal ? Math.floor(goal.gx / snap) * snap : -1;
+      const cgy = goal ? Math.floor(goal.gy / snap) * snap : -1;
       if (
         cache &&
         cache.map === map &&
         goal &&
-        cache.gx === goal.gx &&
-        cache.gy === goal.gy &&
+        cache.cgx === cgx &&
+        cache.cgy === cgy &&
         now - cache.t < cacheMs
       ) {
         field = cache.field;
         D.Path.metrics.lastFlowBuildMs = 0;
         D.Path.metrics.lastBackend = 'flow-cache';
       } else {
-        field = D.Path.buildFlowField(map, x1, y1);
+        // Only expand until unit start tiles are reached (not whole map)
+        const need = [];
+        const w = map.width;
+        const h = map.height;
+        for (const u of units) {
+          let tx = Math.floor(u.x);
+          let ty = Math.floor(u.y);
+          if (tx < 0 || ty < 0 || tx >= w || ty >= h) continue;
+          need.push(ty * w + tx);
+          // Also cover a few tiles around for units mid-cell / blocked start
+          for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+              const nx = tx + dx;
+              const ny = ty + dy;
+              if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+              need.push(ny * w + nx);
+            }
+          }
+        }
+        // Bound cost by farthest unit from goal (with slack) so we never full-map
+        let maxDist = 48;
+        if (goal) {
+          for (const u of units) {
+            const d =
+              Math.abs(u.x - (goal.gx + 0.5)) + Math.abs(u.y - (goal.gy + 0.5));
+            if (d > maxDist) maxDist = d;
+          }
+        }
+        const cfgCap =
+          (D.config.path && D.config.path.flowMaxCost) != null
+            ? D.config.path.flowMaxCost
+            : 160;
+        const maxCost = Math.min(
+          cfgCap,
+          Math.max(40, Math.ceil(maxDist * 1.35) + 16)
+        );
+        field = D.Path.buildFlowField(map, x1, y1, { need, maxCost });
         if (field && goal) {
           D.Path._flowCache = {
             map,
+            cgx,
+            cgy,
             gx: goal.gx,
             gy: goal.gy,
             field,

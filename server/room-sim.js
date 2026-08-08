@@ -44,6 +44,18 @@ class RoomSim {
     const D = this.D;
     D.config.features.ai = false;
     D.config.features.debugCheats = false;
+    // Shared-1-CPU: worms + full-map pathing starve the sim under army moves
+    D.config.features.sandworms = false;
+    if (D.config.worms) D.config.worms.enabled = false;
+    if (D.config.path) {
+      // Prefer A* for small squads; bounded flow for 5+ (see pathfinding.js)
+      D.config.path.flowMinGroup = Math.max(5, D.config.path.flowMinGroup || 5);
+      D.config.path.flowCacheMs = Math.max(3500, D.config.path.flowCacheMs || 3500);
+      D.config.path.maxRepathsPerTickMp = Math.min(
+        12,
+        D.config.path.maxRepathsPerTickMp || 12
+      );
+    }
     // Random map per match (or fixed seed when replaying / meta.seed set)
     const seed =
       this.meta.seed != null

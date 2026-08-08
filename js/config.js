@@ -37,11 +37,16 @@
       backend: 'hybrid',
       /**
        * hybrid: use flow field when issuing this many units (or more) to one goal.
-       * 2+ on Fly shared CPU: one field is cheaper than N long A* (logs showed 60–160ms/A*).
+       * Small groups use A* (cheap). Large groups use one bounded flow field.
+       * Was 2 — full-map Dijkstra for every 2-unit move cost 60–160ms on Fly shared-1-CPU.
        */
-      flowMinGroup: 2,
+      flowMinGroup: 5,
       /** Reuse flow field for spam-clicks near same goal (ms). */
-      flowCacheMs: 2000,
+      flowCacheMs: 3500,
+      /** Cache key snap in tiles (nearby clicks share field). */
+      flowCacheSnap: 3,
+      /** Hard cap on flow expansion cost from goal (tile steps). */
+      flowMaxCost: 160,
       // Large FFA armies: old budget of 8 made most units sit idle for seconds
       maxRepathsPerTick: 64,
       /** Cap recovery A* on server MP so one tick cannot eat 100ms+ */
