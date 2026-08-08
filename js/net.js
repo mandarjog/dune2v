@@ -78,6 +78,7 @@
     _wantSpectate: false,
     _createOnOpen: false,
     _pendingTitle: '',
+    _preferredHouse: null,
     _handlers: [],
     _lastStateTick: -1,
     _focusedOnce: false,
@@ -280,7 +281,7 @@
     /**
      * Connect and create a fresh room.
      * @param {string} [name] player display name
-     * @param {{ title?: string }} [opts] optional match title
+     * @param {{ title?: string, house?: string }} [opts] optional match title + preferred house
      */
     host(name, opts) {
       if (name != null) D.Net.saveName(name);
@@ -292,6 +293,12 @@
       D.Net._wantRoom = null;
       D.Net._pendingTitle =
         opts && opts.title != null ? String(opts.title).trim().slice(0, 40) : '';
+      D.Net._preferredHouse =
+        opts && opts.house
+          ? D.Seats && D.Seats.normalizeHouse
+            ? D.Seats.normalizeHouse(opts.house)
+            : String(opts.house).toLowerCase()
+          : null;
       D.Net._connect();
     },
 
@@ -300,8 +307,27 @@
       return D.Net._send({ type: 'set_title', title: title || '' });
     },
 
-    /** Connect and join/create room code (shareable URL). Same playerId reclaims seat. */
-    join(roomCode, name) {
+    /**
+     * Lobby: request a free seat for the given house (if available).
+     * @param {string} house 'atreides' | 'harkonnen' | 'ordos'
+     */
+    setHouse(house) {
+      const h =
+        D.Seats && D.Seats.normalizeHouse
+          ? D.Seats.normalizeHouse(house)
+          : String(house || '').toLowerCase();
+      if (!h) return false;
+      D.Net._preferredHouse = h;
+      return D.Net._send({ type: 'set_house', house: h });
+    },
+
+    /**
+     * Connect and join/create room code (shareable URL). Same playerId reclaims seat.
+     * @param {string} roomCode
+     * @param {string} [name]
+     * @param {{ house?: string }} [opts]
+     */
+    join(roomCode, name, opts) {
       const code = String(roomCode || '')
         .trim()
         .toUpperCase();
@@ -317,6 +343,12 @@
       D.Net._createOnOpen = false;
       D.Net._wantSpectate = false;
       D.Net._wantRoom = code;
+      D.Net._preferredHouse =
+        opts && opts.house
+          ? D.Seats && D.Seats.normalizeHouse
+            ? D.Seats.normalizeHouse(opts.house)
+            : String(opts.house).toLowerCase()
+          : null;
       D.Net._connect();
     },
 
@@ -514,6 +546,7 @@
             clientRev: rev,
           };
           if (D.Net._pendingTitle) payload.title = D.Net._pendingTitle;
+          if (D.Net._preferredHouse) payload.house = D.Net._preferredHouse;
           ws.send(JSON.stringify(payload));
         } else if (D.Net._wantRoom && D.Net._wantSpectate) {
           ws.send(
@@ -537,15 +570,15 @@
             })
           );
         } else if (D.Net._wantRoom) {
-          ws.send(
-            JSON.stringify({
-              type: 'join',
-              room: D.Net._wantRoom,
-              playerId,
-              name,
-              clientRev: rev,
-            })
-          );
+          const payload = {
+            type: 'join',
+            room: D.Net._wantRoom,
+            playerId,
+            name,
+            clientRev: rev,
+          };
+          if (D.Net._preferredHouse) payload.house = D.Net._preferredHouse;
+          ws.send(JSON.stringify(payload));
         }
       };
 
@@ -609,6 +642,12 @@
           D.Game.pushMessage(
             D.Net.game,
             'Room is full (5 players max). Open Live matches to spectate.'
+          );
+        }
+        if (msg.error === 'house_taken' || msg.error === 'house_unavailable') {
+          D.Game.pushMessage(
+            D.Net.game,
+            msg.message || 'That house is taken — pick another or wait.'
           );
         }
         if (msg.error === 'need_players') {
@@ -775,6 +814,15 @@
         return;
       }
 
+      if (msg.type === 'house_ok') {
+        if (msg.seat) D.Net.seat = msg.seat;
+        if (msg.role) D.Net.role = msg.role;
+        D.Net._applyRoster(msg);
+        D.Net._emit('house_ok', msg);
+        D.Net._emit('roster', msg);
+        return;
+      }
+
       if (
         msg.type === 'peer_joined' ||
         msg.type === 'peer_reconnected' ||
@@ -784,6 +832,9 @@
         msg.type === 'title_ok'
       ) {
         if (msg.name && msg.type === 'name_ok') D.Net.name = msg.name;
+        if (msg.seat != null && msg.playerId === D.Net.playerId) {
+          D.Net.seat = msg.seat;
+        }
         D.Net._applyRoster(msg);
         if (msg.type === 'peer_reconnected' && D.Net.game) {
           D.Game.pushMessage(

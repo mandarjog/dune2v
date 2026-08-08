@@ -1076,11 +1076,86 @@ button.linkish {
   text-align: left;
 }
 
+.house-pick-label {
+  margin-top: 10px;
+  margin-bottom: 6px;
+  font-size: 12px;
+  color: var(--muted);
+  text-align: left;
+}
+
+.house-pick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.house-chip {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--panel-border);
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--text, #e8e0d0);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s, box-shadow 0.12s;
+}
+
+.house-chip:hover {
+  border-color: color-mix(in srgb, var(--accent, #c9a227) 50%, var(--panel-border));
+}
+
+.house-chip.selected {
+  box-shadow: inset 0 0 0 1px currentColor;
+}
+
+.house-chip.house-atreides {
+  color: var(--player);
+}
+.house-chip.house-atreides.selected {
+  border-color: var(--player);
+  background: color-mix(in srgb, var(--player) 18%, transparent);
+}
+
+.house-chip.house-harkonnen {
+  color: var(--enemy);
+}
+.house-chip.house-harkonnen.selected {
+  border-color: var(--enemy);
+  background: color-mix(in srgb, var(--enemy) 18%, transparent);
+}
+
+.house-chip.house-ordos {
+  color: var(--ordos, #27ae60);
+}
+.house-chip.house-ordos.selected {
+  border-color: var(--ordos, #27ae60);
+  background: color-mix(in srgb, var(--ordos, #27ae60) 18%, transparent);
+}
+
+.house-chip:disabled,
+.house-chip[aria-disabled='true'] {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.lobby-house-wrap {
+  margin: 10px 0 4px;
+  text-align: left;
+}
+
 .house-atreides {
   color: var(--player);
 }
 .house-harkonnen {
   color: var(--enemy);
+}
+.house-ordos {
+  color: var(--ordos, #27ae60);
 }
 
 .menu-footer {

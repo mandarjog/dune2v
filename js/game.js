@@ -302,7 +302,10 @@
             ' players).'
         );
       } else {
-        D.Game.pushMessage(game, 'Atreides vs Harkonnen — harvest the spice.');
+        const meH = D.Seats.houseName(me);
+        const foe = owners.find((o) => o !== me);
+        const foeH = foe ? D.Seats.houseName(foe) : 'AI';
+        D.Game.pushMessage(game, meH + ' vs ' + foeH + ' — harvest the spice.');
       }
     },
 

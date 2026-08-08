@@ -3,7 +3,8 @@
   'use strict';
   const D = (global.Dune2 = global.Dune2 || {});
 
-  const OWNER = 'enemy';
+  /** Seat the AI is currently thinking for (set per tickOwner). */
+  let OWNER = 'enemy';
 
   function countBuildings(game, type) {
     return game.buildings.filter(
@@ -32,6 +33,13 @@
     return game.buildings.find(
       (b) => b.owner === owner && b.type === 'constructionYard' && b.buildProgress >= 1
     );
+  }
+
+  /** Other active seats (human + any other AI). */
+  function foeOwners(game) {
+    const owners =
+      D.Seats && D.Seats.active ? D.Seats.active(game) : ['player', 'enemy'];
+    return owners.filter((o) => o !== OWNER);
   }
 
   function spiralPlace(game, type, originX, originY) {
@@ -65,9 +73,9 @@
   }
 
   function updateMemory(game) {
-    // last seen player CY / units
+    const foes = foeOwners(game);
     for (const b of game.buildings) {
-      if (b.owner !== 'player' || b.hp <= 0) continue;
+      if (foes.indexOf(b.owner) < 0 || b.hp <= 0) continue;
       const c = D.Entities.buildingCenter(b);
       if (D.Map.isVisible(game, OWNER, Math.floor(c.x), Math.floor(c.y))) {
         if (b.type === 'constructionYard') {
@@ -77,7 +85,7 @@
       }
     }
     for (const u of game.units) {
-      if (u.owner !== 'player' || u.hp <= 0) continue;
+      if (foes.indexOf(u.owner) < 0 || u.hp <= 0) continue;
       if (D.Map.isVisible(game, OWNER, Math.floor(u.x), Math.floor(u.y))) {
         game.ai.memory.lastEnemyUnit = { x: u.x, y: u.y, t: game.tick };
       }
@@ -105,7 +113,7 @@
 
   function ensurePower(game) {
     const p = game.power[OWNER];
-    if (p.need === 0) return;
+    if (!p || p.need === 0) return;
     const surplus = (p.prod - p.need) / Math.max(1, p.need);
     if (surplus < D.config.ai.desirePowerSurplus) {
       tryBuild(game, 'windtrap');
@@ -128,7 +136,7 @@
   function produce(game) {
     if (game.credits[OWNER] < D.config.ai.creditsStableThreshold) return;
     const p = game.power[OWNER];
-    if (p.ratio < 0.6) return;
+    if (!p || p.ratio < 0.6) return;
 
     const weights = D.config.ai.productionWeights;
     const picks = [];
@@ -245,7 +253,7 @@
   function defend(game) {
     const mem = game.ai.memory.playerAttackedAt;
     if (!mem) return;
-    if (game.tick - mem.t > (8 / D.config.DT_SEC)) return;
+    if (game.tick - mem.t > 8 / D.config.DT_SEC) return;
     game.ai.state = 'Defend';
     const army = combatUnits(game).filter((u) => {
       const cy = findCY(game, OWNER);
@@ -287,42 +295,59 @@
     }
   }
 
+  function tickOwner(game) {
+    updateMemory(game);
+    bootstrapMCV(game);
+
+    if (!findCY(game, OWNER)) {
+      game.ai.state = 'Bootstrap';
+      return;
+    }
+
+    ensurePower(game);
+    manageHarvesters(game);
+
+    const hasRef = countBuildings(game, 'refinery') > 0;
+    const hasWT = countBuildings(game, 'windtrap') > 0;
+    if (!hasWT || !hasRef) {
+      game.ai.state = 'Bootstrap';
+      followBuildOrder(game);
+      return;
+    }
+
+    game.ai.state = game.ai.state === 'Attack' ? 'Military' : game.ai.state || 'Eco';
+    followBuildOrder(game);
+    produce(game);
+    scout(game);
+    defend(game);
+    attackWave(game);
+
+    if (combatUnits(game).length >= D.config.ai.waveMinCombatUnits) {
+      if (game.ai.state !== 'Defend') game.ai.state = 'Military';
+    } else {
+      game.ai.state = 'Tech';
+    }
+  }
+
   D.AI = {
+    /**
+     * Drive AI for every active seat that is not the local human.
+     * Supports SP house pick (AI may own `player`, `enemy`, or `p2`).
+     */
     tick(game, dt) {
       if (!D.config.features.ai) return;
       if (game.phase !== 'playing') return;
       if (game.tick % D.config.ai.tickEvery !== 0) return;
+      if (!game.ai) game.ai = { state: 'Bootstrap', waveAt: 0, lastScoutTick: 0, memory: {} };
+      if (!game.ai.memory) game.ai.memory = {};
 
-      updateMemory(game);
-      bootstrapMCV(game);
-
-      if (!findCY(game, OWNER)) {
-        game.ai.state = 'Bootstrap';
-        return;
-      }
-
-      ensurePower(game);
-      manageHarvesters(game);
-
-      const hasRef = countBuildings(game, 'refinery') > 0;
-      const hasWT = countBuildings(game, 'windtrap') > 0;
-      if (!hasWT || !hasRef) {
-        game.ai.state = 'Bootstrap';
-        followBuildOrder(game);
-        return;
-      }
-
-      game.ai.state = game.ai.state === 'Attack' ? 'Military' : game.ai.state || 'Eco';
-      followBuildOrder(game);
-      produce(game);
-      scout(game);
-      defend(game);
-      attackWave(game);
-
-      if (combatUnits(game).length >= D.config.ai.waveMinCombatUnits) {
-        if (game.ai.state !== 'Defend') game.ai.state = 'Military';
-      } else {
-        game.ai.state = 'Tech';
+      const owners =
+        D.Seats && D.Seats.active ? D.Seats.active(game) : ['player', 'enemy'];
+      const local = game.localOwner || 'player';
+      for (const o of owners) {
+        if (o === local) continue;
+        OWNER = o;
+        tickOwner(game);
       }
     },
   };

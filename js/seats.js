@@ -231,5 +231,53 @@
       if (!keys.length) return null;
       return mapDef.spawns[keys[D.Seats.index(seat) % keys.length]];
     },
+
+    /** Normalize house id: 'atreides' | 'harkonnen' | 'ordos' | null. */
+    normalizeHouse(id) {
+      if (id == null || id === '') return null;
+      const s = String(id).toLowerCase().trim();
+      if (s === 'atreides' || s === 'a' || s === 'at') return 'atreides';
+      if (s === 'harkonnen' || s === 'h' || s === 'hk' || s === 'hark') return 'harkonnen';
+      if (s === 'ordos' || s === 'o' || s === 'or') return 'ordos';
+      return null;
+    },
+
+    isHouseId(id) {
+      return !!D.Seats.normalizeHouse(id);
+    },
+
+    /** All seat ids bound to a house (primary first). */
+    seatsForHouse(houseId) {
+      const h = D.Seats.normalizeHouse(houseId);
+      if (!h) return [];
+      return SEAT_DEFS.filter((d) => d.id === h).map((d) => d.seat);
+    },
+
+    /** Primary seat for a house (player / enemy / p2). */
+    primarySeat(houseId) {
+      const list = D.Seats.seatsForHouse(houseId);
+      return list.length ? list[0] : 'player';
+    },
+
+    /**
+     * SP 1v1 pair: human on preferred house, AI on a rival house seat.
+     * @param {string} [preferredHouse]
+     * @returns {{ localOwner: string, owners: string[], house: string, aiOwner: string }}
+     */
+    skirmishPair(preferredHouse) {
+      const house = D.Seats.normalizeHouse(preferredHouse) || 'atreides';
+      const localOwner = D.Seats.primarySeat(house);
+      // Classic rival: Atreides↔Harkonnen; Ordos fights Harkonnen AI
+      let aiOwner;
+      if (localOwner === 'player') aiOwner = 'enemy';
+      else if (localOwner === 'enemy') aiOwner = 'player';
+      else aiOwner = 'enemy';
+      return {
+        house,
+        localOwner,
+        aiOwner,
+        owners: [localOwner, aiOwner],
+      };
+    },
   };
 })(typeof window !== 'undefined' ? window : globalThis);

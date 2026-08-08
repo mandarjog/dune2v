@@ -64,6 +64,25 @@
       .replace(/"/g, '&quot;');
   }
 
+  const HOUSE_STORAGE_KEY = 'dune2_house';
+  const HOUSE_SPECIAL = {
+    atreides: 'LRT',
+    harkonnen: 'Siege Tank',
+    ordos: 'Saboteur',
+  };
+
+  function houseDisplayName(id) {
+    const h = D.Seats && D.Seats.normalizeHouse ? D.Seats.normalizeHouse(id) : id;
+    if (h === 'harkonnen') return 'Harkonnen';
+    if (h === 'ordos') return 'Ordos';
+    return 'Atreides';
+  }
+
+  function houseClass(id) {
+    const h = D.Seats && D.Seats.normalizeHouse ? D.Seats.normalizeHouse(id) : id;
+    return 'house-' + (h || 'atreides');
+  }
+
   D.UI = {
     /** 'base' | 'mcv' from menu/lobby checkboxes (or config). */
     selectedStartMode() {
@@ -73,6 +92,160 @@
       if (menu && menu.checked) return 'mcv';
       if (D.config.skirmish && D.config.skirmish.startMode === 'mcv') return 'mcv';
       return 'base';
+    },
+
+    /** Preferred house id for SP / host / join. */
+    selectedHouse() {
+      const pick =
+        document.querySelector('#sp-house-pick .house-chip.selected') ||
+        document.querySelector('#mp-house-pick .house-chip.selected');
+      if (pick && pick.dataset.house) {
+        return (
+          (D.Seats && D.Seats.normalizeHouse
+            ? D.Seats.normalizeHouse(pick.dataset.house)
+            : pick.dataset.house) || 'atreides'
+        );
+      }
+      try {
+        const saved = localStorage.getItem(HOUSE_STORAGE_KEY);
+        if (saved && D.Seats && D.Seats.normalizeHouse) {
+          return D.Seats.normalizeHouse(saved) || 'atreides';
+        }
+        if (saved) return String(saved).toLowerCase();
+      } catch (e) {
+        /* ignore */
+      }
+      return 'atreides';
+    },
+
+    /**
+     * Sync all house-pick chip groups to a house id and persist.
+     * @param {string} houseId
+     * @param {string|null} [onlyGroupId] limit to one pick container id
+     */
+    setSelectedHouse(houseId, onlyGroupId) {
+      const h =
+        (D.Seats && D.Seats.normalizeHouse
+          ? D.Seats.normalizeHouse(houseId)
+          : String(houseId || '').toLowerCase()) || 'atreides';
+      try {
+        localStorage.setItem(HOUSE_STORAGE_KEY, h);
+      } catch (e) {
+        /* ignore */
+      }
+      const groups = onlyGroupId
+        ? [$(onlyGroupId)].filter(Boolean)
+        : [
+            $('sp-house-pick'),
+            $('mp-house-pick'),
+            $('join-house-pick'),
+            $('lobby-house-pick'),
+          ].filter(Boolean);
+      for (const group of groups) {
+        // Lobby pick mirrors current seat separately; still allow force-sync from menu
+        if (group.id === 'lobby-house-pick' && onlyGroupId !== 'lobby-house-pick') {
+          continue;
+        }
+        group.querySelectorAll('.house-chip').forEach((btn) => {
+          const on = btn.dataset.house === h;
+          btn.classList.toggle('selected', on);
+          btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+        });
+      }
+      D.UI.updateHouseHints();
+    },
+
+    updateHouseHints() {
+      const h = D.UI.selectedHouse();
+      const pair =
+        D.Seats && D.Seats.skirmishPair
+          ? D.Seats.skirmishPair(h)
+          : { house: h, aiOwner: 'enemy' };
+      const youName = houseDisplayName(pair.house || h);
+      const aiHouse =
+        D.Seats && D.Seats.houseId
+          ? D.Seats.houseId(pair.aiOwner || 'enemy')
+          : 'harkonnen';
+      const aiName = houseDisplayName(aiHouse);
+      const youSpec = HOUSE_SPECIAL[pair.house || h] || '';
+      const aiSpec = HOUSE_SPECIAL[aiHouse] || '';
+      const hint = $('sp-house-hint');
+      if (hint) {
+        hint.innerHTML =
+          'You: <b class="' +
+          houseClass(pair.house || h) +
+          '">' +
+          youName +
+          '</b>' +
+          (youSpec ? ' (' + youSpec + ')' : '') +
+          ' · AI: <b class="' +
+          houseClass(aiHouse) +
+          '">' +
+          aiName +
+          '</b>' +
+          (aiSpec ? ' (' + aiSpec + ')' : '');
+      }
+      const joinHint = $('join-house-hint');
+      if (joinHint) {
+        const pref =
+          document.querySelector('#join-house-pick .house-chip.selected') ||
+          document.querySelector('#mp-house-pick .house-chip.selected');
+        const jh =
+          (pref && pref.dataset.house) ||
+          D.UI.selectedHouse();
+        const jn = houseDisplayName(jh);
+        joinHint.innerHTML =
+          'Prefer <b class="' +
+          houseClass(jh) +
+          '">' +
+          jn +
+          '</b> if free; otherwise the next open seat.';
+      }
+    },
+
+    bindHousePicks() {
+      const onChip = (groupId, e) => {
+        const btn = e.target.closest('.house-chip');
+        if (!btn || !btn.dataset.house) return;
+        if (btn.disabled || btn.getAttribute('aria-disabled') === 'true') return;
+        e.preventDefault();
+        if (groupId === 'lobby-house-pick') {
+          D.UI.setSelectedHouse(btn.dataset.house, 'lobby-house-pick');
+          if (D.Net && D.Net.setHouse) {
+            const st = $('lobby-house-status');
+            if (st) st.textContent = 'Requesting ' + houseDisplayName(btn.dataset.house) + '…';
+            D.Net.setHouse(btn.dataset.house);
+          }
+          return;
+        }
+        // Keep SP + MP + join in sync for convenience
+        D.UI.setSelectedHouse(btn.dataset.house);
+      };
+      for (const id of [
+        'sp-house-pick',
+        'mp-house-pick',
+        'join-house-pick',
+        'lobby-house-pick',
+      ]) {
+        const el = $(id);
+        if (!el || el._houseBound) continue;
+        el._houseBound = true;
+        el.addEventListener('click', (e) => onChip(id, e));
+      }
+      // Restore saved preference
+      let saved = 'atreides';
+      try {
+        const s = localStorage.getItem(HOUSE_STORAGE_KEY);
+        if (s) {
+          saved =
+            (D.Seats && D.Seats.normalizeHouse
+              ? D.Seats.normalizeHouse(s)
+              : s) || 'atreides';
+        }
+      } catch (e) {
+        /* ignore */
+      }
+      D.UI.setSelectedHouse(saved);
     },
 
     init(game) {
@@ -247,21 +420,28 @@
         if (game.multiplayer && D.Net) D.Net.leave();
         game.multiplayer = false;
         game.spectator = false;
-        game.localOwner = 'player';
         game.netRole = null;
         D.config.features.ai = true;
         if (D.Save) D.Save.clear();
         const params = new URLSearchParams(location.search);
+        const pair =
+          D.Seats && D.Seats.skirmishPair
+            ? D.Seats.skirmishPair(D.UI.selectedHouse())
+            : { localOwner: 'player', owners: ['player', 'enemy'] };
+        game.localOwner = pair.localOwner;
         if (kind === 'mass' && D.Scenario) {
           const opts = D.Scenario.parseOpts
             ? D.Scenario.parseOpts(params)
             : { perSide: 80, fog: false };
+          // Mass scenario still uses classic seats unless extended later
+          game.localOwner = 'player';
           D.Scenario.startMassArmies(game, opts);
         } else {
           // Re-apply ?fog=0 before start so startSkirmish vision is correct
           if (D.applyUrlFeatures) D.applyUrlFeatures(params);
           D.Game.startSkirmish(game, D.MAPS.skirmish_large || D.MAPS.skirmish1, {
             startMode: D.UI.selectedStartMode(),
+            owners: pair.owners,
           });
         }
         // Always re-assert URL fog after start (mass defaults off; ?fog=1 forces on)
@@ -472,14 +652,17 @@
         input.focus();
       });
 
+      D.UI.bindHousePicks();
+
       $('btn-mp-host')?.addEventListener('click', () => {
         if (!D.Net) return;
         const name = els.mpNameInput ? els.mpNameInput.value : undefined;
         const titleEl = $('mp-title-input');
         const title = titleEl ? titleEl.value : '';
+        const house = D.UI.selectedHouse();
         D.UI.hideMenu();
         D.UI.showLobby('Creating room…');
-        D.Net.host(name, { title });
+        D.Net.host(name, { title, house });
       });
 
       $('btn-mp-join')?.addEventListener('click', () => {
@@ -491,9 +674,10 @@
           return;
         }
         const name = els.mpNameInput ? els.mpNameInput.value : undefined;
+        const house = D.UI.selectedHouse();
         D.UI.hideMenu();
         D.UI.showLobby('Joining room…');
-        D.Net.join(code, name);
+        D.Net.join(code, name, { house });
       });
 
       $('btn-join-go')?.addEventListener('click', () => {
@@ -502,10 +686,15 @@
         const name = nameEl ? nameEl.value : undefined;
         // Keep menu name field in sync
         if (els.mpNameInput && nameEl) els.mpNameInput.value = nameEl.value;
+        const joinChip = document.querySelector(
+          '#join-house-pick .house-chip.selected'
+        );
+        const house =
+          (joinChip && joinChip.dataset.house) || D.UI.selectedHouse();
         D.UI.hideJoinPrompt();
         D.UI.hideMenu();
         D.UI.showLobby('Joining room ' + D.UI._pendingJoinRoom + '…');
-        D.Net.join(D.UI._pendingJoinRoom, name);
+        D.Net.join(D.UI._pendingJoinRoom, name, { house });
         D.UI._pendingJoinRoom = null;
       });
 
@@ -581,8 +770,14 @@
         D.UI.showPause(false);
         if (game.multiplayer) return;
         if (D.Save) D.Save.clear();
+        const pair =
+          D.Seats && D.Seats.skirmishPair
+            ? D.Seats.skirmishPair(D.UI.selectedHouse())
+            : { localOwner: 'player', owners: ['player', 'enemy'] };
+        game.localOwner = pair.localOwner;
         D.Game.startSkirmish(game, D.MAPS.skirmish_large || D.MAPS.skirmish1, {
           startMode: D.UI.selectedStartMode(),
+          owners: pair.owners,
         });
         lastSelSig = '';
         D.UI.resetMatchHud(game);
@@ -613,8 +808,14 @@
         if (D.Save) D.Save.clear();
         game.speedMult =
           (D.config.skirmish && D.config.skirmish.defaultSpeed) || 2;
+        const pair =
+          D.Seats && D.Seats.skirmishPair
+            ? D.Seats.skirmishPair(D.UI.selectedHouse())
+            : { localOwner: 'player', owners: ['player', 'enemy'] };
+        game.localOwner = pair.localOwner;
         D.Game.startSkirmish(game, D.MAPS.skirmish_large || D.MAPS.skirmish1, {
           startMode: D.UI.selectedStartMode(),
+          owners: pair.owners,
         });
         lastSelSig = '';
         D.UI.resetMatchHud(game);
@@ -646,8 +847,27 @@
             ev === 'peer_left' ||
             ev === 'peer_disconnected' ||
             ev === 'roster' ||
+            ev === 'house_ok' ||
             ev === 'status'
           ) {
+            D.UI.refreshLobby();
+            if (ev === 'house_ok') {
+              const st = $('lobby-house-status');
+              if (st) {
+                const lab =
+                  D.Net.labelFor && D.Net.seat
+                    ? D.Net.labelFor(D.Net.seat)
+                    : houseLabel(D.Net.seat);
+                st.textContent = lab ? 'Now playing as ' + lab + '.' : 'House updated.';
+              }
+            }
+          }
+          if (ev === 'error' && data && (data.error === 'house_taken' || data.error === 'house_unavailable')) {
+            const st = $('lobby-house-status');
+            if (st) {
+              st.textContent =
+                data.message || 'That house is unavailable.';
+            }
             D.UI.refreshLobby();
           }
           if (ev === 'match_started') {
@@ -1397,7 +1617,9 @@
               D.UI.hideLiveMatches();
               D.UI.hideMenu();
               D.UI.showLobby('Joining ' + (title || it.room) + '…');
-              D.Net.join(it.room, playerName());
+              D.Net.join(it.room, playerName(), {
+                house: D.UI.selectedHouse(),
+              });
             });
             actions.appendChild(btnJoin);
           }
@@ -1720,6 +1942,37 @@
         } else {
           els.lobbySeat.textContent = '';
         }
+      }
+      // Lobby house chips: highlight current house; disable houses with no free seat
+      const lobbyPick = $('lobby-house-wrap');
+      const lobbyChips = $('lobby-house-pick');
+      if (lobbyPick) {
+        lobbyPick.classList.toggle('hidden', started || !D.Net.seat);
+      }
+      if (lobbyChips && D.Net.seat && !started) {
+        const curHouse =
+          D.Seats && D.Seats.houseId
+            ? D.Seats.houseId(D.Net.seat)
+            : 'atreides';
+        const seatOcc = D.Net.seats || {};
+        lobbyChips.querySelectorAll('.house-chip').forEach((btn) => {
+          const hid = btn.dataset.house;
+          const on = hid === curHouse;
+          btn.classList.toggle('selected', on);
+          btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+          let available = on;
+          if (!on && D.Seats && D.Seats.seatsForHouse) {
+            available = D.Seats.seatsForHouse(hid).some((s) => {
+              const info = seatOcc[s];
+              return !info || !info.name;
+            });
+          }
+          btn.disabled = !available && !on;
+          btn.setAttribute(
+            'aria-disabled',
+            !available && !on ? 'true' : 'false'
+          );
+        });
       }
       if (els.lobbyStatus) {
         if (D.Net.status === 'connecting') {

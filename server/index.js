@@ -68,6 +68,32 @@ const HOUSE_FOR_SEAT = {
   p3: 'Harkonnen',
   p4: 'Ordos',
 };
+const HOUSE_ID_FOR_SEAT = {
+  player: 'atreides',
+  enemy: 'harkonnen',
+  p2: 'ordos',
+  p3: 'harkonnen',
+  p4: 'ordos',
+};
+
+function normalizeHouseId(id) {
+  if (id == null || id === '') return null;
+  const s = String(id).toLowerCase().trim();
+  if (s === 'atreides' || s === 'a' || s === 'at') return 'atreides';
+  if (s === 'harkonnen' || s === 'h' || s === 'hk' || s === 'hark') return 'harkonnen';
+  if (s === 'ordos' || s === 'o' || s === 'or') return 'ordos';
+  return null;
+}
+
+function houseIdForSeat(seat) {
+  return HOUSE_ID_FOR_SEAT[seat] || null;
+}
+
+function seatsForHouse(houseId) {
+  const h = normalizeHouseId(houseId);
+  if (!h) return [];
+  return SEAT_ORDER.filter((s) => HOUSE_ID_FOR_SEAT[s] === h);
+}
 const ROOM_CODE_LEN = 6;
 const ROOM_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const ROOM_IDLE_MS = 60 * 60 * 1000;
@@ -1297,19 +1323,39 @@ function findReclaimSeat(room, playerId) {
   return null;
 }
 
-function findOpenSeat(room) {
-  for (const seat of SEAT_ORDER) {
-    if (!room.slots.has(seat)) return seat;
-    const slot = room.slots.get(seat);
-    // Expired reservation — free for a new player
-    if (
-      !slot.connected &&
-      slot.disconnectedAt &&
-      Date.now() - slot.disconnectedAt >= RECONNECT_GRACE_MS
-    ) {
-      room.slots.delete(seat);
-      return seat;
+/**
+ * Whether a seat can be claimed (empty or reconnect grace expired).
+ * Deletes expired reservations so the seat is free.
+ */
+function isSeatClaimable(room, seat) {
+  if (!room.slots.has(seat)) return true;
+  const slot = room.slots.get(seat);
+  if (
+    !slot.connected &&
+    slot.disconnectedAt &&
+    Date.now() - slot.disconnectedAt >= RECONNECT_GRACE_MS
+  ) {
+    room.slots.delete(seat);
+    return true;
+  }
+  return false;
+}
+
+/**
+ * First free seat, optionally preferring a house id (atreides/harkonnen/ordos).
+ * Extra seats (p3 pink Harkonnen, p4 black Ordos) count for that house.
+ * @param {object} room
+ * @param {string|null} [preferredHouse]
+ */
+function findOpenSeat(room, preferredHouse) {
+  const pref = normalizeHouseId(preferredHouse);
+  if (pref) {
+    for (const seat of seatsForHouse(pref)) {
+      if (isSeatClaimable(room, seat)) return seat;
     }
+  }
+  for (const seat of SEAT_ORDER) {
+    if (isSeatClaimable(room, seat)) return seat;
   }
   return null;
 }
@@ -1750,7 +1796,7 @@ function startMatchNow(room, opts) {
   }
 }
 
-function joinExisting(ws, roomId, playerId, name) {
+function joinExisting(ws, roomId, playerId, name, preferredHouse) {
   const id = String(roomId || '')
     .trim()
     .toUpperCase()
@@ -1767,6 +1813,7 @@ function joinExisting(ws, roomId, playerId, name) {
 
   const pid = sanitizePlayerId(playerId);
   const displayName = sanitizeName(name);
+  const housePref = normalizeHouseId(preferredHouse);
 
   // Leave any other room intentionally
   if (ws.roomRef && ws.roomRef !== room) {
@@ -1787,7 +1834,7 @@ function joinExisting(ws, roomId, playerId, name) {
     requestRejoin(ws, id, pid, displayName, null);
     return;
   } else {
-    seat = findOpenSeat(room);
+    seat = findOpenSeat(room, housePref);
     if (!seat) {
       sendJson(ws, { type: 'error', error: 'room_full', room: id });
       return;
@@ -1829,7 +1876,7 @@ function joinExisting(ws, roomId, playerId, name) {
   }
 }
 
-function createRoom(ws, playerId, name, title) {
+function createRoom(ws, playerId, name, title, preferredHouse) {
   if (ws.roomRef) detachWs(ws, true);
   const id = uniqueRoomCode();
   const room = makeRoom(id);
@@ -1837,9 +1884,12 @@ function createRoom(ws, playerId, name, title) {
   rooms.set(id, room);
   const pid = sanitizePlayerId(playerId);
   const displayName = sanitizeName(name);
-  bindSeat(ws, room, 'player', pid, displayName, 'host');
+  const housePref = normalizeHouseId(preferredHouse);
+  // Prefer house seat when requested; fall back to classic host seat
+  const seat = findOpenSeat(room, housePref) || 'player';
+  bindSeat(ws, room, seat, pid, displayName, 'host');
   console.log(
-    `[room ${id}] created title=${room.title || '(none)'} host=${displayName}`
+    `[room ${id}] created title=${room.title || '(none)'} host=${displayName} seat=${seat} house=${housePref || 'default'}`
   );
   sendJson(ws, {
     type: 'joined',
@@ -1872,6 +1922,103 @@ function setRoomTitle(ws, title) {
   const snap = roomSnapshot(room);
   broadcastRoom(room, { type: 'room_update', ...snap }, null);
   sendJson(ws, { type: 'title_ok', title: room.title, ...snap });
+}
+
+/**
+ * Lobby only: move this player to a free seat of the preferred house.
+ */
+function setSeatHouse(ws, preferredHouse) {
+  const room = ws.roomRef;
+  if (!room) {
+    sendJson(ws, { type: 'error', error: 'no_room' });
+    return;
+  }
+  if (room.started) {
+    sendJson(ws, {
+      type: 'error',
+      error: 'already_started',
+      message: 'Cannot change house after the match has started.',
+    });
+    return;
+  }
+  if (!ws.seat || isSpectatorWs(ws)) {
+    sendJson(ws, {
+      type: 'error',
+      error: 'no_seat',
+      message: 'Spectators cannot claim a house seat.',
+    });
+    return;
+  }
+  const house = normalizeHouseId(preferredHouse);
+  if (!house) {
+    sendJson(ws, {
+      type: 'error',
+      error: 'bad_house',
+      message: 'Choose Atreides, Harkonnen, or Ordos.',
+    });
+    return;
+  }
+  if (houseIdForSeat(ws.seat) === house) {
+    sendJson(ws, {
+      type: 'house_ok',
+      seat: ws.seat,
+      role: ws.role,
+      house,
+      ...roomSnapshot(room),
+    });
+    return;
+  }
+  // Find a free seat of that house (not our current seat)
+  const candidates = seatsForHouse(house);
+  let target = null;
+  for (const seat of candidates) {
+    if (seat === ws.seat) continue;
+    if (isSeatClaimable(room, seat)) {
+      target = seat;
+      break;
+    }
+  }
+  if (!target) {
+    const label = HOUSE_FOR_SEAT[candidates[0]] || house;
+    sendJson(ws, {
+      type: 'error',
+      error: 'house_taken',
+      message: label + ' has no free seats.',
+    });
+    return;
+  }
+
+  const prevSeat = ws.seat;
+  const pid = ws.playerId;
+  const displayName = ws.displayName || 'Commander';
+  const role = ws.role || 'guest';
+  // Free old seat then claim new one (preserve host role)
+  room.slots.delete(prevSeat);
+  bindSeat(ws, room, target, pid, displayName, role);
+  ensureHostRole(room);
+  touch(room);
+  const snap = roomSnapshot(room);
+  console.log(
+    `[room ${room.id}] set_house ${displayName} ${prevSeat}→${target} (${house})`
+  );
+  sendJson(ws, {
+    type: 'house_ok',
+    seat: ws.seat,
+    role: ws.role,
+    house,
+    ...snap,
+  });
+  broadcastRoom(
+    room,
+    {
+      type: 'roster',
+      playerId: ws.playerId,
+      name: ws.displayName,
+      seat: ws.seat,
+      ...snap,
+    },
+    ws
+  );
 }
 
 /**
@@ -2005,9 +2152,9 @@ function setupWs(server) {
 
       if (msg.type === 'create') {
         console.log(
-          `[ws] create name=${msg.name || '?'} title=${msg.title || ''} clientRev=${msg.clientRev || ws.clientRev || '?'}`
+          `[ws] create name=${msg.name || '?'} title=${msg.title || ''} house=${msg.house || ''} clientRev=${msg.clientRev || ws.clientRev || '?'}`
         );
-        createRoom(ws, msg.playerId, msg.name, msg.title);
+        createRoom(ws, msg.playerId, msg.name, msg.title, msg.house);
         return;
       }
 
@@ -2016,16 +2163,21 @@ function setupWs(server) {
         return;
       }
 
+      if (msg.type === 'set_house') {
+        setSeatHouse(ws, msg.house);
+        return;
+      }
+
       if (msg.type === 'join') {
         console.log(
-          `[ws] join room=${msg.room} name=${msg.name || '?'} clientRev=${msg.clientRev || ws.clientRev || '?'}`
+          `[ws] join room=${msg.room} name=${msg.name || '?'} house=${msg.house || ''} clientRev=${msg.clientRev || ws.clientRev || '?'}`
         );
         // Optional role: 'spectator' reuses join shape
         if (msg.role === 'spectator') {
           joinSpectate(ws, msg.room, msg.playerId, msg.name);
           return;
         }
-        joinExisting(ws, msg.room, msg.playerId, msg.name);
+        joinExisting(ws, msg.room, msg.playerId, msg.name, msg.house);
         return;
       }
 

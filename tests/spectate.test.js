@@ -265,4 +265,69 @@ describe('live API + spectator WS', () => {
     host.close();
     guest.close();
   });
+
+  it('create/join/set_house prefer free house seats', async () => {
+    const host = await openWs(wsUrl);
+    await waitMsg(host, 'hello');
+    host.send(
+      JSON.stringify({
+        type: 'create',
+        playerId: 'p_house_host',
+        name: 'OrdosHost',
+        house: 'ordos',
+      })
+    );
+    const hj = await waitMsg(host, 'joined');
+    assert.equal(hj.seat, 'p2', 'host preferred Ordos → p2 seat');
+    assert.equal(hj.role, 'host');
+
+    const guest = await openWs(wsUrl);
+    await waitMsg(guest, 'hello');
+    guest.send(
+      JSON.stringify({
+        type: 'join',
+        room: hj.room,
+        playerId: 'p_house_guest',
+        name: 'HarkGuest',
+        house: 'harkonnen',
+      })
+    );
+    const gj = await waitMsg(guest, 'joined');
+    assert.equal(gj.seat, 'enemy', 'guest preferred Harkonnen → enemy');
+
+    // Host switches to free Atreides (player seat)
+    host.send(JSON.stringify({ type: 'set_house', house: 'atreides' }));
+    const ok = await waitMsg(host, 'house_ok');
+    assert.equal(ok.seat, 'player');
+
+    // Guest tries Ordos (only p2 was freed? host left p2) — p2 free, guest can switch
+    guest.send(JSON.stringify({ type: 'set_house', house: 'ordos' }));
+    const gok = await waitMsg(guest, 'house_ok');
+    assert.equal(gok.seat, 'p2');
+
+    // Host takes last free Atreides is already host; guest tries harkonnen free
+    guest.send(JSON.stringify({ type: 'set_house', house: 'harkonnen' }));
+    const back = await waitMsg(guest, 'house_ok');
+    assert.equal(back.seat, 'enemy');
+
+    // Second guest takes atreides is taken by host — prefer atreides → next free (player taken → maybe p3 not atreides… only player is atreides primary, no extra atreides; so join with atreides falls through to first open
+    const g2 = await openWs(wsUrl);
+    await waitMsg(g2, 'hello');
+    g2.send(
+      JSON.stringify({
+        type: 'join',
+        room: hj.room,
+        playerId: 'p_house_g2',
+        name: 'Third',
+        house: 'atreides',
+      })
+    );
+    const g2j = await waitMsg(g2, 'joined');
+    // player taken by host; no other atreides seat → first open in order: p2 free, then p3, p4
+    assert.ok(['p2', 'p3', 'p4'].includes(g2j.seat), 'fallback to open seat got ' + g2j.seat);
+
+    host.close();
+    guest.close();
+    g2.close();
+  });
 });

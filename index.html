@@ -177,7 +177,39 @@
               <input type="checkbox" id="opt-mcv-start" />
               <span>MCV-only start <span class="meta">(no free base)</span></span>
             </label>
-            <p class="hint menu-house-hint">
+            <div class="house-pick-label">Your house</div>
+            <div
+              class="house-pick"
+              id="sp-house-pick"
+              role="radiogroup"
+              aria-label="Skirmish house"
+            >
+              <button
+                type="button"
+                class="house-chip house-atreides selected"
+                data-house="atreides"
+                aria-pressed="true"
+              >
+                Atreides
+              </button>
+              <button
+                type="button"
+                class="house-chip house-harkonnen"
+                data-house="harkonnen"
+                aria-pressed="false"
+              >
+                Harkonnen
+              </button>
+              <button
+                type="button"
+                class="house-chip house-ordos"
+                data-house="ordos"
+                aria-pressed="false"
+              >
+                Ordos
+              </button>
+            </div>
+            <p class="hint menu-house-hint" id="sp-house-hint">
               You: <b class="house-atreides">Atreides</b> (LRT) · AI:
               <b class="house-harkonnen">Harkonnen</b> (Siege Tank)
             </p>
@@ -194,6 +226,38 @@
               autocomplete="nickname"
               spellcheck="false"
             />
+            <div class="house-pick-label">Preferred house</div>
+            <div
+              class="house-pick"
+              id="mp-house-pick"
+              role="radiogroup"
+              aria-label="Multiplayer preferred house"
+            >
+              <button
+                type="button"
+                class="house-chip house-atreides selected"
+                data-house="atreides"
+                aria-pressed="true"
+              >
+                Atreides
+              </button>
+              <button
+                type="button"
+                class="house-chip house-harkonnen"
+                data-house="harkonnen"
+                aria-pressed="false"
+              >
+                Harkonnen
+              </button>
+              <button
+                type="button"
+                class="house-chip house-ordos"
+                data-house="ordos"
+                aria-pressed="false"
+              >
+                Ordos
+              </button>
+            </div>
             <label class="lobby-link-label" for="mp-title-input"
               >Match name <span class="meta">(optional)</span></label
             >
@@ -222,8 +286,8 @@
               <button id="btn-mp-join" type="button">Join</button>
             </div>
             <p class="hint" style="margin-top: 8px">
-              Seats: blue Atreides · red Harkonnen · green Ordos · pink · black.
-              Host starts when ready.
+              Prefer a free house seat when hosting or joining. Extras: pink
+              Harkonnen · black Ordos.
             </p>
           </div>
         </div>
@@ -408,8 +472,40 @@
           autocomplete="nickname"
           spellcheck="false"
         />
-        <p class="hint" style="margin-top: 10px; text-align: left">
-          You will join as Harkonnen (red) if the host is already in the room.
+        <div class="house-pick-label">Preferred house</div>
+        <div
+          class="house-pick"
+          id="join-house-pick"
+          role="radiogroup"
+          aria-label="Join preferred house"
+        >
+          <button
+            type="button"
+            class="house-chip house-atreides selected"
+            data-house="atreides"
+            aria-pressed="true"
+          >
+            Atreides
+          </button>
+          <button
+            type="button"
+            class="house-chip house-harkonnen"
+            data-house="harkonnen"
+            aria-pressed="false"
+          >
+            Harkonnen
+          </button>
+          <button
+            type="button"
+            class="house-chip house-ordos"
+            data-house="ordos"
+            aria-pressed="false"
+          >
+            Ordos
+          </button>
+        </div>
+        <p class="hint" id="join-house-hint" style="margin-top: 10px; text-align: left">
+          You will take that house if a seat is free; otherwise the next open seat.
         </p>
         <div class="actions" style="margin-top: 14px">
           <button id="btn-join-go" type="button" class="primary">Join match</button>
@@ -426,6 +522,41 @@
         <p id="lobby-status">Connecting…</p>
         <div id="lobby-roster" class="lobby-roster"></div>
         <p id="lobby-seat" class="hint"></p>
+        <div id="lobby-house-wrap" class="lobby-house-wrap">
+          <div class="house-pick-label">Switch house <span class="meta">(if free)</span></div>
+          <div
+            class="house-pick"
+            id="lobby-house-pick"
+            role="radiogroup"
+            aria-label="Lobby house"
+          >
+            <button
+              type="button"
+              class="house-chip house-atreides"
+              data-house="atreides"
+              aria-pressed="false"
+            >
+              Atreides
+            </button>
+            <button
+              type="button"
+              class="house-chip house-harkonnen"
+              data-house="harkonnen"
+              aria-pressed="false"
+            >
+              Harkonnen
+            </button>
+            <button
+              type="button"
+              class="house-chip house-ordos"
+              data-house="ordos"
+              aria-pressed="false"
+            >
+              Ordos
+            </button>
+          </div>
+          <p id="lobby-house-status" class="hint" aria-live="polite"></p>
+        </div>
         <div class="lobby-code-wrap">
           <span class="label">Room</span>
           <strong id="lobby-code">—</strong>

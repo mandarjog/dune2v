@@ -18,6 +18,79 @@ describe('seats / FFA', () => {
     assert.equal(Dune2.Seats.color('p4'), '#2c2c2c'); // black
   });
 
+  it('skirmishPair maps preferred house to local + AI seats', () => {
+    const a = Dune2.Seats.skirmishPair('atreides');
+    assert.equal(a.localOwner, 'player');
+    assert.equal(a.aiOwner, 'enemy');
+    assert.deepEqual(a.owners, ['player', 'enemy']);
+
+    const h = Dune2.Seats.skirmishPair('harkonnen');
+    assert.equal(h.localOwner, 'enemy');
+    assert.equal(h.aiOwner, 'player');
+    assert.deepEqual(h.owners, ['enemy', 'player']);
+
+    const o = Dune2.Seats.skirmishPair('ordos');
+    assert.equal(o.localOwner, 'p2');
+    assert.equal(o.aiOwner, 'enemy');
+    assert.deepEqual(o.owners, ['p2', 'enemy']);
+
+    assert.equal(Dune2.Seats.primarySeat('harkonnen'), 'enemy');
+    assert.deepEqual(Dune2.Seats.seatsForHouse('ordos'), ['p2', 'p4']);
+    assert.equal(Dune2.Seats.normalizeHouse('HK'), 'harkonnen');
+  });
+
+  it('startSkirmish as Harkonnen uses enemy seat + AI on player', () => {
+    const game = Dune2.Game.create();
+    const pair = Dune2.Seats.skirmishPair('harkonnen');
+    game.localOwner = pair.localOwner;
+    Dune2.Game.startSkirmish(game, Dune2.MAPS.skirmish_large, {
+      owners: pair.owners,
+      startMode: 'base',
+    });
+    assert.equal(game.localOwner, 'enemy');
+    assert.deepEqual(game.activeOwners, ['enemy', 'player']);
+    assert.ok(
+      game.buildings.some(
+        (b) => b.owner === 'enemy' && b.type === 'constructionYard'
+      )
+    );
+    assert.ok(
+      game.buildings.some(
+        (b) => b.owner === 'player' && b.type === 'constructionYard'
+      )
+    );
+    // House specials follow seat
+    assert.equal(Dune2.Seats.allows('enemy', Dune2.config.units.siegeTank), true);
+    assert.equal(
+      Dune2.Seats.allows('enemy', Dune2.config.buildings.longRangeTower),
+      false
+    );
+  });
+
+  it('AI drives the non-local seat (player when human is Harkonnen)', () => {
+    const game = Dune2.Game.create();
+    const pair = Dune2.Seats.skirmishPair('harkonnen');
+    game.localOwner = pair.localOwner;
+    Dune2.config.features.ai = true;
+    Dune2.Game.startSkirmish(game, Dune2.MAPS.skirmish_large, {
+      owners: pair.owners,
+      startMode: 'base',
+    });
+    // Give AI cash and force AI tick cadence
+    game.credits.player = 5000;
+    game.tick = Dune2.config.ai.tickEvery;
+    const before = game.buildings.filter((b) => b.owner === 'player').length;
+    Dune2.AI.tick(game, Dune2.config.DT_SEC);
+    // AI should at least attempt eco (may queue/build); memory targets local house
+    assert.ok(game.ai && game.ai.memory);
+    // enemy (human) units/buildings are foes — not used as OWNER
+    const after = game.buildings.filter((b) => b.owner === 'player').length;
+    // Either built something or still at bootstrap with same count — must not touch enemy buildings
+    const humanBuildings = game.buildings.filter((b) => b.owner === 'enemy').length;
+    assert.ok(humanBuildings >= 3, 'human base intact');
+    assert.ok(after >= before, 'AI may expand player base');
+  });
+
   it('startSkirmish supports 3 owners with starter bases and fog', () => {
     const game = Dune2.Game.create();
     const map = Dune2.MAPS.skirmish_large;
