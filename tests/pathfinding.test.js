@@ -106,6 +106,31 @@ describe('flow field / hybrid', () => {
     Dune2.config.path.flowMinGroup = prevMin;
   });
 
+  it('fieldCoversUnits rejects cache when starts are outside field', () => {
+    const map = Dune2.Map.createFromDef(Dune2.MAPS.skirmish_large);
+    const near = [{ x: 20, y: 70, path: [] }];
+    Dune2.Path.assignGroupFlow(map, near, 40.5, 50.5);
+    const field = Dune2.Path._flowCache && Dune2.Path._flowCache.field;
+    assert.ok(field);
+    assert.equal(Dune2.Path.fieldCoversUnits(field, near), true);
+    // Far units should not be covered by a tightly-bounded field from a short move
+    const far = [{ x: 90, y: 10, path: [] }];
+    // After a short field build, far corner may be Infinity
+    // Rebuild with only near units so field is limited
+    Dune2.Path._flowCache = null;
+    Dune2.config.path.flowTightBounds = true;
+    Dune2.config.path.flowMaxCost = 40;
+    Dune2.Path.assignGroupFlow(map, near, 22.5, 70.5, { tightBounds: true });
+    const f2 = Dune2.Path._flowCache.field;
+    assert.ok(f2);
+    // Far side of map almost certainly uncovered under maxCost 40
+    const coversFar = Dune2.Path.fieldCoversUnits(f2, far);
+    assert.equal(coversFar, false);
+    Dune2.config.path.flowTightBounds = false;
+    Dune2.config.path.flowMaxCost = 160;
+    Dune2.Path._flowCache = null;
+  });
+
   it('Orders.issue move uses flow for 20 infantry', () => {
     const game = Dune2.Game.create();
     Dune2.Game.startSkirmish(game, Dune2.MAPS.skirmish_large, {

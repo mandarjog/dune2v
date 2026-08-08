@@ -51,6 +51,8 @@ class RoomSim {
       // Prefer A* for small squads; bounded flow for 5+ (see pathfinding.js)
       D.config.path.flowMinGroup = Math.max(5, D.config.path.flowMinGroup || 5);
       D.config.path.flowCacheMs = Math.max(3500, D.config.path.flowCacheMs || 3500);
+      // Tight flow bounds on server only (shared/small CPU) — SP stays loose
+      D.config.path.flowTightBounds = true;
       D.config.path.maxRepathsPerTickMp = Math.min(
         12,
         D.config.path.maxRepathsPerTickMp || 12

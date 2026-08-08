@@ -392,8 +392,39 @@
      * @param {number} y1
      * @returns {{ ok:number, fail:number, field:object|null, buildMs:number }}
      */
-    assignGroupFlow(map, units, x1, y1) {
-      // Reuse recent field when player spam-clicks near the same goal (saves ~20–160ms/issue)
+    /** True if every unit start tile has a finite cost in the field. */
+    fieldCoversUnits(field, units) {
+      if (!field || !units || !units.length) return false;
+      const w = field.w;
+      const h = field.h;
+      for (let i = 0; i < units.length; i++) {
+        const u = units[i];
+        const tx = Math.floor(u.x);
+        const ty = Math.floor(u.y);
+        if (tx < 0 || ty < 0 || tx >= w || ty >= h) return false;
+        if (field.cost[ty * w + tx] === Infinity) return false;
+      }
+      return true;
+    },
+
+    /**
+     * Assign paths for many units to one goal using a single flow field.
+     * @param {object} map
+     * @param {Array<{x,y,path}>} units
+     * @param {number} x1
+     * @param {number} y1
+     * @param {{ tightBounds?: boolean }} [opts]
+     * @returns {{ ok:number, fail:number, field:object|null, buildMs:number }}
+     */
+    assignGroupFlow(map, units, x1, y1, opts) {
+      opts = opts || {};
+      const cfg = (D.config && D.config.path) || {};
+      // Tight bounds only for server MP (set flowTightBounds) or explicit opt
+      const tight = !!(
+        opts.tightBounds ||
+        cfg.flowTightBounds
+      );
+      // Reuse recent field when player spam-clicks near the same goal
       const now =
         typeof performance !== 'undefined' && performance.now
           ? performance.now()
@@ -401,15 +432,8 @@
       const goal = resolveGoal(map, x1, y1);
       let field = null;
       const cache = D.Path._flowCache;
-      const cacheMs =
-        (D.config && D.config.path && D.config.path.flowCacheMs) != null
-          ? D.config.path.flowCacheMs
-          : 3500;
-      // Snap cache key so nearby clicks share one field (formation spam / jitter)
-      const snap =
-        (D.config && D.config.path && D.config.path.flowCacheSnap) != null
-          ? D.config.path.flowCacheSnap
-          : 3;
+      const cacheMs = cfg.flowCacheMs != null ? cfg.flowCacheMs : 3500;
+      const snap = cfg.flowCacheSnap != null ? cfg.flowCacheSnap : 3;
       const cgx = goal ? Math.floor(goal.gx / snap) * snap : -1;
       const cgy = goal ? Math.floor(goal.gy / snap) * snap : -1;
       if (
@@ -418,32 +442,23 @@
         goal &&
         cache.cgx === cgx &&
         cache.cgy === cgy &&
-        now - cache.t < cacheMs
+        now - cache.t < cacheMs &&
+        D.Path.fieldCoversUnits(cache.field, units)
       ) {
         field = cache.field;
         D.Path.metrics.lastFlowBuildMs = 0;
         D.Path.metrics.lastBackend = 'flow-cache';
       } else {
-        // Only expand until unit start tiles are reached (not whole map)
+        // Only unit start tiles (not 3×3 padding — cliffs in pad blocked early-exit forever)
         const need = [];
         const w = map.width;
         const h = map.height;
         for (const u of units) {
-          let tx = Math.floor(u.x);
-          let ty = Math.floor(u.y);
+          const tx = Math.floor(u.x);
+          const ty = Math.floor(u.y);
           if (tx < 0 || ty < 0 || tx >= w || ty >= h) continue;
           need.push(ty * w + tx);
-          // Also cover a few tiles around for units mid-cell / blocked start
-          for (let dy = -1; dy <= 1; dy++) {
-            for (let dx = -1; dx <= 1; dx++) {
-              const nx = tx + dx;
-              const ny = ty + dy;
-              if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
-              need.push(ny * w + nx);
-            }
-          }
         }
-        // Bound cost by farthest unit from goal (with slack) so we never full-map
         let maxDist = 48;
         if (goal) {
           for (const u of units) {
@@ -452,15 +467,19 @@
             if (d > maxDist) maxDist = d;
           }
         }
-        const cfgCap =
-          (D.config.path && D.config.path.flowMaxCost) != null
-            ? D.config.path.flowMaxCost
-            : 160;
-        const maxCost = Math.min(
-          cfgCap,
-          Math.max(40, Math.ceil(maxDist * 1.35) + 16)
-        );
-        field = D.Path.buildFlowField(map, x1, y1, { need, maxCost });
+        let maxCost;
+        if (tight) {
+          const cfgCap = cfg.flowMaxCost != null ? cfg.flowMaxCost : 160;
+          maxCost = Math.min(cfgCap, Math.max(40, Math.ceil(maxDist * 1.35) + 16));
+        } else {
+          // SP / large armies: roomy cost so cliff detours still connect
+          const spCap = cfg.flowMaxCostSp != null ? cfg.flowMaxCostSp : 280;
+          maxCost = Math.min(spCap, Math.max(80, Math.ceil(maxDist * 1.85) + 48));
+        }
+        field = D.Path.buildFlowField(map, x1, y1, {
+          need: need.length ? need : null,
+          maxCost,
+        });
         if (field && goal) {
           D.Path._flowCache = {
             map,
@@ -513,7 +532,7 @@
      * @param {number} y1
      * @returns {'flow'|'astar'}
      */
-    assignGroupMove(map, units, x1, y1) {
+    assignGroupMove(map, units, x1, y1, opts) {
       const cfg = (D.config && D.config.path) || {};
       const backend = cfg.backend || 'hybrid';
       const minG = cfg.flowMinGroup != null ? cfg.flowMinGroup : 5;
@@ -522,7 +541,7 @@
         backend === 'flow' || (backend === 'hybrid' && n >= minG);
 
       if (useFlow && n > 0) {
-        D.Path.assignGroupFlow(map, units, x1, y1);
+        D.Path.assignGroupFlow(map, units, x1, y1, opts);
         return 'flow';
       }
       // Per-unit A*
