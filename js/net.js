@@ -1127,7 +1127,13 @@
 
     applyCommand(game, seat, payload) {
       if (!game || !payload || !payload.op) return { ok: false, reason: 'bad' };
-      const owner = seat === 'enemy' ? 'enemy' : 'player';
+      // Full FFA seats (player/enemy/p2/p3/p4) — never collapse p2→player
+      const owner =
+        D.Seats && D.Seats.isSeat(seat)
+          ? seat
+          : seat === 'enemy'
+            ? 'enemy'
+            : 'player';
 
       function ownedIds(ids) {
         const out = [];

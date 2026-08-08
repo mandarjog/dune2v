@@ -136,6 +136,7 @@
         sight: 0,
         requires: 'constructionYard',
         buildable: true,
+        // Classic Dune II: slabs only on rock (prep pad / HP bonus under buildings)
       },
       constructionYard: {
         name: 'Construction Yard',

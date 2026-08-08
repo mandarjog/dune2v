@@ -67,6 +67,98 @@ describe('seats / FFA', () => {
     );
   });
 
+  it('Net.applyCommand builds for Ordos seat (p2), not collapsed to player', () => {
+    // net.js needs light browser stubs
+    if (!global.location) {
+      global.location = {
+        protocol: 'http:',
+        host: 'localhost',
+        href: 'http://localhost/',
+        origin: 'http://localhost',
+        pathname: '/',
+        search: '',
+      };
+    }
+    if (!global.WebSocket) global.WebSocket = function () {};
+    if (!global.history) global.history = { replaceState() {} };
+    if (!global.sessionStorage) {
+      global.sessionStorage = {
+        getItem() {
+          return null;
+        },
+        setItem() {},
+        removeItem() {},
+      };
+    }
+    if (!global.localStorage) {
+      global.localStorage = {
+        getItem() {
+          return null;
+        },
+        setItem() {},
+        removeItem() {},
+      };
+    }
+    if (!Dune2.Net || !Dune2.Net.applyCommand) {
+      const fs = require('fs');
+      const path = require('path');
+      const vm = require('vm');
+      const code = fs.readFileSync(
+        path.join(__dirname, '..', 'js', 'net.js'),
+        'utf8'
+      );
+      vm.runInThisContext(code, { filename: 'js/net.js' });
+    }
+    assert.ok(Dune2.Net && Dune2.Net.applyCommand);
+
+    const game = Dune2.Game.create();
+    const pair = Dune2.Seats.skirmishPair('ordos');
+    game.localOwner = pair.localOwner;
+    Dune2.Game.startSkirmish(game, Dune2.MAPS.skirmish_large, {
+      owners: pair.owners,
+      startMode: 'base',
+    });
+    assert.equal(game.localOwner, 'p2');
+    assert.ok(Dune2.Economy.hasTech(game, 'p2', 'refinery'));
+    // Broken old mapping: p2 → player → tech fail (player has no refinery)
+    const bad = Dune2.Net.applyCommand(game, 'player', {
+      op: 'build',
+      type: 'silo',
+      tileX: 0,
+      tileY: 0,
+    });
+    assert.equal(bad.ok, false);
+    assert.equal(bad.reason, 'tech');
+
+    const cy = game.buildings.find(
+      (b) => b.owner === 'p2' && b.type === 'constructionYard'
+    );
+    assert.ok(cy);
+    let placed = null;
+    for (let r = 1; r < 12 && !placed; r++) {
+      for (let dy = -r; dy <= r && !placed; dy++) {
+        for (let dx = -r; dx <= r && !placed; dx++) {
+          const tx = cy.tileX + dx;
+          const ty = cy.tileY + dy;
+          if (Dune2.Map.canPlace(game, 'silo', tx, ty, 'p2')) {
+            const r2 = Dune2.Net.applyCommand(game, 'p2', {
+              op: 'build',
+              type: 'silo',
+              tileX: tx,
+              tileY: ty,
+            });
+            if (r2 && r2.ok) placed = r2;
+          }
+        }
+      }
+    }
+    assert.ok(placed && placed.ok, 'silo place as p2: ' + JSON.stringify(placed));
+    assert.ok(
+      game.buildings.some((b) => b.owner === 'p2' && b.type === 'silo'),
+      'silo owned by p2'
+    );
+  });
+
   it('AI drives the non-local seat (player when human is Harkonnen)', () => {
     const game = Dune2.Game.create();
     const pair = Dune2.Seats.skirmishPair('harkonnen');

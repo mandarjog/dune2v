@@ -2386,6 +2386,7 @@
           ' — ' +
           def.cost +
           ' credits' +
+          (type === 'concrete' ? ' · rock only' : '') +
           (def.houses && def.houses.length
             ? ' · ' + (D.Seats && D.Seats.house ? D.Seats.house(owner).name : '') + ' only'
             : '');
@@ -2395,7 +2396,12 @@
           if (game.phase !== 'playing' || game.replay || game.spectator) return;
           const o = me(game);
           if (!D.Economy.hasTech(game, o, def.requires)) {
-            D.Game.pushMessage(game, 'Requires ' + (def.requires || 'tech'));
+            const need = def.requires || 'tech';
+            D.Game.pushMessage(
+              game,
+              'Requires a completed ' +
+                (D.config.buildings[need] ? D.config.buildings[need].name : need)
+            );
             return;
           }
           const n = D.Economy.structureQueueCount(game, o);

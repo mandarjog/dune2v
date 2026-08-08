@@ -838,8 +838,9 @@
         const mpBase = D.config.path.maxRepathsPerTickMp || 20;
         maxRepaths = Math.max(8, Math.min(mpBase, Math.ceil(nUnits * 0.25) || 8));
       } else {
+        // SP / mass armies: scale hard with unit count so large groups unstick
         const base = D.config.path.maxRepathsPerTick || 64;
-        maxRepaths = Math.max(base, Math.min(160, Math.ceil(nUnits * 0.35)));
+        maxRepaths = Math.max(base, Math.min(320, Math.ceil(nUnits * 0.5) || base));
       }
       if (D.Path && D.Path.beginBatch) D.Path.beginBatch();
 

@@ -21,19 +21,24 @@
     return Math.max(lo, Math.min(hi, n | 0));
   }
 
-  /** Walkable spawn near (ax, ay), scanning outward. */
-  function findWalkableNear(map, ax, ay, maxR) {
+  /** Walkable spawn near (ax, ay), scanning outward. Avoids already-used tiles. */
+  function findWalkableNear(map, ax, ay, maxR, occupied) {
     maxR = maxR != null ? maxR : 24;
     ax = Math.floor(ax);
     ay = Math.floor(ay);
-    if (D.Map.isWalkable(map, ax, ay)) return { x: ax + 0.5, y: ay + 0.5 };
+    const free = (tx, ty) => {
+      if (!D.Map.isWalkable(map, tx, ty)) return false;
+      if (occupied && occupied.has(tx + ',' + ty)) return false;
+      return true;
+    };
+    if (free(ax, ay)) return { x: ax + 0.5, y: ay + 0.5, tx: ax, ty: ay };
     for (let r = 1; r <= maxR; r++) {
       for (let dy = -r; dy <= r; dy++) {
         for (let dx = -r; dx <= r; dx++) {
           if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue;
           const tx = ax + dx;
           const ty = ay + dy;
-          if (D.Map.isWalkable(map, tx, ty)) return { x: tx + 0.5, y: ty + 0.5 };
+          if (free(tx, ty)) return { x: tx + 0.5, y: ty + 0.5, tx, ty };
         }
       }
     }
@@ -52,22 +57,35 @@
     const towardCenterY = map.height / 2 - sp.y;
     const len = Math.hypot(towardCenterX, towardCenterY) || 1;
     // Anchor: a few tiles toward mid so not stacked on the CY
-    const ax = sp.x + (towardCenterX / len) * 8;
-    const ay = sp.y + (towardCenterY / len) * 8;
+    const ax = sp.x + (towardCenterX / len) * 10;
+    const ay = sp.y + (towardCenterY / len) * 10;
 
     let placed = 0;
-    const cols = Math.ceil(Math.sqrt(count * 1.2));
-    for (let i = 0; i < count * 3 && placed < count; i++) {
+    const occupied = new Set();
+    // Mark building footprints as occupied so army spawns off the base pad
+    for (const b of game.buildings || []) {
+      if (b.owner !== owner || b.type === 'concrete') continue;
+      for (let dy = 0; dy < b.tileH; dy++) {
+        for (let dx = 0; dx < b.tileW; dx++) {
+          occupied.add(b.tileX + dx + ',' + (b.tileY + dy));
+        }
+      }
+    }
+    // Wider spacing for large armies so pathfinding isn't a traffic jam on one tile
+    const spacing = count > 40 ? 1.45 : 1.2;
+    const cols = Math.ceil(Math.sqrt(count * 1.35));
+    for (let i = 0; i < count * 4 && placed < count; i++) {
       const col = placed % cols;
       const row = Math.floor(placed / cols);
-      const ox = (col - cols / 2) * 1.15;
-      const oy = row * 1.15;
+      const ox = (col - cols / 2) * spacing;
+      const oy = row * spacing;
       // Mirror formation so player expands NE-ish, enemy SW-ish
       const sign = owner === 'enemy' ? -1 : 1;
       const px = ax + ox * sign;
       const py = ay + oy * sign;
-      const pos = findWalkableNear(map, px, py, 6);
+      const pos = findWalkableNear(map, px, py, 10, occupied);
       if (!pos) continue;
+      occupied.add(pos.tx + ',' + pos.ty);
       const type = ARMY_MIX[placed % ARMY_MIX.length];
       try {
         D.Entities.createUnit(game, type, owner, pos.x, pos.y);
@@ -250,6 +268,23 @@
       // Override with ?fog=1 to play with fog.
       if (opts.fog === true) D.config.features.fog = true;
       else D.config.features.fog = false;
+      // Path stress: no worms eating the army mid-test
+      D.config.features.sandworms = false;
+      if (D.config.worms) D.config.worms.enabled = false;
+      // Cap must fit pre-spawned armies (default 35 would only block *new* trains,
+      // but UI/telemetry looked like "stuck at 35" — lift for this scenario)
+      if (!D.config.build) D.config.build = {};
+      D.config.build.maxArmySize = Math.max(
+        D.config.build.maxArmySize || 35,
+        perSide + 40
+      );
+      // Give large SP groups more recovery A* budget
+      if (D.config.path) {
+        D.config.path.maxRepathsPerTick = Math.max(
+          D.config.path.maxRepathsPerTick || 64,
+          128
+        );
+      }
 
       D.Game.startSkirmish(game, mapDef, {
         owners: ['player', 'enemy'],
@@ -299,7 +334,9 @@
           posHint +
           '. FOW ' +
           (D.config.features.fog ? 'ON' : 'OFF') +
-          '. You = Atreides.'
+          ' · army cap ' +
+          (D.config.build && D.config.build.maxArmySize) +
+          ' · worms off. You = Atreides.'
       );
       if (game.stats) {
         game.stats.scenario = 'mass';

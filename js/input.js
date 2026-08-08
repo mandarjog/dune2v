@@ -1072,10 +1072,31 @@
         return r;
       }
       if (r && !r.deferred) {
-        const why =
-          r.reason === 'busy'
-            ? 'queue full (' + D.Economy.structureQueueMax() + ' max)'
-            : r.reason || 'invalid';
+        const type = game.placement && game.placement.type;
+        const def = type && D.config.buildings[type];
+        let why;
+        if (r.reason === 'busy') {
+          why = 'queue full (' + D.Economy.structureQueueMax() + ' max)';
+        } else if (r.reason === 'tech') {
+          why =
+            'need ' +
+            (def && def.requires
+              ? def.requires.replace(/([A-Z])/g, ' $1').toLowerCase().trim()
+              : 'prerequisite building');
+        } else if (r.reason === 'placement') {
+          why =
+            type === 'concrete'
+              ? 'concrete only on rock (not sand)'
+              : 'need clear rock near your base';
+        } else if (r.reason === 'credits') {
+          why = 'not enough credits';
+        } else if (r.reason === 'house') {
+          why = 'wrong house';
+        } else if (r.reason === 'no-cy') {
+          why = 'need a Construction Yard';
+        } else {
+          why = r.reason || 'invalid';
+        }
         D.Game.pushMessage(game, 'Cannot place: ' + why);
       }
       return r || { ok: false };
