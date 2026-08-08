@@ -57,11 +57,23 @@ describe('MCV deploy, army cap, saboteur', () => {
     assert.equal(r.reason, 'army_cap');
   });
 
-  it('LRT nerf: range 8 and slower fire', () => {
+  it('LRT cost/power and CY defenses', () => {
     const D = loadGame();
-    const w = D.config.buildings.longRangeTower.weapon;
-    assert.equal(w.range, 8);
-    assert.ok(w.cooldown >= 2.5);
+    const lrt = D.config.buildings.longRangeTower;
+    assert.equal(lrt.cost, 400);
+    assert.equal(lrt.power, -40);
+    assert.equal(lrt.weapon.range, 8);
+    assert.ok(lrt.weapon.cooldown >= 2.5);
+    const cy = D.config.buildings.constructionYard;
+    assert.equal(cy.hp, 800);
+    assert.ok(cy.weapon && cy.weapon.range === 5);
+    // CY creates with a weapon state like a turret
+    const game = D.Game.create();
+    D.Game.startSkirmish(game, D.MAPS.skirmish1);
+    const yard = game.buildings.find((b) => b.type === 'constructionYard');
+    assert.ok(yard);
+    assert.equal(yard.hpMax, 800);
+    assert.ok(yard.weapon && yard.weapon.cooldownLeft != null);
   });
 
   it('saboteur regenerates HP and detonates for splash', () => {

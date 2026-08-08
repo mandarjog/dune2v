@@ -274,6 +274,8 @@
         if (D.refreshFogState) D.refreshFogState(game);
         if (D.showBuildRev) D.showBuildRev();
         lastSelSig = '';
+        // Drop leftover MP elim banner / chat alerts from the previous match
+        D.UI.resetMatchHud(game);
         D.UI.hideMenu();
         D.UI.hideLobby();
         D.UI.hideLiveMatches();
@@ -583,6 +585,7 @@
           startMode: D.UI.selectedStartMode(),
         });
         lastSelSig = '';
+        D.UI.resetMatchHud(game);
         D.UI.refresh(game);
         D.Renderer.rebuildTerrain(game);
       });
@@ -591,6 +594,7 @@
         els.endModal.classList.add('hidden');
         if (game.replay && D.Replay) {
           D.Replay.stop(game);
+          D.UI.resetMatchHud(game);
           D.UI.showMenu();
           return;
         }
@@ -602,6 +606,7 @@
           D.config.features.ai = true;
           D.UI.setChatVisible(false);
           D.UI.setMpSpeedVisible(false);
+          D.UI.resetMatchHud(game);
           D.UI.showMenu();
           return;
         }
@@ -612,6 +617,7 @@
           startMode: D.UI.selectedStartMode(),
         });
         lastSelSig = '';
+        D.UI.resetMatchHud(game);
         D.UI.refresh(game);
         D.Renderer.rebuildTerrain(game);
       });
@@ -619,6 +625,7 @@
       $('btn-end-menu')?.addEventListener('click', () => {
         els.endModal.classList.add('hidden');
         game.phase = 'menu';
+        D.UI.resetMatchHud(game);
         if (game.multiplayer && D.Net) D.Net.leave();
         game.multiplayer = false;
         game.spectator = false;
@@ -648,6 +655,7 @@
             D.UI.hideMenu();
             D.UI.hideLiveMatches();
             lastSelSig = '';
+            if (game) D.UI.resetMatchHud(game);
             const spec = !!(game && game.spectator);
             D.UI.setChatVisible(!!(game && game.multiplayer));
             D.UI.setMpSpeedVisible(!!(game && game.multiplayer && !spec && game.phase === 'playing'));
@@ -978,6 +986,28 @@
         !game.spectator
       ) {
         D.UI.showEliminatedBanner(game, true);
+      }
+    },
+
+    /**
+     * Clear elim banner, system chat flashes, and seen-alert set so a new
+     * skirmish does not inherit “ELIMINATED” from the previous MP match.
+     */
+    resetMatchHud(game) {
+      seenAlertIds.clear();
+      D.UI.showEliminatedBanner(game, false);
+      const log = $('chat-hud-log');
+      if (log) log.innerHTML = '';
+      const wrap = $('game-wrap');
+      if (wrap) wrap.classList.remove('under-attack-flash');
+      if (attackFlashTimer) {
+        clearTimeout(attackFlashTimer);
+        attackFlashTimer = 0;
+      }
+      // SP is never mid-FFA eliminated
+      if (game) {
+        game.spectator = !!game.spectator && !!game.multiplayer;
+        if (!game.multiplayer) game.spectator = false;
       }
     },
 

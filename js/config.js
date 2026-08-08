@@ -141,7 +141,7 @@
         name: 'Construction Yard',
         cost: 0,
         power: -10,
-        hp: 400,
+        hp: 800,
         buildTime: 0,
         tileW: 2,
         tileH: 2,
@@ -149,6 +149,17 @@
         requires: null,
         buildable: false,
         deployOnly: true,
+        // Defends itself like a gun turret
+        weapon: {
+          kind: 'shell',
+          damage: 14,
+          range: 5.0,
+          cooldown: 1.0,
+          vsI: 0.7,
+          vsV: 1.0,
+          vsB: 0.5,
+          projectile: true,
+        },
       },
       windtrap: {
         name: 'Windtrap',
@@ -256,8 +267,8 @@
        */
       longRangeTower: {
         name: 'Long Range Tower',
-        cost: 200,
-        power: -25,
+        cost: 400,
+        power: -40,
         hp: 180,
         buildTime: 30,
         tileW: 1,
