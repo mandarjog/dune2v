@@ -15,7 +15,7 @@
     features: {
       fog: true,
       ai: true,
-      sandworms: false,
+      sandworms: true,
       saveLoad: false,
       debugCheats: false,
     },
@@ -552,24 +552,31 @@
     },
 
     worms: {
-      enabled: false,
+      enabled: true,
       maxWorms: 2,
+      /** Units that attract worms (weight/sec while on soft sand). */
       moveWeight: {
         infantry: 1,
         trooper: 1,
+        saboteur: 0.5,
         trike: 3,
         quad: 3,
         combatTank: 3,
+        siegeTank: 3,
         harvester: 4,
         mcv: 3,
       },
       harvestWeightBonus: 2,
-      threshold: 100,
-      decayPerSec: 5,
+      /** Never swallowed — safe even on open sand. */
+      safeTypes: ['harvester', 'saboteur'],
+      threshold: 80,
+      decayPerSec: 4,
       rumbleSec: 2.0,
-      swallowRadiusTiles: 1.25,
+      surfaceSec: 5,
+      moveSpeed: 2.4,
+      swallowRadiusTiles: 1.35,
       emergeRadiusTiles: 2,
-      cooldownSec: 90,
+      cooldownSec: 75,
       equalOpportunity: true,
     },
 

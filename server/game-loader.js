@@ -19,6 +19,7 @@ const SCRIPTS = [
   'js/economy.js',
   'js/combat.js',
   'js/ai.js',
+  'js/sandworm.js',
   'js/game.js',
   'js/version.js',
   'js/scenario.js',

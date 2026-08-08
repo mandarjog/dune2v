@@ -172,6 +172,25 @@
           color: f.color,
           owner: f.owner,
         })),
+        worms: (game.worms || []).map((w) => ({
+          id: w.id,
+          x: w.x,
+          y: w.y,
+          phase: w.phase,
+          phaseT: w.phaseT,
+          warned: !!w.warned,
+          swallows: w.swallows | 0,
+        })),
+        wormState: game.wormState
+          ? {
+              heat: game.wormState.heat,
+              wx: game.wormState.wx,
+              wy: game.wormState.wy,
+              wSum: game.wormState.wSum,
+              cooldownUntil: game.wormState.cooldownUntil,
+              nextId: game.wormState.nextId,
+            }
+          : null,
       };
     },
 
@@ -306,6 +325,16 @@
       // Stuck glow is on the unit; explain why in the message log (server can't toast)
       if (D.Orders && D.Orders.announceStuckFromNet) {
         D.Orders.announceStuckFromNet(game, localOwner, prevStuck);
+      }
+
+      if (D.Worms && D.Worms.apply) {
+        D.Worms.apply(game, {
+          worms: data.worms || [],
+          wormState: data.wormState || null,
+        });
+      } else if (data.worms) {
+        game.worms = data.worms.map((w) => ({ ...w }));
+        game.wormState = data.wormState || null;
       }
 
       return true;
@@ -453,6 +482,15 @@
 
       game.projectiles = (data.projectiles || []).map((p) => ({ ...p }));
       game.fx = (data.fx || []).map((f) => ({ ...f }));
+      if (D.Worms && D.Worms.apply) {
+        D.Worms.apply(game, {
+          worms: data.worms || [],
+          wormState: data.wormState || null,
+        });
+      } else {
+        game.worms = (data.worms || []).map((w) => ({ ...w }));
+        game.wormState = data.wormState || null;
+      }
       if (!data.map.blocked) D.Map.rebuildBlocked(game);
       D.Economy.tickPower(game);
       D.Economy.recalcSpiceCap(game);
@@ -628,7 +666,15 @@
       game.ai = data.ai || { state: 'Bootstrap', waveAt: 0, lastScoutTick: 0, memory: {} };
       game.projectiles = (data.projectiles || []).map((p) => ({ ...p }));
       game.fx = (data.fx || []).map((f) => ({ ...f }));
-      game.worms = [];
+      if (D.Worms && D.Worms.apply) {
+        D.Worms.apply(game, {
+          worms: data.worms || [],
+          wormState: data.wormState || null,
+        });
+      } else {
+        game.worms = (data.worms || []).map((w) => ({ ...w }));
+        game.wormState = data.wormState || null;
+      }
       game.placement = null;
       game.messages = data.messages || [];
       if (data.rngState != null) D.rng.setState(data.rngState);

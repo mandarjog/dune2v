@@ -223,6 +223,20 @@
         ctx.globalAlpha = 1;
       }
 
+      // Sandworms (under FOW if not visible)
+      if (game.worms && game.worms.length) {
+        for (const w of game.worms) {
+          if (
+            D.Map.fogVisible(game) &&
+            !D.Map.isVisible(game, local, Math.floor(w.x), Math.floor(w.y)) &&
+            !D.Map.isExplored(game, local, Math.floor(w.x), Math.floor(w.y))
+          ) {
+            continue;
+          }
+          D.Renderer.drawWorm(game, w);
+        }
+      }
+
       // fx
       if (game.fx) {
         for (const f of game.fx) {
@@ -263,6 +277,24 @@
             ctx.beginPath();
             ctx.arc(s.x, s.y, (f.r || 0.5) * ts() * (1.2 - f.life), 0, Math.PI * 2);
             ctx.fill();
+          } else if (f.type === 'wormsign' || f.type === 'worm_body' || f.type === 'worm_gulp') {
+            const s = D.Renderer.worldToScreen(game, f.x, f.y);
+            const life = Math.max(0, f.life || 0);
+            const rad = (f.r || 1) * ts() * (0.6 + life);
+            ctx.strokeStyle =
+              f.type === 'worm_gulp'
+                ? `rgba(80,40,10,${Math.min(1, life * 3)})`
+                : `rgba(90,60,20,${Math.min(0.85, life * 4)})`;
+            ctx.lineWidth = f.type === 'wormsign' ? 2.5 : 3;
+            ctx.beginPath();
+            ctx.arc(s.x, s.y, rad, 0, Math.PI * 2);
+            ctx.stroke();
+            if (f.type === 'wormsign') {
+              ctx.strokeStyle = `rgba(200,150,60,${Math.min(0.5, life * 2)})`;
+              ctx.beginPath();
+              ctx.arc(s.x, s.y, rad * 0.55, 0, Math.PI * 2);
+              ctx.stroke();
+            }
           }
         }
       }
@@ -423,6 +455,66 @@
         ctx.strokeStyle = D.config.colors.selection;
         ctx.lineWidth = 2;
         ctx.strokeRect(s.x + 0.5, s.y + 0.5, w - 1, h - 1);
+      }
+    },
+
+    drawWorm(game, w) {
+      const s = D.Renderer.worldToScreen(game, w.x, w.y);
+      const t = ts();
+      if (w.phase === 'rumble') {
+        const pulse = 0.5 + 0.5 * Math.sin((game.tick || 0) * 0.4);
+        const rad = (1.2 + pulse * 0.5) * t;
+        ctx.strokeStyle = `rgba(120,80,30,${0.35 + pulse * 0.35})`;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, rad, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.fillStyle = `rgba(90,55,15,${0.12 + pulse * 0.1})`;
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, rad * 0.7, 0, Math.PI * 2);
+        ctx.fill();
+        // Wormsign chevrons
+        ctx.strokeStyle = `rgba(220,170,60,${0.5 + pulse * 0.3})`;
+        ctx.lineWidth = 2;
+        for (let i = 0; i < 3; i++) {
+          const a = ((game.tick || 0) * 0.08 + i * 2.1) % (Math.PI * 2);
+          const rr = rad * 0.45;
+          ctx.beginPath();
+          ctx.moveTo(s.x + Math.cos(a) * rr, s.y + Math.sin(a) * rr);
+          ctx.lineTo(
+            s.x + Math.cos(a) * (rr + 8),
+            s.y + Math.sin(a) * (rr + 8)
+          );
+          ctx.stroke();
+        }
+        return;
+      }
+      if (w.phase === 'surface' || w.phase === 'dive') {
+        const dive = w.phase === 'dive' ? Math.max(0.2, 1 - (w.phaseT || 0)) : 1;
+        const rad = 1.15 * t * dive;
+        // Body ring
+        ctx.fillStyle = `rgba(55,35,12,${0.75 * dive})`;
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, rad, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = `rgba(180,120,40,${0.9 * dive})`;
+        ctx.lineWidth = 3;
+        ctx.stroke();
+        // Maw
+        ctx.fillStyle = `rgba(20,10,5,${0.9 * dive})`;
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, rad * 0.45, 0, Math.PI * 2);
+        ctx.fill();
+        // Teeth hints
+        ctx.strokeStyle = `rgba(230,200,140,${0.7 * dive})`;
+        ctx.lineWidth = 1.5;
+        for (let i = 0; i < 6; i++) {
+          const a = (i / 6) * Math.PI * 2 + (game.tick || 0) * 0.05;
+          ctx.beginPath();
+          ctx.moveTo(s.x + Math.cos(a) * rad * 0.5, s.y + Math.sin(a) * rad * 0.5);
+          ctx.lineTo(s.x + Math.cos(a) * rad * 0.85, s.y + Math.sin(a) * rad * 0.85);
+          ctx.stroke();
+        }
       }
     },
 
@@ -595,6 +687,25 @@
         mctx.fillStyle = ownerColor(u.owner);
         const r = u.owner === o ? 2 : hasRadar && u.owner !== o ? 2.5 : 2;
         mctx.fillRect(u.x * sx - r / 2, u.y * sy - r / 2, r, r);
+      }
+
+      // worm blips
+      if (game.worms) {
+        for (const w of game.worms) {
+          if (
+            D.Map.fogVisible(game) &&
+            !game.replay &&
+            !D.Map.isVisible(game, o, Math.floor(w.x), Math.floor(w.y)) &&
+            !D.Map.isExplored(game, o, Math.floor(w.x), Math.floor(w.y))
+          ) {
+            continue;
+          }
+          mctx.strokeStyle = w.phase === 'rumble' ? '#c9a227' : '#5c3a14';
+          mctx.lineWidth = 1.5;
+          mctx.beginPath();
+          mctx.arc(w.x * sx, w.y * sy, w.phase === 'surface' ? 4 : 3, 0, Math.PI * 2);
+          mctx.stroke();
+        }
       }
 
       // camera rect

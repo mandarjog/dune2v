@@ -70,6 +70,7 @@
         buildings: [],
         projectiles: [],
         worms: [],
+        wormState: null,
         fx: [],
         selection: { ids: [], box: null },
         controlGroups: { 1: [], 2: [], 3: [], 4: [], 5: [], 6: [], 7: [], 8: [], 9: [] },
@@ -195,6 +196,8 @@
       game.projectiles = [];
       game.fx = [];
       game.worms = [];
+      game.wormState = null;
+      if (D.Worms && D.Worms.ensureState) D.Worms.ensureState(game);
       game.selection = { ids: [], box: null };
       game.controlGroups = { 1: [], 2: [], 3: [], 4: [], 5: [], 6: [], 7: [], 8: [], 9: [] };
       game.placement = null;
@@ -535,6 +538,7 @@
       D.Orders.tick(game, dt);
       D.Economy.tick(game, dt);
       D.Combat.tick(game, dt);
+      if (D.Worms) D.Worms.tick(game, dt);
       if (!game.multiplayer && !game.replay) D.AI.tick(game, dt);
       // FOW: full recompute is O(units × sight²). Always update local view;
       // stagger other owners when unit count is high OR FFA (3+ seats) on server.

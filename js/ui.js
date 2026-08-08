@@ -1181,6 +1181,15 @@
           // Optional: snap attention — do not force camera (annoying mid-fight)
           continue;
         }
+        if (a.kind === 'wormsign' && forMe && !game.spectator) {
+          D.UI.flashUnderAttack();
+          D.UI.appendSystemChat(a.text || 'Wormsign!', 'under_attack');
+          continue;
+        }
+        if (a.kind === 'worm_eat' && forMe && !game.spectator) {
+          D.UI.appendSystemChat(a.text || 'A sandworm struck!', 'under_attack');
+          continue;
+        }
         if (a.kind === 'eliminated' && a.seat === me && !game.spectator) {
           D.UI.appendSystemChat(a.text || 'You are eliminated.', 'eliminated');
           D.UI.showEliminatedBanner(game, true);
