@@ -8,6 +8,26 @@
       return game.credits[owner] >= cost;
     },
 
+    /** Living units for this owner (all types). */
+    armyCount(game, owner) {
+      if (!game || !game.units) return 0;
+      let n = 0;
+      for (const u of game.units) {
+        if (u.owner === owner && u.hp > 0) n++;
+      }
+      return n;
+    },
+
+    armyCap() {
+      const n = D.config.build && D.config.build.maxArmySize;
+      return n != null ? n : 35;
+    },
+
+    /** True if owner may train one more unit (at or over cap → false). */
+    canTrainMore(game, owner) {
+      return D.Economy.armyCount(game, owner) < D.Economy.armyCap();
+    },
+
     charge(game, owner, cost) {
       if (!D.Economy.canAfford(game, owner, cost)) return false;
       game.credits[owner] -= cost;
@@ -154,6 +174,17 @@
         return { ok: false, reason: 'house' };
       }
       if (b.buildQueue.length >= 5) return { ok: false, reason: 'queue' };
+      // Cap: living units + already-queued across all factories
+      const cap = D.Economy.armyCap();
+      const living = D.Economy.armyCount(game, b.owner);
+      let queued = 0;
+      for (const fac of game.buildings) {
+        if (fac.owner !== b.owner || !fac.buildQueue) continue;
+        queued += fac.buildQueue.length;
+      }
+      if (living + queued >= cap) {
+        return { ok: false, reason: 'army_cap', cap, living };
+      }
       if (!D.Economy.charge(game, b.owner, udef.cost)) {
         return { ok: false, reason: 'credits' };
       }
@@ -225,6 +256,11 @@
           power.prod < power.need ? Math.max(power.ratio, 0.25) : 1;
         item.progress += (dt * mult) / udef.buildTime;
         if (item.progress >= 1) {
+          // Soft re-check army cap at spawn (edge case: multi-factory finish same tick)
+          if (!D.Economy.canTrainMore(game, b.owner)) {
+            item.progress = 0.99;
+            continue;
+          }
           b.buildQueue.shift();
           D.Economy.spawnUnit(game, b, item.type);
         }

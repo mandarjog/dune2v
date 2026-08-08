@@ -23,6 +23,8 @@
     build: {
       proximityTiles: 8,
       concreteHpBonus: 1.2,
+      /** Max living units per owner (all types). Blocks produce when at cap. */
+      maxArmySize: 35,
     },
 
     path: {
@@ -248,7 +250,10 @@
           projectile: true,
         },
       },
-      /** Atreides special: long-range defense (2× range, 1.1× damage vs gun turret). */
+      /**
+       * Atreides special: long-range defense.
+       * Base was 2× turret range / 1.1× dmg; tuned down −20% range and −60% fire rate.
+       */
       longRangeTower: {
         name: 'Long Range Tower',
         cost: 200,
@@ -257,7 +262,7 @@
         buildTime: 30,
         tileW: 1,
         tileH: 1,
-        sight: 10,
+        sight: 8,
         requires: 'windtrap',
         buildable: true,
         houses: ['atreides'],
@@ -265,10 +270,10 @@
         weapon: {
           kind: 'shell',
           damage: 15, // ~1.1× gun turret (14)
-          range: 10.0, // 2× gun turret (5)
+          range: 8.0, // was 10; −20%
           // Artillery dead zone — useless in melee / under the barrel
-          minRange: 4.0,
-          cooldown: 1.1,
+          minRange: 3.5,
+          cooldown: 2.75, // was 1.1; −60% fire rate → ×2.5 cooldown
           vsI: 0.7,
           vsV: 1.0,
           vsB: 0.55,
@@ -324,7 +329,10 @@
           projectile: false,
         },
       },
-      /** Ordos special: infantry cost, trike HP, 2× infantry damage. */
+      /**
+       * Ordos special: infantry cost, trike HP, 2× infantry damage.
+       * Regenerates HP; can self-detonate (D) for splash.
+       */
       saboteur: {
         name: 'Saboteur',
         cost: 60,
@@ -337,6 +345,16 @@
         kind: 'infantry',
         houses: ['ordos'],
         special: true,
+        /** HP restored per second while not at full */
+        hpRegenPerSec: 4,
+        /** Self-destruct splash (tiles / raw damage before armor) */
+        detonate: {
+          radius: 2.2,
+          damage: 55,
+          vsI: 1.2,
+          vsV: 1.0,
+          vsB: 1.4,
+        },
         weapon: {
           kind: 'bullet',
           damage: 8, // 2× infantry

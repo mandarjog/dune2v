@@ -555,6 +555,12 @@
           continue;
         }
 
+        if (order.type === 'detonate') {
+          if (u.type !== 'saboteur') continue;
+          setOrder(u, { type: 'detonate' });
+          continue;
+        }
+
         if (order.type === 'harvest') {
           if (u.type !== 'harvester') continue;
           setOrder(u, { type: 'harvest', tileX: order.tileX, tileY: order.tileY });
@@ -695,33 +701,64 @@
       b.rallyY = y;
     },
 
+    /**
+     * Find a valid 2×2 rock pad for MCV → Construction Yard.
+     * MCV deploy is never proximity-locked (expansion / rebuild after elim).
+     * Searches pads that cover the MCV tile first, then nearby rock.
+     * @returns {{ tx:number, ty:number }|null}
+     */
+    findMcvDeployPad(game, u) {
+      if (!u || u.type !== 'mcv' || !game.map) return null;
+      const def = D.config.buildings.constructionYard;
+      const w = def.tileW;
+      const h = def.tileH;
+      const mx = Math.floor(u.x);
+      const my = Math.floor(u.y);
+      const tryPad = (tx, ty) => {
+        if (
+          D.Map.canPlace(game, 'constructionYard', tx, ty, u.owner, {
+            skipProximity: true,
+          })
+        ) {
+          return { tx, ty };
+        }
+        return null;
+      };
+      // Prefer pads that include the MCV's tile (classic "deploy under feet")
+      for (let oy = 0; oy < h; oy++) {
+        for (let ox = 0; ox < w; ox++) {
+          const hit = tryPad(mx - ox, my - oy);
+          if (hit) return hit;
+        }
+      }
+      // Center-style then spiral out a few tiles for almost-on-rock cases
+      const centerTx = mx - Math.floor(w / 2);
+      const centerTy = my - Math.floor(h / 2);
+      let hit = tryPad(centerTx, centerTy);
+      if (hit) return hit;
+      for (let r = 1; r <= 3; r++) {
+        for (let dy = -r; dy <= r; dy++) {
+          for (let dx = -r; dx <= r; dx++) {
+            if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue;
+            hit = tryPad(centerTx + dx, centerTy + dy);
+            if (hit) return hit;
+          }
+        }
+      }
+      return null;
+    },
+
     canDeploy(game, unitId) {
       const u = game.units.find((x) => x.id === unitId);
       if (!u || u.type !== 'mcv') return false;
-      const def = D.config.buildings.constructionYard;
-      // center 2x2 on MCV tile
-      const tx = Math.floor(u.x) - Math.floor(def.tileW / 2);
-      const ty = Math.floor(u.y) - Math.floor(def.tileH / 2);
-      const hasCY = game.buildings.some(
-        (b) => b.owner === u.owner && b.type === 'constructionYard' && b.buildProgress >= 1
-      );
-      return D.Map.canPlace(game, 'constructionYard', tx, ty, u.owner, {
-        skipProximity: !hasCY,
-      });
+      return !!D.Orders.findMcvDeployPad(game, u);
     },
 
     tryDeploy(game, u) {
-      if (!D.Orders.canDeploy(game, u.id)) return false;
-      const def = D.config.buildings.constructionYard;
-      const tx = Math.floor(u.x) - Math.floor(def.tileW / 2);
-      const ty = Math.floor(u.y) - Math.floor(def.tileH / 2);
-      const hasCY = game.buildings.some(
-        (b) => b.owner === u.owner && b.type === 'constructionYard' && b.buildProgress >= 1
-      );
-      if (!D.Map.canPlace(game, 'constructionYard', tx, ty, u.owner, { skipProximity: !hasCY })) {
-        return false;
-      }
-      D.Entities.createBuilding(game, 'constructionYard', u.owner, tx, ty, {
+      if (!u || u.type !== 'mcv') return false;
+      const pad = D.Orders.findMcvDeployPad(game, u);
+      if (!pad) return false;
+      D.Entities.createBuilding(game, 'constructionYard', u.owner, pad.tx, pad.ty, {
         complete: true,
       });
       D.Entities.removeUnit(game, u);
@@ -729,6 +766,63 @@
       // Message for local/SP; multiplayer server sends cmd_result instead
       if (D.Game && D.Game.pushMessage && !game.multiplayer) {
         D.Game.pushMessage(game, 'Construction Yard deployed.');
+      }
+      return true;
+    },
+
+    /**
+     * Saboteur self-destruct: splash damage then remove unit.
+     * @returns {boolean}
+     */
+    tryDetonate(game, u) {
+      if (!u || u.type !== 'saboteur' || u.hp <= 0) return false;
+      const def = D.config.units.saboteur;
+      const det = def && def.detonate;
+      if (!det) return false;
+      const r = det.radius || 2;
+      const baseDmg = det.damage || 50;
+      const cx = u.x;
+      const cy = u.y;
+      const owner = u.owner;
+      // Splash hits enemies (and neutrals) in radius; not friendly
+      for (const t of [...game.units]) {
+        if (t.hp <= 0 || t.id === u.id) continue;
+        if (t.owner === owner) continue;
+        const d = Math.hypot(t.x - cx, t.y - cy);
+        if (d > r) continue;
+        const falloff = 1 - (d / r) * 0.5;
+        const kind = t.tileW != null ? 'building' : D.config.units[t.type]?.kind || 'vehicle';
+        const mult =
+          kind === 'infantry' ? det.vsI || 1 : kind === 'vehicle' ? det.vsV || 1 : det.vsB || 1;
+        const armor = t.tileW != null ? 0 : D.config.units[t.type]?.armor || 0;
+        const dmg = Math.max(1, Math.floor(baseDmg * mult * falloff) - armor);
+        t.hp -= dmg;
+        if (t.hp <= 0) {
+          t.hp = 0;
+          if (D.Combat && D.Combat.kill) D.Combat.kill(game, t, owner);
+          else if (D.Entities.removeUnit) D.Entities.removeUnit(game, t);
+        }
+      }
+      for (const b of [...game.buildings]) {
+        if (b.hp <= 0 || b.owner === owner || b.type === 'concrete') continue;
+        const bc = D.Entities.buildingCenter(b);
+        const d = Math.hypot(bc.x - cx, bc.y - cy);
+        if (d > r + 0.5) continue;
+        const falloff = 1 - (d / (r + 0.5)) * 0.45;
+        const dmg = Math.max(1, Math.floor(baseDmg * (det.vsB || 1.2) * falloff));
+        b.hp -= dmg;
+        if (b.hp <= 0) {
+          b.hp = 0;
+          if (D.Combat && D.Combat.kill) D.Combat.kill(game, b, owner);
+          else if (D.Entities.removeBuilding) D.Entities.removeBuilding(game, b);
+        }
+      }
+      game.fx = game.fx || [];
+      game.fx.push({ type: 'explode', x: cx, y: cy, life: 0.45, r: r * 0.55 });
+      game.fx.push({ type: 'explode', x: cx, y: cy, life: 0.25, r: r * 0.3 });
+      if (D.Entities.removeUnit) D.Entities.removeUnit(game, u);
+      if (D.Game && D.Game.pushMessage && !game.multiplayer) {
+        D.Game.pushMessage(game, 'Saboteur detonated!');
       }
       return true;
     },
@@ -751,6 +845,13 @@
 
       for (const u of game.units) {
         if (u.hp <= 0) continue;
+
+        // Saboteur passive: regenerate HP even when idle
+        if (u.type === 'saboteur' && u.hp < u.hpMax) {
+          const regen =
+            (D.config.units.saboteur && D.config.units.saboteur.hpRegenPerSec) || 0;
+          if (regen > 0) u.hp = Math.min(u.hpMax, u.hp + regen * dt);
+        }
 
         // Harvester FSM takes over when harvest order active or internal state active
         if (u.type === 'harvester' && u.harvest && u.order && u.order.type === 'harvest') {
@@ -793,6 +894,15 @@
             // Stay on deploy order but surface why (was silent — looked "stuck")
             markStuck(game, u, 'deploy', dt);
           }
+          continue;
+        }
+
+        if (order.type === 'detonate') {
+          if (u.type !== 'saboteur') {
+            clearOrder(u);
+            continue;
+          }
+          D.Orders.tryDetonate(game, u);
           continue;
         }
 

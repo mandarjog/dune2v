@@ -409,13 +409,39 @@
           );
           if (!game.multiplayer) {
             // SP: try immediately for snappy feedback
-            for (const u of mcvs) D.Orders.tryDeploy(game, u);
+            let any = false;
+            for (const u of mcvs) {
+              if (D.Orders.tryDeploy(game, u)) any = true;
+            }
+            if (!any) {
+              D.Game.pushMessage(
+                game,
+                'Cannot deploy — need a clear 2×2 rock pad (move fully onto rock, then E).'
+              );
+            }
           }
         } else {
           D.Game.pushMessage(game, 'Select your MCV first, then press E to deploy.');
         }
         e.preventDefault();
         return;
+      }
+
+      // D — saboteur detonate (selected saboteurs only)
+      if (e.code === 'KeyD' && D.Input.wantsUnitCommand(game)) {
+        const sabs = selectedUnits(game).filter((u) => u.type === 'saboteur');
+        if (sabs.length) {
+          e.preventDefault();
+          issueOrder(
+            game,
+            sabs.map((u) => u.id),
+            { type: 'detonate' }
+          );
+          if (!game.multiplayer) {
+            for (const u of sabs) D.Orders.tryDetonate(game, u);
+          }
+          return;
+        }
       }
 
       // S / . — stop (classic RTS S; period as extra; no pan when units selected)

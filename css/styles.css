@@ -194,6 +194,14 @@ body {
   display: none;
 }
 
+.game-btn.danger {
+  border-color: #8a3030;
+  color: #e08080;
+}
+.game-btn.danger:hover {
+  background: #3a1818;
+}
+
 .mp-speed-wrap {
   display: none;
   flex-direction: row;

@@ -452,9 +452,29 @@ class RoomSim {
             break;
           }
           if (fail) {
-            result = { ok: false, reason: 'deploy' };
+            result = {
+              ok: false,
+              reason: 'deploy',
+              message:
+                'Cannot deploy — need a clear 2×2 rock pad under/near the MCV (move fully onto rock).',
+            };
             break;
           }
+        }
+        if (order.type === 'detonate') {
+          let any = false;
+          for (const id of ids) {
+            const u = game.units.find((x) => x.id === id);
+            if (!u || u.type !== 'saboteur') continue;
+            if (D.Orders.tryDetonate(game, u)) any = true;
+          }
+          if (any) {
+            this._broadcast(true);
+            result = { ok: true, info: 'Saboteur detonated!' };
+          } else {
+            result = { ok: false, reason: 'detonate' };
+          }
+          break;
         }
         result = { ok: true };
         break;

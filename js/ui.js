@@ -180,9 +180,13 @@
                 ? 'Not enough credits'
                 : r.reason === 'queue'
                   ? 'Production queue full'
-                  : r.reason === 'building'
-                    ? 'Factory not ready'
-                    : 'Cannot train: ' + (r.reason || '?');
+                  : r.reason === 'army_cap'
+                    ? 'Army at cap (' +
+                      (r.cap || (D.Economy.armyCap && D.Economy.armyCap()) || 35) +
+                      ' units).'
+                    : r.reason === 'building'
+                      ? 'Factory not ready'
+                      : 'Cannot train: ' + (r.reason || '?');
             D.Game.pushMessage(game, msg);
           }
           return;
@@ -208,7 +212,27 @@
           if (D.Net) {
             D.Net.command(game, { op: 'order', ids: [id], order: { type: 'deploy' } });
           } else {
-            D.Orders.issue(game, [id], { type: 'deploy' });
+            const u = game.units.find((x) => x.id === id);
+            if (u && !D.Orders.tryDeploy(game, u)) {
+              D.Game.pushMessage(
+                game,
+                'Cannot deploy — need a clear 2×2 rock pad (move fully onto rock).'
+              );
+            }
+          }
+          lastSelSig = '';
+          D.UI.refresh(game);
+          return;
+        }
+        const detBtn = e.target.closest('[data-detonate]');
+        if (detBtn) {
+          e.preventDefault();
+          const id = Number(detBtn.dataset.unitId);
+          if (D.Net) {
+            D.Net.command(game, { op: 'order', ids: [id], order: { type: 'detonate' } });
+          } else {
+            const u = game.units.find((x) => x.id === id);
+            if (u) D.Orders.tryDetonate(game, u);
           }
           lastSelSig = '';
           D.UI.refresh(game);
@@ -2262,6 +2286,7 @@
           <div class="hp-bar"><span style="width:${(u.hp / u.hpMax) * 100}%"></span></div>
           ${u.type === 'harvester' ? `<div class="meta">Cargo ${Math.floor(u.cargo)}/${u.cargoMax}</div>` : ''}
           ${u.type === 'mcv' ? `<div class="hint">Press <b>E</b> to deploy Construction Yard on rock.</div>` : ''}
+          ${u.type === 'saboteur' ? `<div class="hint">Regens HP · press <b>D</b> to detonate (splash).</div>` : ''}
           ${u.type === 'harvester' ? `<div class="hint">Press <b>H</b> or RMB spice to harvest.</div>` : ''}
         `;
         row.appendChild(ic);
@@ -2274,6 +2299,15 @@
           btn.dataset.deploy = '1';
           btn.dataset.unitId = String(u.id);
           btn.textContent = 'Deploy (E)';
+          unitMenu.appendChild(btn);
+        }
+        if (u.type === 'saboteur' && u.owner === o && !game.spectator && !game.replay) {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'game-btn danger';
+          btn.dataset.detonate = '1';
+          btn.dataset.unitId = String(u.id);
+          btn.textContent = 'Detonate (D)';
           unitMenu.appendChild(btn);
         }
       } else if (buildings.length === 1 && !units.length) {
