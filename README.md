@@ -65,6 +65,20 @@ Build stamp: `GET /api/version` (must match sidebar `rev …` after hard refresh
 
 Config: [`fly.toml`](./fly.toml) — `min_machines_running = 1`, `auto_stop_machines = off` so multiplayer rooms are not cold-stopped mid-match. Tweak region/size there.
 
+**VM size (vertical scale only — rooms are in-memory on one machine):**
+
+```bash
+# Multiplayer night: 1 dedicated vCPU + 2GB (restarts machine)
+./tools/scale-mp.sh
+
+# Cheap baseline: shared-cpu-1x + 512MB (restarts machine)
+./tools/scale-idle.sh
+
+fly scale show
+```
+
+Resize **restarts** the VM and wipes open matches. Prefer scaling before a session, not mid-game.
+
 ```bash
 fly status
 fly logs
