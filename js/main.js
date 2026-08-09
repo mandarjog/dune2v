@@ -16,6 +16,17 @@
     if (params.get('ai') === '0') {
       D.config.features.ai = false;
     }
+    // recharge=0/false → off; recharge=1/true → on (tanks/towers magazines)
+    const rech = params.get('recharge');
+    if (rech === '0' || rech === 'false') {
+      D.config.features.recharge = false;
+      const cb = document.getElementById('opt-recharge');
+      if (cb) cb.checked = false;
+    } else if (rech === '1' || rech === 'true') {
+      D.config.features.recharge = true;
+      const cb = document.getElementById('opt-recharge');
+      if (cb) cb.checked = true;
+    }
     if (params.get('debug') === '1') {
       D.config.features.debugCheats = true;
       const el = document.getElementById('debug-overlay');

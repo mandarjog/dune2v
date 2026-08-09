@@ -74,6 +74,7 @@
         features: {
           fog: D.config.features.fog,
           ai: D.config.features.ai,
+          recharge: !!(D.config.features && D.config.features.recharge),
         },
         map: {
           width: map.width,
@@ -684,6 +685,9 @@
       if (data.features) {
         if (data.features.fog != null) D.config.features.fog = data.features.fog;
         if (data.features.ai != null) D.config.features.ai = data.features.ai;
+        if (data.features.recharge != null) {
+          D.config.features.recharge = !!data.features.recharge;
+        }
       }
 
       if (data.fog) {

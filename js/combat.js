@@ -9,6 +9,51 @@
     return weapon.vsB;
   }
 
+  function rechargeEnabled() {
+    return !!(D.config.features && D.config.features.recharge);
+  }
+
+  /** Ensure ammo fields exist when feature is on and weapon uses recharge. */
+  function ensureMagazine(entity, wdef) {
+    if (!entity || !entity.weapon || !wdef || !wdef.recharge) return false;
+    if (!rechargeEnabled()) return false;
+    if (entity.weapon.ammoMax == null || entity.weapon.ammoMax <= 0) {
+      const max =
+        wdef.magazine != null
+          ? wdef.magazine
+          : (D.config.recharge && D.config.recharge.magazine) || 5;
+      entity.weapon.ammoMax = max;
+      if (entity.weapon.ammo == null) entity.weapon.ammo = max;
+    }
+    return true;
+  }
+
+  /** Passive magazine regen (full empty→full in regenSec). */
+  function tickMagazine(entity, wdef, dt) {
+    if (!ensureMagazine(entity, wdef)) return;
+    const max = entity.weapon.ammoMax;
+    if (entity.weapon.ammo >= max) {
+      entity.weapon.ammo = max;
+      return;
+    }
+    const fullSec =
+      (D.config.recharge && D.config.recharge.regenSec) != null
+        ? D.config.recharge.regenSec
+        : 20;
+    const rate = max / Math.max(0.5, fullSec);
+    entity.weapon.ammo = Math.min(max, (entity.weapon.ammo || 0) + rate * dt);
+  }
+
+  function canExpendShot(entity, wdef) {
+    if (!ensureMagazine(entity, wdef)) return true; // no magazine / feature off
+    return (entity.weapon.ammo || 0) >= 1;
+  }
+
+  function expendShot(entity, wdef) {
+    if (!ensureMagazine(entity, wdef)) return;
+    entity.weapon.ammo = Math.max(0, (entity.weapon.ammo || 0) - 1);
+  }
+
   /** Throttled "we are under attack" for the defender (SP + MP snapshots). */
   function noteUnderAttack(game, owner, target) {
     if (!game || !owner || !target) return;
@@ -290,6 +335,7 @@
         const def = D.config.units[u.type];
         if (!def || !def.weapon) continue;
         u.weapon.cooldownLeft = Math.max(0, u.weapon.cooldownLeft - dt);
+        tickMagazine(u, def.weapon, dt);
 
         const target = D.Combat.resolveTarget(game, u);
         if (!target) continue;
@@ -309,10 +355,11 @@
           if (u.order && u.order.type === 'attack') {
             u.path = [];
           }
-          if (u.weapon.cooldownLeft === 0) {
+          if (u.weapon.cooldownLeft === 0 && canExpendShot(u, def.weapon)) {
             if (def.weapon.projectile) fireProjectile(game, u, target, def.weapon);
             else fireHitscan(game, u, target, def.weapon);
             u.weapon.cooldownLeft = def.weapon.cooldown;
+            expendShot(u, def.weapon);
           }
         }
       }
@@ -325,6 +372,7 @@
         const power = game.power[b.owner];
         if (power.ratio < 0.5) continue; // offline
         b.weapon.cooldownLeft = Math.max(0, b.weapon.cooldownLeft - dt);
+        tickMagazine(b, def.weapon, dt);
         const c = D.Entities.buildingCenter(b);
         const minR = def.weapon.minRange != null ? def.weapon.minRange : 0;
         // find target in [minRange, range] — LRT ignores melee under the barrel
@@ -341,10 +389,11 @@
         if (best) {
           const tc = { x: best.x, y: best.y };
           b._aimFacing = Math.atan2(tc.y - c.y, tc.x - c.x);
-          if (b.weapon.cooldownLeft === 0) {
+          if (b.weapon.cooldownLeft === 0 && canExpendShot(b, def.weapon)) {
             if (def.weapon.projectile) fireProjectile(game, b, best, def.weapon);
             else fireHitscan(game, b, best, def.weapon);
             b.weapon.cooldownLeft = def.weapon.cooldown;
+            expendShot(b, def.weapon);
           }
         }
       }

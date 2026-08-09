@@ -30,6 +30,21 @@
       return nextFxId++;
     },
 
+    /** Runtime weapon state (cooldown + optional magazine when recharge is used). */
+    makeWeaponState(wdef) {
+      if (!wdef) return null;
+      const st = { cooldownLeft: 0 };
+      if (wdef.recharge) {
+        const max =
+          wdef.magazine != null
+            ? wdef.magazine
+            : (D.config.recharge && D.config.recharge.magazine) || 5;
+        st.ammo = max;
+        st.ammoMax = max;
+      }
+      return st;
+    },
+
     createUnit(game, type, owner, x, y) {
       const def = D.config.units[type];
       if (!def) throw new Error('Unknown unit ' + type);
@@ -45,9 +60,7 @@
         orders: [],
         order: null,
         path: [],
-        weapon: def.weapon
-          ? { cooldownLeft: 0 }
-          : null,
+        weapon: D.Entities.makeWeaponState(def.weapon),
         cargo: 0,
         cargoMax: def.cargoMax || 0,
         harvest: type === 'harvester'
@@ -93,7 +106,7 @@
         dockTileY: null,
         primary: false,
         sight: def.sight,
-        weapon: def.weapon ? { cooldownLeft: 0 } : null,
+        weapon: D.Entities.makeWeaponState(def.weapon),
         costPaid: opts.costPaid || 0,
       };
 

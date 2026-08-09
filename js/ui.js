@@ -39,10 +39,16 @@
       const q = (b.buildQueue || [])
         .map((item) => item.type + ':' + Math.floor((item.progress || 0) * 20))
         .join(',');
-      extra = `|b${b.id}|${b.type}|${Math.floor(b.buildProgress * 100)}|q${q}|hp${Math.ceil(b.hp)}`;
+      const bam =
+        b.weapon && b.weapon.ammoMax ? Math.floor(b.weapon.ammo || 0) : -1;
+      extra = `|b${b.id}|${b.type}|${Math.floor(b.buildProgress * 100)}|q${q}|hp${Math.ceil(b.hp)}|a${bam}`;
     } else if (units.length === 1 && !buildings.length) {
       const u = units[0];
-      extra = `|u${u.id}|${u.type}|hp${Math.ceil(u.hp)}|c${Math.floor(u.cargo || 0)}`;
+      const am =
+        u.weapon && u.weapon.ammoMax
+          ? Math.floor(u.weapon.ammo || 0)
+          : -1;
+      extra = `|u${u.id}|${u.type}|hp${Math.ceil(u.hp)}|c${Math.floor(u.cargo || 0)}|a${am}`;
     } else {
       extra = `|m${units.length}:${buildings.length}`;
     }
@@ -741,6 +747,34 @@
           menu.checked = lobby.checked;
         }
       });
+      // Recharge (tank/tower magazines) — SP live toggle
+      const syncRecharge = () => {
+        const cb = $('opt-recharge');
+        if (!cb) return;
+        D.config.features.recharge = !!cb.checked;
+        try {
+          localStorage.setItem('dune2_recharge', cb.checked ? '1' : '0');
+        } catch (e) {
+          /* ignore */
+        }
+        if (boundGame) D.UI.refresh(boundGame);
+      };
+      $('opt-recharge')?.addEventListener('change', syncRecharge);
+      try {
+        const saved = localStorage.getItem('dune2_recharge');
+        const cb = $('opt-recharge');
+        if (cb && saved === '0') {
+          cb.checked = false;
+          D.config.features.recharge = false;
+        } else if (cb && saved === '1') {
+          cb.checked = true;
+          D.config.features.recharge = true;
+        } else if (cb) {
+          cb.checked = !!(D.config.features && D.config.features.recharge);
+        }
+      } catch (e) {
+        /* ignore */
+      }
 
       $('btn-lobby-copy')?.addEventListener('click', async () => {
         await D.UI.copyRoomLink();
@@ -2582,6 +2616,16 @@
           <div class="title">${def?.name || u.type}</div>
           <div class="meta">${u.owner === o ? 'yours' : u.owner} · HP ${Math.ceil(u.hp)}/${u.hpMax}</div>
           <div class="hp-bar"><span style="width:${(u.hp / u.hpMax) * 100}%"></span></div>
+          ${
+            D.config.features.recharge &&
+            u.weapon &&
+            u.weapon.ammoMax
+              ? `<div class="meta">Ammo ${Math.floor(u.weapon.ammo)}/${u.weapon.ammoMax}</div>
+          <div class="hp-bar ammo-bar" title="Magazine recharge"><span style="width:${
+            (Math.min(u.weapon.ammoMax, u.weapon.ammo) / u.weapon.ammoMax) * 100
+          }%;background:var(--accent,#c9a227)"></span></div>`
+              : ''
+          }
           ${u.type === 'harvester' ? `<div class="meta">Cargo ${Math.floor(u.cargo)}/${u.cargoMax}</div>` : ''}
           ${u.type === 'mcv' ? `<div class="hint">Press <b>E</b> to deploy Construction Yard on rock.</div>` : ''}
           ${u.type === 'saboteur' ? `<div class="hint">Regens HP · press <b>D</b> to detonate (splash).</div>` : ''}
@@ -2627,6 +2671,17 @@
             b.buildProgress < 1 ? ` · Building ${Math.floor(b.buildProgress * 100)}%` : ''
           }</div>
           <div class="hp-bar"><span style="width:${(b.hp / b.hpMax) * 100}%"></span></div>
+          ${
+            D.config.features.recharge &&
+            b.weapon &&
+            b.weapon.ammoMax &&
+            b.buildProgress >= 1
+              ? `<div class="meta">Ammo ${Math.floor(b.weapon.ammo)}/${b.weapon.ammoMax}</div>
+          <div class="hp-bar ammo-bar" title="Magazine recharge"><span style="width:${
+            (Math.min(b.weapon.ammoMax, b.weapon.ammo) / b.weapon.ammoMax) * 100
+          }%;background:var(--accent,#c9a227)"></span></div>`
+              : ''
+          }
         `;
         row.appendChild(ic);
         row.appendChild(text);

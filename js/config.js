@@ -16,8 +16,22 @@
       fog: true,
       ai: true,
       sandworms: true,
+      /**
+       * Magazine / capacitor for tanks & defense towers.
+       * Toggle via menu “Recharge” or ?recharge=0.
+       */
+      recharge: true,
       saveLoad: false,
       debugCheats: false,
+    },
+
+    /**
+     * When features.recharge is on, weapons with `recharge: true` use a magazine.
+     * ammo regens continuously; full empty→full takes regenSec seconds.
+     */
+    recharge: {
+      magazine: 5,
+      regenSec: 20,
     },
 
     build: {
@@ -288,6 +302,8 @@
           vsV: 1.0,
           vsB: 0.5,
           projectile: true,
+          recharge: true,
+          magazine: 5,
         },
       },
       /**
@@ -318,6 +334,8 @@
           vsV: 1.0,
           vsB: 0.55,
           projectile: true,
+          recharge: true,
+          magazine: 3, // heavy shots, fewer per magazine
         },
       },
       wall: {
@@ -488,6 +506,8 @@
           vsV: 1.0,
           vsB: 0.85,
           projectile: true,
+          recharge: true,
+          magazine: 5,
         },
       },
       /** Harkonnen special: slow siege armor (0.5× speed, 2× HP, 1.5× dmg, ½ fire rate, 1.5× range). */
@@ -513,6 +533,8 @@
           vsV: 1.1,
           vsB: 1.2,
           projectile: true,
+          recharge: true,
+          magazine: 3,
         },
       },
       harvester: {
