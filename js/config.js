@@ -58,10 +58,18 @@
        * Prevents one huge flow/A* batch from leaving most of a mass army empty-path.
        */
       massPathChunk: 24,
-      /** Path-stuck units before we warn + auto re-path in chunks. */
-      stuckArmyWarn: 8,
-      /** Auto re-path chunk size for stuck army helper. */
-      stuckArmyRepathChunk: 16,
+      /**
+       * When a batch leaves units without paths, retry failed units in cascading
+       * subset sizes: chunk → half → … → 1 (individual A*). Always eventually
+       * tries singles so a frozen blob cannot stay frozen forever.
+       */
+      pathCascade: [16, 8, 4, 1],
+      /** Path-stuck / frozen units before we warn + cascade re-path. */
+      stuckArmyWarn: 6,
+      /** How often (ticks) to run frozen-army cascade (~0.75s at 20Hz). */
+      stuckArmyCheckTicks: 15,
+      /** Auto re-path max units per cascade pulse. */
+      stuckArmyRepathChunk: 32,
       // Large FFA armies: old budget of 8 made most units sit idle for seconds
       maxRepathsPerTick: 64,
       /** Cap recovery A* on server MP so one tick cannot eat 100ms+ */

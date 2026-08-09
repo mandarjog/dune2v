@@ -106,6 +106,37 @@ describe('flow field / hybrid', () => {
     Dune2.config.path.flowMinGroup = prevMin;
   });
 
+  it('cascade pathing recovers when a large group is force-emptied', () => {
+    const game = Dune2.Game.create();
+    Dune2.config.features.ai = false;
+    Dune2.config.features.sandworms = false;
+    if (Dune2.config.worms) Dune2.config.worms.enabled = false;
+    Dune2.Scenario.startMassArmies(game, { perSide: 40, ai: false, fog: false });
+    const movers = game.units.filter((u) => u.owner === 'player');
+    const ids = movers.map((u) => u.id);
+    Dune2.Orders.issue(game, ids, { type: 'move', x: 60.5, y: 40.5 });
+    // Simulate total freeze
+    for (const u of movers) {
+      u.path = [];
+      u._noProgressSec = 2;
+      u.stuck = true;
+      u.stuckReason = 'path';
+    }
+    // Force helper interval open
+    game._stuckArmyRepathTick = 0;
+    game.tick = 100;
+    for (let i = 0; i < 30; i++) {
+      game.tick++;
+      Dune2.Game.tick(game, Dune2.config.DT_SEC);
+    }
+    const alive = game.units.filter((u) => u.owner === 'player' && u.hp > 0);
+    const withPath = alive.filter((u) => u.path && u.path.length).length;
+    assert.ok(
+      withPath >= Math.min(20, alive.length * 0.4),
+      'cascade should re-path a large subset, got ' + withPath + '/' + alive.length
+    );
+  });
+
   it('fieldCoversUnits rejects cache when starts are outside field', () => {
     const map = Dune2.Map.createFromDef(Dune2.MAPS.skirmish_large);
     const near = [{ x: 20, y: 70, path: [] }];

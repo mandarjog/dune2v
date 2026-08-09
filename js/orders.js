@@ -443,8 +443,105 @@
   }
 
   /**
-   * Belt-and-suspenders: if many units are path-stuck, re-path them in small
-   * chunks and tell the player. SP + server MP only (not snapshot clients).
+   * Path a list of units to (gx,gy). If any fail, retry only the failures in
+   * smaller subsets down to size 1 (individual A*). Guarantees we always try
+   * singles when the whole blob is frozen.
+   * @returns {{ ok:number, fail:number }}
+   */
+  function cascadePathUnits(map, units, gx, gy) {
+    if (!units || !units.length || !map || !D.Path) {
+      return { ok: 0, fail: 0 };
+    }
+    const cascade =
+      (D.config.path && D.config.path.pathCascade) || [16, 8, 4, 1];
+    let pending = units.slice();
+    let okTotal = 0;
+
+    // First pass: natural chunk size (or all if small)
+    const firstN = Math.min(
+      pending.length,
+      (D.config.path && D.config.path.massPathChunk) || 24
+    );
+    const sizes = [firstN].concat(cascade).filter((n, i, a) => n > 0 && a.indexOf(n) === i);
+    // Ensure 1 is last
+    if (sizes[sizes.length - 1] !== 1) sizes.push(1);
+
+    for (let s = 0; s < sizes.length && pending.length; s++) {
+      const size = sizes[s];
+      const nextFail = [];
+      for (let i = 0; i < pending.length; i += size) {
+        const slice = pending.slice(i, i + size);
+        if (size === 1) {
+          for (const u of slice) {
+            // Individual A* + recovery goals — last resort that usually works
+            let path = D.Path.find(map, u.x, u.y, gx, gy);
+            if (!path || !path.length) {
+              const alt = alternateGoal(map, gx, gy, { x: u.x, y: u.y }, 14);
+              if (alt) path = D.Path.find(map, u.x, u.y, alt.x, alt.y);
+              if (path && path.length && u.order) {
+                u.order = Object.assign({}, u.order, { x: alt.x, y: alt.y });
+                u.orders = [u.order];
+              }
+            }
+            if (path && path.length) {
+              u.path = path;
+              okTotal++;
+            } else {
+              u.path = [];
+              nextFail.push(u);
+            }
+          }
+        } else {
+          if (D.Path.assignGroupMove) {
+            D.Path.assignGroupMove(map, slice, gx, gy);
+          } else {
+            for (const u of slice) {
+              u.path = D.Path.find(map, u.x, u.y, gx, gy) || [];
+            }
+          }
+          for (const u of slice) {
+            if (u.path && u.path.length) okTotal++;
+            else {
+              u.path = [];
+              nextFail.push(u);
+            }
+          }
+        }
+      }
+      pending = nextFail;
+      // If this size got nobody, jump toward singles faster
+      if (pending.length === units.length && size > 1) continue;
+    }
+    return { ok: okTotal, fail: pending.length };
+  }
+
+  /**
+   * Units that should be moving but aren't: empty path or no progress, with a
+   * move/attack-move order, not already at goal.
+   */
+  function collectFrozenMovers(game, owner) {
+    const out = [];
+    const arrive =
+      (D.config.path && D.config.path.arrivalDist) != null
+        ? D.config.path.arrivalDist + 0.5
+        : 0.6;
+    for (const u of game.units) {
+      if (u.owner !== owner || u.hp <= 0) continue;
+      const o = u.order;
+      if (!o || (o.type !== 'move' && o.type !== 'attack-move')) continue;
+      const d = Math.hypot(u.x - o.x, u.y - o.y);
+      if (d < arrive) continue;
+      const empty = !u.path || !u.path.length;
+      const stalled = (u._noProgressSec || 0) > 0.55;
+      const flagged = !!(u.stuck && u.stuckReason === 'path');
+      if (empty || stalled || flagged) out.push(u);
+    }
+    return out;
+  }
+
+  /**
+   * Detect "nobody can move" blobs and cascade re-path smaller subsets until
+   * someone gets a path. SP + server MP only.
    */
   function helpStuckArmy(game, repathsRef, maxRepaths) {
     if (!game || !game.units || !D.Path || !game.map) return;
@@ -454,11 +551,20 @@
     const warnN =
       (D.config.path && D.config.path.stuckArmyWarn) != null
         ? D.config.path.stuckArmyWarn
-        : 8;
-    const chunk =
+        : 6;
+    const checkEvery =
+      (D.config.path && D.config.path.stuckArmyCheckTicks) != null
+        ? D.config.path.stuckArmyCheckTicks
+        : 15;
+    const maxPerPulse =
       (D.config.path && D.config.path.stuckArmyRepathChunk) != null
         ? D.config.path.stuckArmyRepathChunk
-        : 16;
+        : 32;
+
+    // Don't thrash every tick
+    if (game._stuckArmyRepathTick && game.tick - game._stuckArmyRepathTick < checkEvery) {
+      return;
+    }
 
     const owners =
       game.multiplayer && game._serverSim && D.Seats && D.Seats.active
@@ -470,19 +576,10 @@
           ];
 
     for (const owner of owners) {
-      const stuck = [];
-      for (const u of game.units) {
-        if (u.owner !== owner || u.hp <= 0) continue;
-        if (!u.stuck || u.stuckReason !== 'path') continue;
-        if (
-          !u.order ||
-          (u.order.type !== 'move' && u.order.type !== 'attack-move')
-        ) {
-          continue;
-        }
-        stuck.push(u);
-      }
-      if (stuck.length < warnN) continue;
+      const frozen = collectFrozenMovers(game, owner);
+      if (frozen.length < warnN) continue;
+
+      game._stuckArmyRepathTick = game.tick;
 
       const local =
         D.Game && D.Game.me ? D.Game.me(game) : game.localOwner || 'player';
@@ -490,26 +587,26 @@
         owner === local &&
         D.Game &&
         D.Game.pushMessage &&
-        (!game._stuckArmyMsgTick || game.tick - game._stuckArmyMsgTick > 160)
+        (!game._stuckArmyMsgTick || game.tick - game._stuckArmyMsgTick > 100)
       ) {
         game._stuckArmyMsgTick = game.tick;
         D.Game.pushMessage(
           game,
-          stuck.length +
-            ' units stuck (no path) — re-pathing in groups of ' +
-            chunk +
-            '. Tip: select fewer units next move.'
+          frozen.length +
+            ' units frozen — cascading re-path (smaller groups → singles).'
         );
       }
 
-      // Auto re-path at most every ~2s
-      if (game._stuckArmyRepathTick && game.tick - game._stuckArmyRepathTick < 40) {
-        continue;
+      frozen.sort((a, b) => a.id - b.id);
+      // Work a pulse of units; rotate offset so everyone eventually gets a turn
+      const off = (game._stuckArmyOffset || 0) % Math.max(1, frozen.length);
+      game._stuckArmyOffset = off + maxPerPulse;
+      const slice = [];
+      for (let i = 0; i < Math.min(maxPerPulse, frozen.length); i++) {
+        slice.push(frozen[(off + i) % frozen.length]);
       }
-      game._stuckArmyRepathTick = game.tick;
 
-      stuck.sort((a, b) => a.id - b.id);
-      const slice = stuck.slice(0, chunk);
+      // Common goal = average of group clicks (or personal)
       let gx = 0;
       let gy = 0;
       let nGoal = 0;
@@ -532,24 +629,36 @@
       gx /= nGoal;
       gy /= nGoal;
 
-      if (D.Path.assignGroupMove) {
-        D.Path.assignGroupMove(game.map, slice, gx, gy);
-      } else {
-        for (const u of slice) {
-          u.path = D.Path.find(game.map, u.x, u.y, gx, gy) || [];
+      // Point everyone at shared walkable goal first (slots often stack / block)
+      for (const u of slice) {
+        if (u.order) {
+          u.order = Object.assign({}, u.order, {
+            x: gx,
+            y: gy,
+            groupX: u.order.groupX != null ? u.order.groupX : gx,
+            groupY: u.order.groupY != null ? u.order.groupY : gy,
+          });
+          u.orders = [u.order];
         }
       }
+
+      const result = cascadePathUnits(game.map, slice, gx, gy);
+      // Last-ditch crawl for anyone still empty
       for (const u of slice) {
-        if (u.order && u.order.x != null) {
-          u.path = finishPathAtSlot(u.path, { x: u.order.x, y: u.order.y });
+        if (u.path && u.path.length) continue;
+        recoverPath(game, u, u.order, () => {
+          if (repathsRef.count >= maxRepaths) return false;
+          repathsRef.count++;
+          return true;
+        });
+        if ((!u.path || !u.path.length) && u.order) {
+          // Micro-path one step toward goal so they at least leave the pile
+          stepToward(game, u, u.order.x, u.order.y, D.config.DT_SEC || 0.05);
         }
-        if (!u.path.length) {
-          recoverPath(game, u, u.order, () => {
-            if (repathsRef.count >= maxRepaths) return false;
-            repathsRef.count++;
-            return true;
-          });
-        }
+      }
+      if (game.stats) {
+        game.stats.cascadeRepathOk = result.ok;
+        game.stats.cascadeRepathFail = result.fail;
       }
     }
   }
@@ -756,17 +865,12 @@
           u._lastRepathTick = -999;
         }
 
-        // Large armies: path in waves so each flow field only covers a chunk of starts
-        // (one huge batch + tight early-exit used to leave most of a mass army empty-path)
+        // Path to shared click with cascade: big groups → smaller → singles if needed
         const chunkCfg =
           D.config.path && D.config.path.massPathChunk != null
             ? D.config.path.massPathChunk
             : 24;
-        const chunkN =
-          chunkCfg > 0 && pointMovers.length > chunkCfg ? chunkCfg : pointMovers.length;
-
-        if (pointMovers.length > chunkN && !game.multiplayer) {
-          // Soft tip once per few seconds when player sends a huge army order
+        if (pointMovers.length > chunkCfg && !game.multiplayer) {
           if (
             D.Game &&
             D.Game.pushMessage &&
@@ -777,31 +881,46 @@
               game,
               'Large army (' +
                 pointMovers.length +
-                ') — pathing in groups of ' +
-                chunkN +
-                '. Select fewer if units freeze.'
+                ') — pathing with auto-fallback to smaller groups.'
             );
           }
         }
 
-        for (let off = 0; off < pointMovers.length; off += chunkN) {
-          const slice = pointMovers.slice(off, off + chunkN);
-          if (D.Path.assignGroupMove) {
-            D.Path.assignGroupMove(game.map, slice, order.x, order.y);
-          } else {
-            for (const u of slice) {
-              u.path = D.Path.find(game.map, u.x, u.y, order.x, order.y) || [];
-            }
-          }
-          for (let j = 0; j < slice.length; j++) {
-            const u = slice[j];
-            const si = off + j;
-            const slot = slots[si] || { x: order.x, y: order.y };
+        // Cascade assigns trunk paths toward the group click
+        cascadePathUnits(game.map, pointMovers, order.x, order.y);
+
+        // Pin ends to formation slots when trunk exists; recover empties
+        let stillEmpty = 0;
+        for (let i = 0; i < pointMovers.length; i++) {
+          const u = pointMovers[i];
+          const slot = slots[i] || { x: order.x, y: order.y };
+          if (u.path && u.path.length) {
             u.path = finishPathAtSlot(u.path, slot);
+          } else {
+            stillEmpty++;
+            // Prefer personal slot, then group, via recover
+            recoverPath(game, u, u.order, null);
             if (!u.path.length) {
-              recoverPath(game, u, u.order, null);
+              // Direct A* to group click (skip bad formation slot)
+              const p = D.Path.find(game.map, u.x, u.y, order.x, order.y);
+              if (p && p.length) {
+                u.path = p;
+                u.order = Object.assign({}, u.order, {
+                  x: order.x,
+                  y: order.y,
+                });
+                u.orders = [u.order];
+                stillEmpty--;
+              }
+            } else {
+              stillEmpty--;
             }
           }
+        }
+        // If still a big freeze after cascade, one more singles pass on empties
+        if (stillEmpty >= 4) {
+          const empties = pointMovers.filter((u) => !u.path || !u.path.length);
+          cascadePathUnits(game.map, empties, order.x, order.y);
         }
       }
 
