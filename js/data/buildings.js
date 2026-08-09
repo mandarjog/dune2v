@@ -41,7 +41,7 @@
           kind: 'shell',
           damage: 14,
           range: 5.0,
-          cooldown: 1.0,
+          cooldown: 3.0, // same as gun turret; ~1.5s real at default 2×
           vsI: 0.7,
           vsV: 1.0,
           vsB: 0.5,
@@ -141,7 +141,7 @@
           kind: 'shell',
           damage: 14,
           range: 5.0,
-          cooldown: 1.0,
+          cooldown: 3.0, // sim-sec at 1×; ~1.5s real at default 2×
           vsI: 0.7,
           vsV: 1.0,
           vsB: 0.5,
@@ -173,7 +173,7 @@
           range: 8.0, // was 10; −20%
           // Artillery dead zone — useless in melee / under the barrel
           minRange: 3.5,
-          cooldown: 2.75, // was 1.1; −60% fire rate → ×2.5 cooldown
+          cooldown: 8.25, // ~2.75× gun turret; ~4.1s real at default 2×
           vsI: 0.7,
           vsV: 1.0,
           vsB: 0.55,

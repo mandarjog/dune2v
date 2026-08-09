@@ -25,7 +25,7 @@
           kind: 'bullet',
           damage: 4,
           range: 2.5,
-          cooldown: 0.8,
+          cooldown: 2.4, // sim-sec at 1×; ~1.2s real at default 2×
           vsI: 1.0,
           vsV: 0.4,
           vsB: 0.25,
@@ -62,7 +62,7 @@
           kind: 'bullet',
           damage: 8, // 2× infantry
           range: 2.5,
-          cooldown: 0.75,
+          cooldown: 2.25, // sim-sec at 1×; ~1.1s real at default 2×
           vsI: 1.0,
           vsV: 0.5,
           vsB: 0.45,
@@ -83,7 +83,7 @@
           kind: 'rocket',
           damage: 8,
           range: 3.0,
-          cooldown: 1.4,
+          cooldown: 4.2, // sim-sec at 1×; ~2.1s real at default 2×
           vsI: 0.5,
           vsV: 1.3,
           vsB: 0.6,
@@ -104,7 +104,7 @@
           kind: 'bullet',
           damage: 6,
           range: 3.0,
-          cooldown: 0.55,
+          cooldown: 1.65, // sim-sec at 1×; ~0.8s real at default 2×
           vsI: 1.1,
           vsV: 0.7,
           vsB: 0.3,
@@ -125,7 +125,7 @@
           kind: 'bullet',
           damage: 9,
           range: 3.2,
-          cooldown: 0.7,
+          cooldown: 2.1, // sim-sec at 1×; ~1.05s real at default 2×
           vsI: 0.9,
           vsV: 1.0,
           vsB: 0.35,
@@ -146,7 +146,7 @@
           kind: 'shell',
           damage: 18,
           range: 4.0,
-          cooldown: 1.2,
+          cooldown: 3.6, // sim-sec at 1×; ~1.8s real at default 2×
           vsI: 0.6,
           vsV: 1.0,
           vsB: 0.85,
@@ -173,7 +173,7 @@
           kind: 'shell',
           damage: 27, // 1.5× combat tank
           range: 6.0, // 1.5× combat tank (4)
-          cooldown: 2.4, // half firing speed (2× cooldown)
+          cooldown: 7.2, // 2× combat tank; ~3.6s real at default 2×
           vsI: 0.5,
           vsV: 1.1,
           vsB: 1.2,

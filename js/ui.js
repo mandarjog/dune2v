@@ -1393,7 +1393,7 @@
           ],
           ['Damage', (d) => (d.weapon && d.weapon.damage != null ? d.weapon.damage : '—')],
           [
-            'Cooldown',
+            'Cooldown (1×)',
             (d) =>
               d.weapon && d.weapon.cooldown != null
                 ? d.weapon.cooldown + 's'
@@ -1469,7 +1469,7 @@
             },
           ],
           ['Damage', (d) => d.weapon.damage],
-          ['Cooldown', (d) => d.weapon.cooldown + 's'],
+          ['Cooldown (1×)', (d) => d.weapon.cooldown + 's'],
           ['Magazine', (d) => magLabel(d.weapon)],
           ['Ammo regen', (d) => ammoRegenLabel(d.weapon)],
           ['Build time', (d) => (d.buildTime != null ? d.buildTime + 's' : '—')],
