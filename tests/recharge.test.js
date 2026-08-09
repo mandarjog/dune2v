@@ -27,8 +27,8 @@ describe('recharge magazines', () => {
     });
     const tank = Dune2.Entities.createUnit(game, 'combatTank', 'player', 30, 50);
     assert.ok(tank.weapon);
-    assert.equal(tank.weapon.ammoMax, 5);
-    assert.equal(tank.weapon.ammo, 5);
+    assert.equal(tank.weapon.ammoMax, 3);
+    assert.equal(tank.weapon.ammo, 3);
   });
 
   it('firing consumes ammo and blocks when empty', () => {
@@ -78,14 +78,14 @@ describe('recharge magazines', () => {
     });
     const tank = Dune2.Entities.createUnit(game, 'combatTank', 'player', 30, 50);
     tank.weapon.ammo = 0;
-    // 20s full regen → 4s should restore ~1 shot
+    // 20s empty→full, mag 3 → 4s restores 3*(4/20) = 0.6
     for (let i = 0; i < 80; i++) {
       // 80 * 0.05 = 4s
       Dune2.Combat.tick(game, Dune2.config.DT_SEC);
     }
     assert.ok(
-      tank.weapon.ammo >= 0.9 && tank.weapon.ammo <= 1.2,
-      '~1 ammo after 4s, got ' + tank.weapon.ammo
+      tank.weapon.ammo >= 0.55 && tank.weapon.ammo <= 0.7,
+      '~0.6 ammo after 4s, got ' + tank.weapon.ammo
     );
   });
 
@@ -124,7 +124,7 @@ describe('recharge magazines', () => {
     const foe = Dune2.Entities.createUnit(game, 'infantry', 'enemy', 42, 40);
     tank.order = { type: 'attack', targetId: foe.id };
     tank.orders = [tank.order];
-    // Just under one whole shot — sidebar shows 0/5
+    // Just under one whole shot — sidebar shows 0/3
     tank.weapon.ammo = 0.99;
     tank.weapon.cooldownLeft = 0;
     const n0 = (game.projectiles || []).length;

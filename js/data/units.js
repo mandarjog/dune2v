@@ -152,7 +152,7 @@
           vsB: 0.85,
           projectile: true,
           recharge: true,
-          magazine: 5,
+          magazine: 3, // dump then limp; 5 never emptied at this fire rate
         },
       },
       /** Harkonnen special: slow siege armor (0.5× speed, 2× HP, 1.5× dmg, ½ fire rate, 1.5× range). */
