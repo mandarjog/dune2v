@@ -1302,8 +1302,166 @@
       input.focus();
     },
 
+    /**
+     * Fill Units / Towers stat tables from live config (always current).
+     */
+    fillHelpStatsTables() {
+      const unitsBody = document.querySelector('#help-units-table tbody');
+      const towersBody = document.querySelector('#help-towers-table tbody');
+      if (!D.config) return;
+
+      const magLabel = (w) => {
+        if (!w || !w.recharge) return '—';
+        const m =
+          w.magazine != null
+            ? w.magazine
+            : (D.config.recharge && D.config.recharge.magazine) || 5;
+        return String(m);
+      };
+      const ammoRegenLabel = (w) => {
+        if (!w || !w.recharge) return '—';
+        const sec =
+          (D.config.recharge && D.config.recharge.regenSec) != null
+            ? D.config.recharge.regenSec
+            : 20;
+        return sec + 's full';
+      };
+      const houseLabel = (def) => {
+        if (!def.houses || !def.houses.length) return '';
+        return (
+          ' <span class="house-tag">(' +
+          def.houses
+            .map((h) => h.charAt(0).toUpperCase() + h.slice(1))
+            .join(', ') +
+          ')</span>'
+        );
+      };
+      const unitOrder = [
+        'infantry',
+        'trooper',
+        'saboteur',
+        'trike',
+        'quad',
+        'combatTank',
+        'siegeTank',
+        'harvester',
+        'mcv',
+      ];
+
+      if (unitsBody) {
+        const rows = [];
+        for (const id of unitOrder) {
+          const def = D.config.units[id];
+          if (!def) continue;
+          const w = def.weapon;
+          let regen = ammoRegenLabel(w);
+          if (def.hpRegenPerSec) {
+            regen =
+              (regen !== '—' ? regen + ' · ' : '') +
+              def.hpRegenPerSec +
+              ' HP/s';
+          }
+          if (def.detonate) {
+            regen =
+              (regen !== '—' ? regen + ' · ' : '') +
+              'detonate';
+          }
+          rows.push(
+            '<tr>' +
+              '<td>' +
+              escapeHtml(def.name) +
+              houseLabel(def) +
+              '</td>' +
+              '<td>' +
+              def.cost +
+              '</td>' +
+              '<td>' +
+              def.hp +
+              '</td>' +
+              '<td>' +
+              (def.armor != null ? def.armor : 0) +
+              '</td>' +
+              '<td>' +
+              (def.speed != null ? def.speed : '—') +
+              '</td>' +
+              '<td>' +
+              (def.sight != null ? def.sight : '—') +
+              '</td>' +
+              '<td>' +
+              (w && w.range != null
+                ? w.minRange
+                  ? w.minRange + '–' + w.range
+                  : w.range
+                : '—') +
+              '</td>' +
+              '<td>' +
+              (w && w.damage != null ? w.damage : '—') +
+              '</td>' +
+              '<td>' +
+              (w && w.cooldown != null ? w.cooldown + 's' : '—') +
+              '</td>' +
+              '<td>' +
+              magLabel(w) +
+              '</td>' +
+              '<td>' +
+              regen +
+              '</td>' +
+              '</tr>'
+          );
+        }
+        unitsBody.innerHTML = rows.join('');
+      }
+
+      if (towersBody) {
+        const towerIds = ['gunTurret', 'longRangeTower', 'constructionYard'];
+        const rows = [];
+        for (const id of towerIds) {
+          const def = D.config.buildings[id];
+          if (!def || !def.weapon) continue;
+          const w = def.weapon;
+          rows.push(
+            '<tr>' +
+              '<td>' +
+              escapeHtml(def.name) +
+              houseLabel(def) +
+              '</td>' +
+              '<td>' +
+              (def.cost != null ? def.cost : '—') +
+              '</td>' +
+              '<td>' +
+              def.hp +
+              '</td>' +
+              '<td>' +
+              (def.power != null ? def.power : '—') +
+              '</td>' +
+              '<td>' +
+              (def.sight != null ? def.sight : '—') +
+              '</td>' +
+              '<td>' +
+              (w.minRange ? w.minRange + '–' + w.range : w.range) +
+              '</td>' +
+              '<td>' +
+              w.damage +
+              '</td>' +
+              '<td>' +
+              w.cooldown +
+              's</td>' +
+              '<td>' +
+              magLabel(w) +
+              '</td>' +
+              '<td>' +
+              ammoRegenLabel(w) +
+              '</td>' +
+              '</tr>'
+          );
+        }
+        towersBody.innerHTML = rows.join('');
+      }
+    },
+
     showHelp() {
       const modal = els.helpModal || $('help-modal');
+      D.UI.fillHelpStatsTables();
       modal?.classList.remove('hidden');
     },
 
