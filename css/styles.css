@@ -1231,6 +1231,20 @@ button.linkish {
   background: rgba(0, 0, 0, 0.2);
 }
 
+.menu-help-block {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  flex: 1 1 220px;
+}
+
+.menu-help-blurb {
+  margin: 0;
+  text-align: left;
+  max-width: 280px;
+}
+
 .menu-footer .btn-secondary {
   min-width: 120px;
 }

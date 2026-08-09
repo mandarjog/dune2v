@@ -509,6 +509,7 @@
       };
       $('btn-help-corner')?.addEventListener('click', openHelp);
       $('btn-help-menu')?.addEventListener('click', openHelp);
+      $('btn-help-menu-footer')?.addEventListener('click', openHelp);
       $('btn-help-sidebar')?.addEventListener('click', openHelp);
       $('btn-help-close')?.addEventListener('click', () => D.UI.hideHelp());
 

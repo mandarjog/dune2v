@@ -171,7 +171,7 @@
               >
                 Mass armies (test)
               </button>
-              <button id="btn-help-menu" type="button">Controls</button>
+              <button id="btn-help-menu" type="button">How to play</button>
             </div>
             <label class="start-mode-row" for="opt-mcv-start">
               <input type="checkbox" id="opt-mcv-start" />
@@ -299,6 +299,15 @@
         </div>
 
         <div class="menu-footer">
+          <div class="menu-help-block">
+            <button id="btn-help-menu-footer" type="button" class="btn-secondary">
+              How to play / Help
+            </button>
+            <p class="hint menu-help-blurb">
+              Controls, units, towers, recharge — same help as in-game
+              (<b>?</b>).
+            </p>
+          </div>
           <button id="btn-feedback" type="button" class="btn-secondary">Send feedback</button>
           <details class="menu-advanced">
             <summary>Advanced / URL flags</summary>
@@ -315,7 +324,7 @@
     <!-- Controls help -->
     <div id="help-modal" class="modal-backdrop hidden">
       <div class="modal modal-wide help-modal">
-        <h2>Controls</h2>
+        <h2>How to play</h2>
         <div class="help-body">
           <h3>Mouse / trackpad</h3>
           <table class="help-table">
