@@ -113,6 +113,39 @@ describe('recharge magazines', () => {
     assert.ok(foe.hp < hp0, 'fires with feature off even if ammo 0');
   });
 
+  it('does not fire on the same tick regen crosses 1.0 while UI still shows 0', () => {
+    const game = Dune2.Game.create();
+    Dune2.Game.startSkirmish(game, Dune2.MAPS.skirmish_large, {
+      owners: ['player', 'enemy'],
+      startMode: 'base',
+    });
+    Dune2.config.features.fog = false;
+    const tank = Dune2.Entities.createUnit(game, 'combatTank', 'player', 40, 40);
+    const foe = Dune2.Entities.createUnit(game, 'infantry', 'enemy', 42, 40);
+    tank.order = { type: 'attack', targetId: foe.id };
+    tank.orders = [tank.order];
+    // Just under one whole shot — sidebar shows 0/5
+    tank.weapon.ammo = 0.99;
+    tank.weapon.cooldownLeft = 0;
+    const n0 = (game.projectiles || []).length;
+    Dune2.Combat.tick(game, Dune2.config.DT_SEC);
+    assert.equal(
+      (game.projectiles || []).length,
+      n0,
+      'must not fire until a full shot is banked (was 0.99→regen→fire bug)'
+    );
+    assert.ok(tank.weapon.ammo > 0.99, 'regen still applied after fire check');
+    // Bank a full shot
+    tank.weapon.ammo = 1.0;
+    tank.weapon.cooldownLeft = 0;
+    Dune2.Combat.tick(game, Dune2.config.DT_SEC);
+    assert.ok(
+      (game.projectiles || []).length > n0,
+      'fires when a whole shot is available'
+    );
+    assert.ok(tank.weapon.ammo < 1, 'spent the whole shot');
+  });
+
   it('attack-ground spends ammo without a unit target', () => {
     const game = Dune2.Game.create();
     Dune2.Game.startSkirmish(game, Dune2.MAPS.skirmish_large, {

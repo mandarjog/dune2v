@@ -44,13 +44,15 @@
     entity.weapon.ammo = Math.min(max, (entity.weapon.ammo || 0) + rate * dt);
   }
 
+  /** Whole shots ready (matches UI floor display). Fractional ammo is only regen progress. */
   function canExpendShot(entity, wdef) {
     if (!ensureMagazine(entity, wdef)) return true; // no magazine / feature off
-    return (entity.weapon.ammo || 0) >= 1;
+    return Math.floor(entity.weapon.ammo || 0) >= 1;
   }
 
   function expendShot(entity, wdef) {
     if (!ensureMagazine(entity, wdef)) return;
+    // Spend one whole shot; keep fractional progress toward the next
     entity.weapon.ammo = Math.max(0, (entity.weapon.ammo || 0) - 1);
   }
 
@@ -390,18 +392,22 @@
 
     tick(game, dt) {
       // units fire
+      // Note: regenerate magazine *after* fire attempt so a 0.99→1.0 regen on the
+      // same tick cannot fire while the UI still shows 0/5 (floor of 0.99).
       for (const u of game.units) {
         if (u.hp <= 0 || !u.weapon) continue;
         const def = D.config.units[u.type];
         if (!def || !def.weapon) continue;
         u.weapon.cooldownLeft = Math.max(0, u.weapon.cooldownLeft - dt);
-        tickMagazine(u, def.weapon, dt);
 
         // Attack-ground: fire at a fixed map point (even if empty)
         if (u.order && u.order.type === 'attack-ground') {
           const gx = u.order.x;
           const gy = u.order.y;
-          if (gx == null || gy == null) continue;
+          if (gx == null || gy == null) {
+            tickMagazine(u, def.weapon, dt);
+            continue;
+          }
           const dist = Math.hypot(u.x - gx, u.y - gy);
           if (D.Combat.inWeaponRange(def.weapon, dist)) {
             u.facing = Math.atan2(gy - u.y, gx - u.x);
@@ -416,17 +422,24 @@
               expendShot(u, def.weapon);
             }
           }
+          tickMagazine(u, def.weapon, dt);
           continue;
         }
 
         const target = D.Combat.resolveTarget(game, u);
-        if (!target) continue;
+        if (!target) {
+          tickMagazine(u, def.weapon, dt);
+          continue;
+        }
         const tc =
           target.tileW != null
             ? D.Entities.buildingCenter(target)
             : { x: target.x, y: target.y };
         // FOW fire gate: must currently see target tile
-        if (!D.Combat.canSee(game, u.owner, tc.x, tc.y)) continue;
+        if (!D.Combat.canSee(game, u.owner, tc.x, tc.y)) {
+          tickMagazine(u, def.weapon, dt);
+          continue;
+        }
         const dist = Math.hypot(u.x - tc.x, u.y - tc.y);
         if (D.Combat.inWeaponRange(def.weapon, dist)) {
           // Face the target so barrels / infantry aim match the shot
@@ -444,6 +457,7 @@
             expendShot(u, def.weapon);
           }
         }
+        tickMagazine(u, def.weapon, dt);
       }
 
       // turrets
@@ -454,7 +468,6 @@
         const power = game.power[b.owner];
         if (power.ratio < 0.5) continue; // offline
         b.weapon.cooldownLeft = Math.max(0, b.weapon.cooldownLeft - dt);
-        tickMagazine(b, def.weapon, dt);
         const c = D.Entities.buildingCenter(b);
         const minR = def.weapon.minRange != null ? def.weapon.minRange : 0;
         // find target in [minRange, range] — LRT ignores melee under the barrel
@@ -478,6 +491,7 @@
             expendShot(b, def.weapon);
           }
         }
+        tickMagazine(b, def.weapon, dt);
       }
 
       // projectiles
