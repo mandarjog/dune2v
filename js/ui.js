@@ -508,10 +508,23 @@
         D.UI.showHelp();
       };
       $('btn-help-corner')?.addEventListener('click', openHelp);
-      $('btn-help-menu')?.addEventListener('click', openHelp);
       $('btn-help-menu-footer')?.addEventListener('click', openHelp);
       $('btn-help-sidebar')?.addEventListener('click', openHelp);
       $('btn-help-close')?.addEventListener('click', () => D.UI.hideHelp());
+      const openUnitInfo = (e) => {
+        if (e) e.preventDefault();
+        D.UI.showUnitInfo();
+      };
+      $('btn-unit-info')?.addEventListener('click', openUnitInfo);
+      $('btn-unit-info-from-help')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        D.UI.hideHelp();
+        D.UI.showUnitInfo();
+      });
+      $('btn-unit-info-close')?.addEventListener('click', () => D.UI.hideUnitInfo());
+      $('unit-info-modal')?.addEventListener('click', (e) => {
+        if (e.target && e.target.id === 'unit-info-modal') D.UI.hideUnitInfo();
+      });
 
       $('btn-speed-accept')?.addEventListener('click', () => {
         if (D.Net) D.Net.respondSpeed(true);
@@ -1304,13 +1317,11 @@
     },
 
     /**
-     * Fill Units / Towers stat tables from live config (always current).
+     * Horizontal Unit info tables: stat rows × unit columns.
+     * Values come from config (js/data/units.js + buildings.js).
      */
-    fillHelpStatsTables() {
-      const unitsBody = document.querySelector('#help-units-table tbody');
-      const towersBody = document.querySelector('#help-towers-table tbody');
+    fillUnitInfoTables() {
       if (!D.config) return;
-
       const magLabel = (w) => {
         if (!w || !w.recharge) return '—';
         const m =
@@ -1327,148 +1338,178 @@
             : 20;
         return sec + 's full';
       };
-      const houseLabel = (def) => {
+      const houseTag = (def) => {
         if (!def.houses || !def.houses.length) return '';
         return (
-          ' <span class="house-tag">(' +
+          '<span class="house-tag">' +
           def.houses
             .map((h) => h.charAt(0).toUpperCase() + h.slice(1))
             .join(', ') +
-          ')</span>'
+          '</span>'
         );
       };
-      const unitOrder = [
-        'infantry',
-        'trooper',
-        'saboteur',
-        'trike',
-        'quad',
-        'combatTank',
-        'siegeTank',
-        'harvester',
-        'mcv',
-      ];
+      const cell = (v) => '<td>' + (v == null || v === '' ? '—' : v) + '</td>';
 
-      if (unitsBody) {
-        const rows = [];
-        for (const id of unitOrder) {
-          const def = D.config.units[id];
-          if (!def) continue;
-          const w = def.weapon;
-          let regen = ammoRegenLabel(w);
-          if (def.hpRegenPerSec) {
-            regen =
-              (regen !== '—' ? regen + ' · ' : '') +
-              def.hpRegenPerSec +
-              ' HP/s';
-          }
-          if (def.detonate) {
-            regen =
-              (regen !== '—' ? regen + ' · ' : '') +
-              'detonate';
-          }
-          rows.push(
-            '<tr>' +
-              '<td>' +
-              escapeHtml(def.name) +
-              houseLabel(def) +
+      // Units: columns
+      const unitOrder =
+        (D.DATA && D.DATA.unitOrder) ||
+        Object.keys(D.config.units || {});
+      const unitDefs = unitOrder
+        .map((id) => ({ id, def: D.config.units[id] }))
+        .filter((x) => x.def);
+
+      const unitsTable = $('unit-info-units-table');
+      if (unitsTable && unitDefs.length) {
+        const head =
+          '<tr><th class="stat-corner">Stat</th>' +
+          unitDefs
+            .map(
+              (x) =>
+                '<th>' +
+                escapeHtml(x.def.name) +
+                houseTag(x.def) +
+                '</th>'
+            )
+            .join('') +
+          '</tr>';
+        const statRows = [
+          ['Cost', (d) => d.cost],
+          ['HP', (d) => d.hp],
+          ['Armor', (d) => (d.armor != null ? d.armor : 0)],
+          ['Speed', (d) => (d.speed != null ? d.speed : '—')],
+          ['Sight (LOS)', (d) => (d.sight != null ? d.sight : '—')],
+          [
+            'Range',
+            (d) => {
+              const w = d.weapon;
+              if (!w || w.range == null) return '—';
+              return w.minRange != null ? w.minRange + '–' + w.range : w.range;
+            },
+          ],
+          ['Damage', (d) => (d.weapon && d.weapon.damage != null ? d.weapon.damage : '—')],
+          [
+            'Cooldown',
+            (d) =>
+              d.weapon && d.weapon.cooldown != null
+                ? d.weapon.cooldown + 's'
+                : '—',
+          ],
+          ['Magazine', (d) => magLabel(d.weapon)],
+          [
+            'Ammo regen',
+            (d) => {
+              let r = ammoRegenLabel(d.weapon);
+              if (d.hpRegenPerSec) {
+                r =
+                  (r !== '—' ? r + ' · ' : '') + d.hpRegenPerSec + ' HP/s';
+              }
+              if (d.detonate) r = (r !== '—' ? r + ' · ' : '') + 'detonate';
+              return r || '—';
+            },
+          ],
+          ['Build time', (d) => (d.buildTime != null ? d.buildTime + 's' : '—')],
+          ['Built at', (d) => d.builtAt || '—'],
+        ];
+        const body = statRows
+          .map((row) => {
+            const label = row[0];
+            const fn = row[1];
+            return (
+              '<tr><td class="stat-label">' +
+              escapeHtml(label) +
               '</td>' +
-              '<td>' +
-              def.cost +
-              '</td>' +
-              '<td>' +
-              def.hp +
-              '</td>' +
-              '<td>' +
-              (def.armor != null ? def.armor : 0) +
-              '</td>' +
-              '<td>' +
-              (def.speed != null ? def.speed : '—') +
-              '</td>' +
-              '<td>' +
-              (def.sight != null ? def.sight : '—') +
-              '</td>' +
-              '<td>' +
-              (w && w.range != null
-                ? w.minRange
-                  ? w.minRange + '–' + w.range
-                  : w.range
-                : '—') +
-              '</td>' +
-              '<td>' +
-              (w && w.damage != null ? w.damage : '—') +
-              '</td>' +
-              '<td>' +
-              (w && w.cooldown != null ? w.cooldown + 's' : '—') +
-              '</td>' +
-              '<td>' +
-              magLabel(w) +
-              '</td>' +
-              '<td>' +
-              regen +
-              '</td>' +
+              unitDefs.map((x) => cell(fn(x.def))).join('') +
               '</tr>'
-          );
-        }
-        unitsBody.innerHTML = rows.join('');
+            );
+          })
+          .join('');
+        unitsTable.innerHTML = head + body;
       }
 
-      if (towersBody) {
-        const towerIds = ['gunTurret', 'longRangeTower', 'constructionYard'];
-        const rows = [];
-        for (const id of towerIds) {
-          const def = D.config.buildings[id];
-          if (!def || !def.weapon) continue;
-          const w = def.weapon;
-          rows.push(
-            '<tr>' +
-              '<td>' +
-              escapeHtml(def.name) +
-              houseLabel(def) +
+      // Towers / armed buildings
+      const towerOrder =
+        (D.DATA && D.DATA.towerOrder) || [
+          'gunTurret',
+          'longRangeTower',
+          'constructionYard',
+        ];
+      const towerDefs = towerOrder
+        .map((id) => ({ id, def: D.config.buildings[id] }))
+        .filter((x) => x.def && x.def.weapon);
+
+      const towersTable = $('unit-info-towers-table');
+      if (towersTable && towerDefs.length) {
+        const head =
+          '<tr><th class="stat-corner">Stat</th>' +
+          towerDefs
+            .map(
+              (x) =>
+                '<th>' +
+                escapeHtml(x.def.name) +
+                houseTag(x.def) +
+                '</th>'
+            )
+            .join('') +
+          '</tr>';
+        const statRows = [
+          ['Cost', (d) => (d.cost != null ? d.cost : '—')],
+          ['HP', (d) => d.hp],
+          ['Power', (d) => (d.power != null ? d.power : '—')],
+          ['Sight (LOS)', (d) => (d.sight != null ? d.sight : '—')],
+          [
+            'Range',
+            (d) => {
+              const w = d.weapon;
+              return w.minRange != null ? w.minRange + '–' + w.range : w.range;
+            },
+          ],
+          ['Damage', (d) => d.weapon.damage],
+          ['Cooldown', (d) => d.weapon.cooldown + 's'],
+          ['Magazine', (d) => magLabel(d.weapon)],
+          ['Ammo regen', (d) => ammoRegenLabel(d.weapon)],
+          ['Build time', (d) => (d.buildTime != null ? d.buildTime + 's' : '—')],
+        ];
+        const body = statRows
+          .map((row) => {
+            const label = row[0];
+            const fn = row[1];
+            return (
+              '<tr><td class="stat-label">' +
+              escapeHtml(label) +
               '</td>' +
-              '<td>' +
-              (def.cost != null ? def.cost : '—') +
-              '</td>' +
-              '<td>' +
-              def.hp +
-              '</td>' +
-              '<td>' +
-              (def.power != null ? def.power : '—') +
-              '</td>' +
-              '<td>' +
-              (def.sight != null ? def.sight : '—') +
-              '</td>' +
-              '<td>' +
-              (w.minRange ? w.minRange + '–' + w.range : w.range) +
-              '</td>' +
-              '<td>' +
-              w.damage +
-              '</td>' +
-              '<td>' +
-              w.cooldown +
-              's</td>' +
-              '<td>' +
-              magLabel(w) +
-              '</td>' +
-              '<td>' +
-              ammoRegenLabel(w) +
-              '</td>' +
+              towerDefs.map((x) => cell(fn(x.def))).join('') +
               '</tr>'
-          );
-        }
-        towersBody.innerHTML = rows.join('');
+            );
+          })
+          .join('');
+        towersTable.innerHTML = head + body;
       }
     },
 
     showHelp() {
       const modal = els.helpModal || $('help-modal');
-      D.UI.fillHelpStatsTables();
       modal?.classList.remove('hidden');
     },
 
     hideHelp() {
       const modal = els.helpModal || $('help-modal');
       modal?.classList.add('hidden');
+    },
+
+    showUnitInfo() {
+      D.UI.fillUnitInfoTables();
+      const modal = $('unit-info-modal');
+      modal?.classList.remove('hidden');
+    },
+
+    hideUnitInfo() {
+      const modal = $('unit-info-modal');
+      modal?.classList.add('hidden');
+    },
+
+    isUnitInfoOpen() {
+      const modal = $('unit-info-modal');
+      return !!(modal && !modal.classList.contains('hidden'));
     },
 
     isHelpOpen() {

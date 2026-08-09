@@ -212,6 +212,10 @@
       if (game.spectator && !game.replay) {
         if (e.code === 'Escape') {
           e.preventDefault();
+          if (D.UI && D.UI.isUnitInfoOpen && D.UI.isUnitInfoOpen()) {
+            D.UI.hideUnitInfo();
+            return;
+          }
           if (D.UI && D.UI.isHelpOpen && D.UI.isHelpOpen()) {
             D.UI.hideHelp();
             return;
@@ -296,6 +300,10 @@
       if (e.code === 'Escape') {
         e.preventDefault();
         // Close topmost modal first — never treat Esc-in-help as quit
+        if (D.UI && D.UI.isUnitInfoOpen && D.UI.isUnitInfoOpen()) {
+          D.UI.hideUnitInfo();
+          return;
+        }
         if (D.UI && D.UI.isHelpOpen && D.UI.isHelpOpen()) {
           D.UI.hideHelp();
           return;

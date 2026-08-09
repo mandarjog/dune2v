@@ -9,6 +9,9 @@ const path = require('path');
 const ROOT = path.resolve(__dirname, '..');
 
 const SCRIPTS = [
+  // Gameplay roster (source of truth) — must load before config.js
+  'js/data/units.js',
+  'js/data/buildings.js',
   'js/config.js',
   'js/seats.js',
   'js/rng.js',

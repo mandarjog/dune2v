@@ -8,6 +8,9 @@ mkdir -p "$ROOT/dist"
 CSS="$ROOT/css/styles.css"
 SCRIPTS=(
   "$ROOT/js/version.js"
+  # Gameplay roster (source of truth) — must load before config.js
+  "$ROOT/js/data/units.js"
+  "$ROOT/js/data/buildings.js"
   "$ROOT/js/config.js"
   "$ROOT/js/seats.js"
   "$ROOT/js/rng.js"
