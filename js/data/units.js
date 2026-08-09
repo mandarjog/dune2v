@@ -139,7 +139,7 @@
         hp: 220,
         speed: 1.2,
         armor: 2,
-        sight: 4,
+        sight: 5, // range + 1 so FOW does not clip max-range shots
         buildTime: 40,
         kind: 'vehicle',
         weapon: {
@@ -163,8 +163,8 @@
         hp: 440,
         speed: 0.6,
         armor: 3,
-        // Sight must cover weapon range or FOW blocks fire at max range
-        sight: 6,
+        // Sight = range + 1 so FOW does not clip max-range shots
+        sight: 7,
         buildTime: 55,
         kind: 'vehicle',
         houses: ['harkonnen'],

@@ -32,7 +32,7 @@
         buildTime: 0,
         tileW: 2,
         tileH: 2,
-        sight: 5,
+        sight: 6, // range + 1, same rule as gun turret
         requires: null,
         buildable: false,
         deployOnly: true,
@@ -134,7 +134,7 @@
         buildTime: 25,
         tileW: 1,
         tileH: 1,
-        sight: 4,
+        sight: 6, // range + 1 (was 4 < range 5 — FOW blocked the extra tile)
         requires: 'windtrap',
         buildable: true,
         weapon: {
