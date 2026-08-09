@@ -518,7 +518,13 @@
 
       // M / G — move to cursor (trackpad-friendly)
       // A — attack-move / attack under cursor (classic RTS; no pan when units selected)
-      if (e.code === 'KeyM' || e.code === 'KeyG' || e.code === 'KeyA') {
+      // T — attack-ground (bombard a tile; keeps firing for recharge tests)
+      if (
+        e.code === 'KeyM' ||
+        e.code === 'KeyG' ||
+        e.code === 'KeyA' ||
+        e.code === 'KeyT'
+      ) {
         const units = selectedUnits(game);
         if (!units.length) {
           if (e.code === 'KeyA') {
@@ -527,23 +533,27 @@
           }
           D.Game.pushMessage(
             game,
-            'Select unit(s), hover the map, then M/G to move (A = attack-move).'
+            'Select unit(s), hover the map, then M/G to move (A = attack-move, T = attack ground).'
           );
           e.preventDefault();
           return;
         }
         const ht = game.hoverTile;
         if (!ht || ht.tx == null) {
-          D.Game.pushMessage(game, 'Hover the map, then M/G to move or A to attack-move.');
+          D.Game.pushMessage(
+            game,
+            'Hover the map, then M/G to move, A to attack-move, or T to attack ground.'
+          );
           e.preventDefault();
           return;
         }
         const wx = ht.tx + 0.5;
         const wy = ht.ty + 0.5;
         const attackMove = e.code === 'KeyA';
-        panKeys.left = false; // A is order, never pan while commanding
+        const attackGround = e.code === 'KeyT';
+        panKeys.left = false; // A/T are orders, never pan while commanding
         // Harvesters on spice → harvest order when moving with M/G
-        if (!attackMove) {
+        if (!attackMove && !attackGround) {
           const harvs = units.filter((u) => u.type === 'harvester');
           if (harvs.length && game.map && D.Map.spiceAt(game.map, ht.tx, ht.ty) > 0) {
             issueOrder(
@@ -562,6 +572,28 @@
             e.preventDefault();
             return;
           }
+        }
+        if (attackGround) {
+          const armed = units.filter((u) => {
+            const d = D.config.units[u.type];
+            return d && d.weapon;
+          });
+          if (!armed.length) {
+            D.Game.pushMessage(game, 'No armed units selected for attack-ground.');
+            e.preventDefault();
+            return;
+          }
+          issueOrder(
+            game,
+            armed.map((u) => u.id),
+            { type: 'attack-ground', x: wx, y: wy }
+          );
+          D.Game.pushMessage(
+            game,
+            'Attack ground — fire at tile until ammo recharges or new order.'
+          );
+          e.preventDefault();
+          return;
         }
         // A on enemy = direct attack; A on ground = attack-move
         if (attackMove) {

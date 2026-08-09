@@ -183,15 +183,70 @@
     });
   }
 
-  function fireProjectile(game, attacker, target, weapon) {
+  function fireHitscanGround(game, attacker, wx, wy, weapon) {
+    game.fx = game.fx || [];
     const from =
       attacker.tileW != null
         ? D.Entities.buildingCenter(attacker)
         : { x: attacker.x, y: attacker.y };
-    const tc =
-      target.tileW != null
-        ? D.Entities.buildingCenter(target)
-        : { x: target.x, y: target.y };
+    game.fx.push({
+      type: 'tracer',
+      x0: from.x,
+      y0: from.y,
+      x1: wx,
+      y1: wy,
+      life: 0.14,
+      color: tracerColor(attacker.owner),
+      owner: attacker.owner,
+    });
+    game.fx.push({
+      type: 'muzzle',
+      x: from.x,
+      y: from.y,
+      life: 0.1,
+      r: 0.18,
+      owner: attacker.owner,
+      color: tracerColor(attacker.owner),
+    });
+    game.fx.push({ type: 'explode', x: wx, y: wy, life: 0.18, r: 0.3 });
+    // Tiny splash so ground fire can still tag units at the aim point
+    splashAt(game, wx, wy, weapon, attacker.owner, 0.85);
+  }
+
+  function splashAt(game, x, y, weapon, owner, radius) {
+    if (!weapon) return;
+    radius = radius != null ? radius : 0.75;
+    for (const o of game.units) {
+      if (o.owner === owner || o.hp <= 0) continue;
+      if (Math.hypot(o.x - x, o.y - y) <= radius) {
+        applyDamage(game, o, weapon, owner);
+      }
+    }
+    for (const b of game.buildings) {
+      if (b.owner === owner || b.hp <= 0 || b.type === 'concrete') continue;
+      const c = D.Entities.buildingCenter(b);
+      if (Math.hypot(c.x - x, c.y - y) <= radius + 0.4) {
+        applyDamage(game, b, weapon, owner);
+      }
+    }
+  }
+
+  function fireProjectile(game, attacker, target, weapon, ground) {
+    const from =
+      attacker.tileW != null
+        ? D.Entities.buildingCenter(attacker)
+        : { x: attacker.x, y: attacker.y };
+    let tc;
+    if (ground && ground.x != null) {
+      tc = { x: ground.x, y: ground.y };
+    } else if (target) {
+      tc =
+        target.tileW != null
+          ? D.Entities.buildingCenter(target)
+          : { x: target.x, y: target.y };
+    } else {
+      return;
+    }
     // Structure guns (gun turret + long range tower) and siege shells need long on-screen travel
     const isStructureGun = attacker.tileW != null && !!(weapon && weapon.projectile);
     const isSiege = attacker.type === 'siegeTank';
@@ -207,7 +262,8 @@
       y: from.y,
       tx: tc.x,
       ty: tc.y,
-      targetId: target.id,
+      targetId: target && target.id != null ? target.id : null,
+      ground: !!(ground && ground.x != null),
       speed,
       weapon,
       owner: attacker.owner,
@@ -244,6 +300,10 @@
       if (u.order && u.order.type === 'attack') {
         const t = D.Entities.getById(game, u.order.targetId);
         if (t && t.hp > 0) return t;
+      }
+      // Attack-ground: do not auto-acquire — combat tick fires at order.x/y
+      if (u.order && u.order.type === 'attack-ground') {
+        return null;
       }
       // Attack-move: acquire in *sight* (may be beyond weapon range → path closer)
       if (u.order && u.order.type === 'attack-move') {
@@ -337,6 +397,28 @@
         u.weapon.cooldownLeft = Math.max(0, u.weapon.cooldownLeft - dt);
         tickMagazine(u, def.weapon, dt);
 
+        // Attack-ground: fire at a fixed map point (even if empty)
+        if (u.order && u.order.type === 'attack-ground') {
+          const gx = u.order.x;
+          const gy = u.order.y;
+          if (gx == null || gy == null) continue;
+          const dist = Math.hypot(u.x - gx, u.y - gy);
+          if (D.Combat.inWeaponRange(def.weapon, dist)) {
+            u.facing = Math.atan2(gy - u.y, gx - u.x);
+            u.path = [];
+            if (u.weapon.cooldownLeft === 0 && canExpendShot(u, def.weapon)) {
+              if (def.weapon.projectile) {
+                fireProjectile(game, u, null, def.weapon, { x: gx, y: gy });
+              } else {
+                fireHitscanGround(game, u, gx, gy, def.weapon);
+              }
+              u.weapon.cooldownLeft = def.weapon.cooldown;
+              expendShot(u, def.weapon);
+            }
+          }
+          continue;
+        }
+
         const target = D.Combat.resolveTarget(game, u);
         if (!target) continue;
         const tc =
@@ -402,8 +484,9 @@
       for (let i = game.projectiles.length - 1; i >= 0; i--) {
         const p = game.projectiles[i];
         p.life -= dt;
-        const target = D.Entities.getById(game, p.targetId);
-        if (target && target.hp > 0) {
+        const target =
+          p.targetId != null ? D.Entities.getById(game, p.targetId) : null;
+        if (target && target.hp > 0 && !p.ground) {
           const tc =
             target.tileW != null
               ? D.Entities.buildingCenter(target)
@@ -416,8 +499,10 @@
         const dist = Math.hypot(dx, dy);
         const step = p.speed * dt;
         if (dist <= step || p.life <= 0) {
-          if (target && target.hp > 0) {
+          if (target && target.hp > 0 && !p.ground) {
             applyDamage(game, target, p.weapon, p.owner);
+          } else if (p.ground) {
+            splashAt(game, p.tx, p.ty, p.weapon, p.owner, p.heavy ? 1.1 : 0.8);
           }
           game.fx = game.fx || [];
           game.fx.push({ type: 'explode', x: p.tx, y: p.ty, life: 0.15, r: 0.25 });

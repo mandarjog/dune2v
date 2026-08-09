@@ -113,6 +113,31 @@ describe('recharge magazines', () => {
     assert.ok(foe.hp < hp0, 'fires with feature off even if ammo 0');
   });
 
+  it('attack-ground spends ammo without a unit target', () => {
+    const game = Dune2.Game.create();
+    Dune2.Game.startSkirmish(game, Dune2.MAPS.skirmish_large, {
+      owners: ['player', 'enemy'],
+      startMode: 'base',
+    });
+    Dune2.config.features.fog = false;
+    const tank = Dune2.Entities.createUnit(game, 'combatTank', 'player', 40, 40);
+    tank.weapon.ammo = 3;
+    tank.weapon.cooldownLeft = 0;
+    tank.order = { type: 'attack-ground', x: 42.5, y: 40.5 };
+    tank.orders = [tank.order];
+    const before = tank.weapon.ammo;
+    Dune2.Combat.tick(game, Dune2.config.DT_SEC);
+    assert.ok(
+      tank.weapon.ammo < before,
+      'spent ammo on ground fire, got ' + tank.weapon.ammo
+    );
+    assert.ok(
+      (game.projectiles && game.projectiles.length > 0) ||
+        (game.fx && game.fx.some((f) => f.type === 'explode' || f.type === 'tracer')),
+      'fired projectile or hitscan fx'
+    );
+  });
+
   it('gun turret uses magazine', () => {
     const game = Dune2.Game.create();
     Dune2.Game.startSkirmish(game, Dune2.MAPS.skirmish_large, {

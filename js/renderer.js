@@ -409,6 +409,40 @@
       );
     },
 
+    /** Small magazine pips under unit/building when Recharge is on (cheap). */
+    drawAmmoPips(sx, sy, ammo, ammoMax, width) {
+      if (
+        !D.config.features ||
+        !D.config.features.recharge ||
+        ammoMax == null ||
+        ammoMax <= 0
+      ) {
+        return;
+      }
+      const n = Math.max(1, Math.min(8, ammoMax | 0));
+      const filled = Math.max(0, Math.min(n, Math.floor(ammo || 0)));
+      const recharging = (ammo || 0) < ammoMax - 0.02;
+      const gap = 2;
+      const pipW = Math.max(2, (width - gap * (n - 1)) / n);
+      const y = sy;
+      for (let i = 0; i < n; i++) {
+        const x = sx + i * (pipW + gap);
+        ctx.fillStyle =
+          i < filled
+            ? 'rgba(230, 190, 60, 0.95)'
+            : 'rgba(40, 40, 40, 0.65)';
+        ctx.fillRect(x, y, pipW, 3);
+      }
+      // Pulse outline while magazine not full (recharging)
+      if (recharging) {
+        const pulse =
+          0.35 + 0.45 * Math.abs(Math.sin((performance.now?.() || Date.now()) * 0.006));
+        ctx.strokeStyle = `rgba(230, 190, 60, ${pulse})`;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(sx - 1, y - 1, width + 2, 5);
+      }
+    },
+
     drawBuilding(game, b) {
       if (b.type === 'concrete') return; // drawn into terrain cache
       if (!D.Renderer.shouldDrawBuilding(game, b)) return;
@@ -449,6 +483,21 @@
 
       if (b.buildProgress >= 1 && b.hp < b.hpMax) {
         D.Renderer.drawHpBar(s.x + 4, s.y - 6, w - 8, b.hp / b.hpMax);
+      }
+
+      if (
+        b.buildProgress >= 1 &&
+        b.weapon &&
+        b.weapon.ammoMax &&
+        D.config.features.recharge
+      ) {
+        D.Renderer.drawAmmoPips(
+          s.x + 4,
+          s.y + h + 2,
+          b.weapon.ammo,
+          b.weapon.ammoMax,
+          w - 8
+        );
       }
 
       if (game.selection.ids.includes(b.id)) {
@@ -538,6 +587,44 @@
         ctx.lineWidth = 1.5;
         ctx.beginPath();
         ctx.arc(s.x, s.y, half + 3, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      // Magazine pips under combat vehicles when Recharge is on
+      if (
+        u.weapon &&
+        u.weapon.ammoMax &&
+        D.config.features.recharge &&
+        D.Renderer.shouldDrawUnit(game, u)
+      ) {
+        const barW = size * 0.9;
+        D.Renderer.drawAmmoPips(
+          s.x - barW / 2,
+          s.y + half + 4,
+          u.weapon.ammo,
+          u.weapon.ammoMax,
+          barW
+        );
+      }
+
+      // Attack-ground aim marker for selected units
+      if (
+        (game.selection.ids.includes(u.id) || u.selected) &&
+        u.order &&
+        u.order.type === 'attack-ground' &&
+        u.order.x != null
+      ) {
+        const g = D.Renderer.worldToScreen(game, u.order.x, u.order.y);
+        ctx.strokeStyle = 'rgba(230, 100, 40, 0.85)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(g.x - 6, g.y);
+        ctx.lineTo(g.x + 6, g.y);
+        ctx.moveTo(g.x, g.y - 6);
+        ctx.lineTo(g.x, g.y + 6);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(g.x, g.y, 8, 0, Math.PI * 2);
         ctx.stroke();
       }
 

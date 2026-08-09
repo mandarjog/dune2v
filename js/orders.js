@@ -821,7 +821,9 @@
         if (
           D.Path &&
           game.map &&
-          (order.type === 'move' || order.type === 'attack-move') &&
+          (order.type === 'move' ||
+            order.type === 'attack-move' ||
+            order.type === 'attack-ground') &&
           order.x != null &&
           order.y != null
         ) {
@@ -1168,7 +1170,11 @@
           continue;
         }
 
-        if (order.type === 'move' || order.type === 'attack-move') {
+        if (
+          order.type === 'move' ||
+          order.type === 'attack-move' ||
+          order.type === 'attack-ground'
+        ) {
           const prevX = u.x;
           const prevY = u.y;
           const arrive =
@@ -1181,13 +1187,29 @@
               : Infinity;
           const d = Math.hypot(u.x - order.x, u.y - order.y);
 
+          // Attack-ground: hold once weapon can fire at the aim point
+          if (order.type === 'attack-ground') {
+            const udef = D.config.units[u.type];
+            const wpn = udef && udef.weapon;
+            if (
+              wpn &&
+              D.Combat &&
+              D.Combat.inWeaponRange &&
+              D.Combat.inWeaponRange(wpn, d)
+            ) {
+              u.path = [];
+              clearStuck(u);
+              continue;
+            }
+          }
+
           // Arrive at *personal* formation slot only.
           // (Old "near group click" finish made whole armies stack on one tile.)
           // Only fall back to group click after recovery already abandoned the slot.
           const slotAbandoned = !!(u._groupGoalTried || u._altGoalTried);
           if (
-            d < arrive ||
-            (slotAbandoned && groupD < arrive + 0.4)
+            order.type !== 'attack-ground' &&
+            (d < arrive || (slotAbandoned && groupD < arrive + 0.4))
           ) {
             u.path = [];
             clearStuck(u);
@@ -1257,7 +1279,7 @@
               u.path = [];
               recoverPath(game, u, u.order, () => repaths++ < maxRepaths);
             } else if ((u._noProgressSec || 0) > giveUp) {
-              // Give up formal path but keep attack-move; clear red stuck so they can fight
+              // Give up formal path but keep attack-move / attack-ground; clear red stuck
               clearStuck(u);
               if (order.type === 'move') clearOrder(u);
               else {
