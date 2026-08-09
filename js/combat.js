@@ -317,8 +317,8 @@
         if (t === 'harvest' || t === 'deploy') return null;
         // follow: same as plain move — weapon-range auto-fire only (no chase)
       }
-      // Idle / stop / plain move / follow: auto-fire only at hostiles already in *weapon range*
-      // (classic C&C/Dune feel — tanks next to enemies shoot even after a move order)
+      // Idle / stop / plain move / follow: auto-fire only at hostiles already in
+      // *weapon range* (orders.autoAcquire turns idle LOS contacts into attack).
       return D.Combat.findHostileInRadius(game, u, 'weapon');
     },
 

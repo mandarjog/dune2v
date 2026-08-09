@@ -31,6 +31,22 @@
   }
 
   /**
+   * Idle / holding: lock the nearest visible hostile in sight and chase into
+   * weapon range. Move-in-progress is left alone (weapon-range free-fire only).
+   */
+  function autoAcquire(game, u) {
+    if (!u || u.hp <= 0) return false;
+    if (u.type === 'harvester' || u.type === 'mcv') return false;
+    const def = D.config.units[u.type];
+    if (!def || !def.weapon) return false;
+    if (!D.Combat || !D.Combat.findHostileInRadius) return false;
+    const t = D.Combat.findHostileInRadius(game, u, null);
+    if (!t) return false;
+    setOrder(u, { type: 'attack', targetId: t.id });
+    return true;
+  }
+
+  /**
    * Unique walkable goal slots around a click (spiral).
    * Prevents whole selection pathing to the exact same tile.
    * @returns {Array<{x:number,y:number}>}
@@ -1110,6 +1126,10 @@
       for (const u of game.units) {
         if (u.hp <= 0) continue;
 
+        // Sitting idle: hunt the nearest hostile in LOS (range+1).
+        // A finished attack-move is handled at arrival below.
+        if (!u.order) autoAcquire(game, u);
+
         // Saboteur passive: regenerate HP even when idle
         if (u.type === 'saboteur' && u.hp < u.hpMax) {
           const regen =
@@ -1214,6 +1234,8 @@
             u.path = [];
             clearStuck(u);
             if (order.type === 'move') clearOrder(u);
+            // Arrived next to the enemy: pick something in LOS instead of standing.
+            if (!u.order || u.order.type === 'attack-move') autoAcquire(game, u);
             continue;
           }
 

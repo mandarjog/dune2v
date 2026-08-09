@@ -70,6 +70,56 @@ describe('combat engagement', () => {
     assert.ok(withPath >= 10, 'paths survive combat tick, got ' + withPath);
   });
 
+  it('idle tank acquires a building in LOS and walks into weapon range', () => {
+    const game = Dune2.Game.create();
+    Dune2.Game.startSkirmish(game, Dune2.MAPS.skirmish_large, {
+      owners: ['player', 'enemy'],
+      startMode: 'mcv',
+    });
+    Dune2.config.features.fog = false;
+    game.units = [];
+    game.buildings = [];
+    const tank = Dune2.Entities.createUnit(game, 'combatTank', 'player', 40.5, 40.5);
+    // Range 4, sight 5 — place a WT just outside gun range, inside LOS
+    const wt = Dune2.Entities.createBuilding(game, 'windtrap', 'enemy', 44, 40);
+    assert.ok(wt && wt.hp > 0);
+    const c = Dune2.Entities.buildingCenter(wt);
+    const dist0 = Math.hypot(tank.x - c.x, tank.y - c.y);
+    assert.ok(dist0 > 4 && dist0 <= 5.2, 'fixture must be in LOS not gun range, got ' + dist0);
+    tank.order = null;
+    tank.orders = [];
+    tank.path = [];
+    for (let i = 0; i < 40; i++) {
+      Dune2.Orders.tick(game, 0.05);
+      Dune2.Combat.tick(game, 0.05);
+    }
+    assert.equal(tank.order && tank.order.type, 'attack', 'should lock attack on LOS target');
+    assert.equal(tank.order.targetId, wt.id);
+    const dist1 = Math.hypot(tank.x - c.x, tank.y - c.y);
+    assert.ok(
+      dist1 < dist0 - 0.2 || (tank.path && tank.path.length),
+      'should close distance or have a path, dist ' + dist0 + ' → ' + dist1
+    );
+  });
+
+  it('plain move in progress does not peel off to chase LOS target', () => {
+    const game = Dune2.Game.create();
+    Dune2.Game.startSkirmish(game, Dune2.MAPS.skirmish_large, {
+      owners: ['player', 'enemy'],
+      startMode: 'mcv',
+    });
+    Dune2.config.features.fog = false;
+    game.units = [];
+    game.buildings = [];
+    const tank = Dune2.Entities.createUnit(game, 'combatTank', 'player', 40.5, 40.5);
+    Dune2.Entities.createBuilding(game, 'windtrap', 'enemy', 44, 40);
+    tank.order = { type: 'move', x: 40.5, y: 55.5 };
+    tank.orders = [tank.order];
+    tank.path = [{ x: 40.5, y: 55.5 }];
+    Dune2.Orders.tick(game, 0.05);
+    assert.equal(tank.order && tank.order.type, 'move', 'must keep move, not auto-attack');
+  });
+
   it('harvester does not free-fire while harvesting', () => {
     const game = Dune2.Game.create();
     Dune2.Game.startSkirmish(game, Dune2.MAPS.skirmish_large, {
