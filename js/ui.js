@@ -1349,6 +1349,11 @@
         );
       };
       const cell = (v) => '<td>' + (v == null || v === '' ? '—' : v) + '</td>';
+      const buildingName = (id) => {
+        if (!id) return '—';
+        const b = D.config.buildings && D.config.buildings[id];
+        return b && b.name ? b.name : id;
+      };
 
       // Units: columns
       const unitOrder =
@@ -1408,7 +1413,7 @@
             },
           ],
           ['Build time', (d) => (d.buildTime != null ? d.buildTime + 's' : '—')],
-          ['Built at', (d) => d.builtAt || '—'],
+          ['Built at', (d) => buildingName(d.builtAt)],
         ];
         const body = statRows
           .map((row) => {

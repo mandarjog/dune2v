@@ -827,12 +827,15 @@ button.sel-unit-cell .sel-unit-name {
   margin: 8px 0 0;
 }
 
-/* Unit info modal — horizontal (stat rows × unit columns) */
-.unit-info-modal {
+/* Unit info modal — full-width so the roster fits without a scrollbar.
+   `.modal-wide` is 480px and must not win; use a more specific selector. */
+.modal.unit-info-modal {
   text-align: left;
-  max-width: min(1100px, 98vw);
+  width: min(1440px, 98vw);
+  max-width: min(1440px, 98vw);
   max-height: 90vh;
   overflow-y: auto;
+  padding: 22px 20px 18px;
 }
 
 .unit-info-section {
@@ -842,7 +845,7 @@ button.sel-unit-cell .sel-unit-name {
 }
 
 .unit-info-scroll {
-  overflow-x: auto;
+  overflow-x: hidden;
   border: 1px solid #2a241c;
   border-radius: 6px;
   background: rgba(0, 0, 0, 0.25);
@@ -852,19 +855,18 @@ button.sel-unit-cell .sel-unit-name {
 .unit-info-table {
   border-collapse: collapse;
   font-size: 12px;
-  width: max-content;
-  min-width: 100%;
+  width: 100%;
+  table-layout: fixed;
 }
 
 .unit-info-table th,
 .unit-info-table td {
-  padding: 7px 12px;
+  padding: 6px 5px;
   border-bottom: 1px solid #2a241c;
   border-right: 1px solid #2a241c;
   text-align: center;
-  white-space: nowrap;
   color: var(--muted);
-  min-width: 88px;
+  min-width: 0;
 }
 
 .unit-info-table th:last-child,
@@ -900,20 +902,26 @@ button.sel-unit-cell .sel-unit-name {
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.03em;
-  position: sticky;
-  left: 0;
   background: #1a1610;
-  z-index: 2;
-  min-width: 100px;
+  width: 7.5rem;
+  white-space: nowrap;
+  padding-left: 10px;
 }
 
 .unit-info-table th.stat-corner {
-  position: sticky;
-  left: 0;
-  z-index: 3;
   background: #221c14;
   text-align: left;
-  min-width: 100px;
+  width: 7.5rem;
+  padding-left: 10px;
+}
+
+.unit-info-table td {
+  white-space: nowrap;
+}
+
+.unit-info-table th {
+  white-space: normal;
+  line-height: 1.25;
 }
 
 button.linkish {
