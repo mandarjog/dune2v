@@ -33,16 +33,17 @@ describe('house special units', () => {
     const lrt = Dune2.config.buildings.longRangeTower.weapon;
     // Tuned: −20% from 2× gun range (10 → 8), −60% fire rate (cooldown ↑)
     assert.equal(lrt.range, 8);
-    assert.ok(Math.abs(lrt.damage - gun.damage * 1.1) < 0.6);
+    assert.equal(gun.damage, 15);
+    assert.equal(lrt.damage, 27);
     assert.ok(lrt.minRange > 0, 'LRT has close-range dead zone');
     assert.ok(lrt.minRange < lrt.range);
     assert.ok(lrt.cooldown > gun.cooldown * 2);
 
     const tank = Dune2.config.units.combatTank;
     const siege = Dune2.config.units.siegeTank;
-    assert.equal(siege.speed, tank.speed * 0.5);
-    assert.equal(siege.hp, tank.hp * 2);
-    assert.equal(siege.weapon.damage, tank.weapon.damage * 1.5);
+    assert.equal(siege.speed, 0.4);
+    assert.equal(siege.hp, 300);
+    assert.equal(siege.weapon.damage, 20);
     assert.equal(siege.weapon.cooldown, tank.weapon.cooldown * 2);
     assert.equal(siege.weapon.range, tank.weapon.range * 1.5);
     assert.ok(

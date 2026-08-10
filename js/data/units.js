@@ -156,13 +156,13 @@
           volley: 2, // fire a pair, then wait until 2 are banked again
         },
       },
-      /** Harkonnen special: slow siege armor (0.5× speed, 2× HP, 1.5× dmg, ½ fire rate, 1.5× range). */
+      /** Harkonnen special: slow siege armor (½ fire rate, 1.5× range). */
       siegeTank: {
         name: 'Siege Tank',
         cost: 900,
         builtAt: 'heavyFactory',
-        hp: 440,
-        speed: 0.6,
+        hp: 300,
+        speed: 0.4,
         armor: 3,
         // Sight = range + 1 so FOW does not clip max-range shots
         sight: 7,
@@ -172,7 +172,7 @@
         special: true,
         weapon: {
           kind: 'shell',
-          damage: 27, // 1.5× combat tank
+          damage: 20,
           range: 6.0, // 1.5× combat tank (4)
           cooldown: 7.2, // 2× combat tank; ~3.6s real at default 2×
           vsI: 0.5,

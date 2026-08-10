@@ -139,7 +139,7 @@
         buildable: true,
         weapon: {
           kind: 'shell',
-          damage: 14,
+          damage: 15,
           range: 5.0,
           cooldown: 3.0, // sim-sec at 1×; ~1.5s real at default 2×
           vsI: 0.7,
@@ -158,7 +158,7 @@
         name: 'Long Range Tower',
         cost: 400,
         power: -40,
-        hp: 180,
+        hp: 220,
         buildTime: 30,
         tileW: 1,
         tileH: 1,
@@ -169,7 +169,7 @@
         special: true,
         weapon: {
           kind: 'shell',
-          damage: 15, // ~1.1× gun turret (14)
+          damage: 27,
           range: 8.0, // was 10; −20%
           // Artillery dead zone — useless in melee / under the barrel
           minRange: 3.5,
