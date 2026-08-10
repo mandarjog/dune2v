@@ -120,6 +120,61 @@ describe('combat engagement', () => {
     assert.equal(tank.order && tank.order.type, 'move', 'must keep move, not auto-attack');
   });
 
+  it('radio hops a target through a 2-tile blob; a 3-tile gap does not', () => {
+    const game = Dune2.Game.create();
+    Dune2.Game.startSkirmish(game, Dune2.MAPS.skirmish_large, {
+      owners: ['player', 'enemy'],
+      startMode: 'mcv',
+    });
+    Dune2.config.features.fog = false;
+    game.units = [];
+    game.buildings = [];
+    // Front tank in LOS of WT; middle 2 tiles back (out of sight); rear 2 more
+    const front = Dune2.Entities.createUnit(game, 'combatTank', 'player', 40.5, 40.5);
+    const mid = Dune2.Entities.createUnit(game, 'combatTank', 'player', 38.5, 40.5);
+    const rear = Dune2.Entities.createUnit(game, 'combatTank', 'player', 36.5, 40.5);
+    const isolated = Dune2.Entities.createUnit(game, 'combatTank', 'player', 36.5, 44.0);
+    const wt = Dune2.Entities.createBuilding(game, 'windtrap', 'enemy', 44, 40);
+    const c = Dune2.Entities.buildingCenter(wt);
+    assert.ok(Math.hypot(front.x - c.x, front.y - c.y) <= 5.2, 'front in LOS');
+    assert.ok(Math.hypot(mid.x - c.x, mid.y - c.y) > 5, 'mid out of own sight');
+    assert.ok(Math.hypot(rear.x - c.x, rear.y - c.y) > 5, 'rear out of own sight');
+    front.order = mid.order = rear.order = isolated.order = null;
+    Dune2.Orders.tick(game, 0.05);
+    assert.equal(front.order && front.order.type, 'attack');
+    assert.equal(front.order.targetId, wt.id);
+    assert.equal(mid.order && mid.order.type, 'attack', 'mid hears radio');
+    assert.equal(mid.order.targetId, wt.id);
+    assert.equal(rear.order && rear.order.type, 'attack', 'rear hears via mid');
+    assert.equal(rear.order.targetId, wt.id);
+    assert.ok(
+      !isolated.order || isolated.order.type !== 'attack',
+      '3-tile offset does not hear'
+    );
+  });
+
+  it('radio does not peel a tank that is still moving', () => {
+    const game = Dune2.Game.create();
+    Dune2.Game.startSkirmish(game, Dune2.MAPS.skirmish_large, {
+      owners: ['player', 'enemy'],
+      startMode: 'mcv',
+    });
+    Dune2.config.features.fog = false;
+    game.units = [];
+    game.buildings = [];
+    const front = Dune2.Entities.createUnit(game, 'combatTank', 'player', 40.5, 40.5);
+    const buddy = Dune2.Entities.createUnit(game, 'combatTank', 'player', 38.5, 40.5);
+    const wt = Dune2.Entities.createBuilding(game, 'windtrap', 'enemy', 44, 40);
+    buddy.order = { type: 'move', x: 38.5, y: 55.5 };
+    buddy.orders = [buddy.order];
+    buddy.path = [{ x: 38.5, y: 55.5 }];
+    front.order = null;
+    Dune2.Orders.tick(game, 0.05);
+    assert.equal(front.order && front.order.type, 'attack');
+    assert.equal(front.order.targetId, wt.id);
+    assert.equal(buddy.order && buddy.order.type, 'move', 'move in progress stays');
+  });
+
   it('harvester does not free-fire while harvesting', () => {
     const game = Dune2.Game.create();
     Dune2.Game.startSkirmish(game, Dune2.MAPS.skirmish_large, {

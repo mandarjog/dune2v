@@ -46,6 +46,77 @@
     return true;
   }
 
+  function radioRange() {
+    const c = D.config.combat;
+    return c && c.radioRange != null ? c.radioRange : 2;
+  }
+
+  function isCombatUnit(u) {
+    if (!u || u.hp <= 0) return false;
+    if (u.type === 'harvester' || u.type === 'mcv') return false;
+    const def = D.config.units[u.type];
+    return !!(def && def.weapon);
+  }
+
+  /** Idle / attack-move / existing attack can hear. Move / harvest / deploy cannot. */
+  function canHearRadio(u) {
+    if (!isCombatUnit(u)) return false;
+    if (!u.order) return true;
+    const t = u.order.type;
+    if (t === 'attack' || t === 'attack-move') return true;
+    return false;
+  }
+
+  function engagedTarget(game, u) {
+    if (!u || !u.order) return null;
+    if (u.order.type === 'attack' && u.order.targetId != null) {
+      const t = D.Entities.getById(game, u.order.targetId);
+      return t && t.hp > 0 ? t : null;
+    }
+    if (u.order.type === 'attack-move' && D.Combat && D.Combat.findHostileInRadius) {
+      return D.Combat.findHostileInRadius(game, u, null);
+    }
+    return null;
+  }
+
+  function chebyshev(a, b) {
+    return Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
+  }
+
+  /**
+   * Flood a live attack target through a connected blob (range hops, same tick).
+   * Does not override a different attack, steal a move, or shoot through fog.
+   */
+  function radioSpread(game) {
+    if (!game || !game.units || !D.Entities) return;
+    const range = radioRange();
+    const q = [];
+    const seen = new Set();
+    for (const u of game.units) {
+      const t = engagedTarget(game, u);
+      if (!t) continue;
+      q.push({ u, target: t });
+      seen.add(u.id + ':' + t.id);
+    }
+    let qi = 0;
+    while (qi < q.length) {
+      const { u, target } = q[qi++];
+      for (const o of game.units) {
+        if (o.owner !== u.owner || o.id === u.id) continue;
+        const hear = canHearRadio(o);
+        const hop = chebyshev(u, o);
+        if (!hear) continue;
+        if (o.order && o.order.type === 'attack') continue; // already locked
+        if (hop > range) continue;
+        const key = o.id + ':' + target.id;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        setOrder(o, { type: 'attack', targetId: target.id });
+        q.push({ u: o, target });
+      }
+    }
+  }
+
   /**
    * Unique walkable goal slots around a click (spiral).
    * Prevents whole selection pathing to the exact same tile.
@@ -1123,12 +1194,16 @@
       }
       if (D.Path && D.Path.beginBatch) D.Path.beginBatch();
 
+      // 1) Idle acquire, then radio the blob, *then* walk — otherwise the
+      //    front rank steps out of 2-tile hop range before friends hear.
       for (const u of game.units) {
         if (u.hp <= 0) continue;
-
-        // Sitting idle: hunt the nearest hostile in LOS (range+1).
-        // A finished attack-move is handled at arrival below.
         if (!u.order) autoAcquire(game, u);
+      }
+      radioSpread(game);
+
+      for (const u of game.units) {
+        if (u.hp <= 0) continue;
 
         // Saboteur passive: regenerate HP even when idle
         if (u.type === 'saboteur' && u.hp < u.hpMax) {
@@ -1410,6 +1485,9 @@
           continue;
         }
       }
+      // Front rank has a target: hop it through the blob (2 tiles, iterative).
+      radioSpread(game);
+
       // Many path-stuck units → warn player + re-path a chunk (belt and suspenders)
       helpStuckArmy(game, { count: repaths }, maxRepaths);
 

@@ -18,6 +18,7 @@ const { WebSocketServer } = require('ws');
 const { RoomSim, SPEED_OPTIONS } = require('./room-sim');
 const recordings = require('./recordings');
 const feedbackStore = require('./feedback-store');
+const telemetryStore = require('./telemetry-store');
 
 const PORT = Number(process.env.PORT || 8080);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -173,6 +174,7 @@ function serveStatic(req, res) {
         buildTime: BUILD_TIME,
         rooms: rooms.size,
         feedback: feedbackStore.count(),
+        telemetry: telemetryStore.count(),
       }),
       {
         'Content-Type': 'application/json; charset=utf-8',
@@ -520,11 +522,9 @@ ${rows.length ? rows.join('\n') : '<tr><td colspan="8">No rooms</td></tr>'}
             );
           }
         }
-        // Persist stuck events to disk for later review
+        // Persist stuck events separately — never mix with human feedback
         if (kind === 'stuck_path' || kind === 'order_issue') {
-          feedbackStore.append(
-            Object.assign({ type: 'telemetry' }, entry)
-          );
+          telemetryStore.append(Object.assign({ type: 'telemetry' }, entry));
         }
         return send(
           res,

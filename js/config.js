@@ -34,6 +34,15 @@
       regenSec: 20,
     },
 
+    /**
+     * Short-range radio: engaged combat units share their target with
+     * friends within radioRange tiles (Chebyshev). Hops iterate the blob
+     * in one tick. No leash — receivers hard-chase the target.
+     */
+    combat: {
+      radioRange: 2,
+    },
+
     build: {
       proximityTiles: 8,
       concreteHpBonus: 1.2,
