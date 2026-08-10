@@ -198,6 +198,7 @@
         'barracks',
         'lightFactory',
         'heavyFactory',
+        'repairYard',
         'gunTurret',
         'gunTurret',
         'silo',

@@ -276,6 +276,64 @@
       );
     },
 
+    /**
+     * Chebyshev distance from a point to a building footprint (0 if inside).
+     * "2 squares away" = 2 tiles from the pad edge.
+     */
+    distToFootprint(x, y, b) {
+      const nx = Math.max(b.tileX, Math.min(x, b.tileX + b.tileW));
+      const ny = Math.max(b.tileY, Math.min(y, b.tileY + b.tileH));
+      return Math.max(Math.abs(x - nx), Math.abs(y - ny));
+    },
+
+    /**
+     * Repair Yard: heal up to `slots` damaged friendly vehicles within
+     * `range` tiles. Full repair takes (unit buildTime * healBuildTimeFactor).
+     */
+    tickRepairYards(game, dt) {
+      if (!game || !game.units || !game.buildings) return;
+      for (const u of game.units) u._repairing = false;
+      const claimed = new Set();
+      for (const b of game.buildings) {
+        if (b.type !== 'repairYard' || b.buildProgress < 1 || b.hp <= 0) continue;
+        const def = D.config.buildings.repairYard;
+        if (!def || !def.repair) continue;
+        const power = game.power && game.power[b.owner];
+        if (power && power.ratio < 0.5) continue;
+        const range = def.repair.range != null ? def.repair.range : 2;
+        const slots = def.repair.slots != null ? def.repair.slots : 4;
+        const factor =
+          def.repair.healBuildTimeFactor != null
+            ? def.repair.healBuildTimeFactor
+            : 1 / 3;
+        const cands = [];
+        for (const u of game.units) {
+          if (u.owner !== b.owner || u.hp <= 0 || u.hp >= u.hpMax) continue;
+          if (claimed.has(u.id)) continue;
+          const udef = D.config.units[u.type];
+          if (!udef || udef.kind !== 'vehicle') continue;
+          const d = D.Economy.distToFootprint(u.x, u.y, b);
+          if (d > range + 1e-6) continue;
+          cands.push({
+            u,
+            udef,
+            d,
+            missing: 1 - u.hp / u.hpMax,
+          });
+        }
+        cands.sort((a, c) => c.missing - a.missing || a.d - c.d);
+        const n = Math.min(slots, cands.length);
+        for (let i = 0; i < n; i++) {
+          const { u, udef } = cands[i];
+          const bt = Math.max(0.5, udef.buildTime || 20);
+          const hpPerSec = u.hpMax / (bt * factor);
+          u.hp = Math.min(u.hpMax, u.hp + hpPerSec * dt);
+          u._repairing = true;
+          claimed.add(u.id);
+        }
+      }
+    },
+
     tick(game, dt) {
       D.Economy.tickPower(game);
 
@@ -342,6 +400,8 @@
           D.Economy.spawnUnit(game, b, item.type);
         }
       }
+
+      D.Economy.tickRepairYards(game, dt);
     },
 
     onStructureComplete(game, b) {

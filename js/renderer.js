@@ -654,6 +654,17 @@
       if (u.hp < u.hpMax) {
         D.Renderer.drawHpBar(s.x - half, s.y - half - 6, size, u.hp / u.hpMax);
       }
+      if (u._repairing) {
+        ctx.save();
+        ctx.fillStyle = 'rgba(80, 220, 120, 0.95)';
+        ctx.strokeStyle = 'rgba(20, 60, 30, 0.8)';
+        ctx.lineWidth = 1;
+        const px = s.x + half * 0.45;
+        const py = s.y - half * 0.55;
+        ctx.fillRect(px - 1.5, py - 5, 3, 10);
+        ctx.fillRect(px - 5, py - 1.5, 10, 3);
+        ctx.restore();
+      }
     },
 
     drawHpBar(x, y, w, ratio) {

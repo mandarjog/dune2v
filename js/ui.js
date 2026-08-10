@@ -2605,6 +2605,7 @@
         'barracks',
         'lightFactory',
         'heavyFactory',
+        'repairYard',
         'gunTurret',
         'longRangeTower',
         'wall',
@@ -2855,7 +2856,7 @@
         const text = document.createElement('div');
         text.innerHTML = `
           <div class="title">${def?.name || u.type}</div>
-          <div class="meta">${u.owner === o ? 'yours' : u.owner} · HP ${Math.ceil(u.hp)}/${u.hpMax}</div>
+          <div class="meta">${u.owner === o ? 'yours' : u.owner} · HP ${Math.ceil(u.hp)}/${u.hpMax}${u._repairing ? ' · repairing' : ''}</div>
           <div class="hp-bar"><span style="width:${(u.hp / u.hpMax) * 100}%"></span></div>
           ${
             D.config.features.recharge &&

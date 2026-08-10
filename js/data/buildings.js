@@ -126,6 +126,25 @@
         // siegeTank filtered by house (Harkonnen only)
         produces: ['combatTank', 'siegeTank', 'harvester', 'mcv'],
       },
+      repairYard: {
+        name: 'Repair Yard',
+        cost: 1000,
+        power: -40,
+        hp: 400,
+        buildTime: 50,
+        tileW: 3,
+        tileH: 2,
+        sight: 3,
+        requires: 'heavyFactory',
+        buildable: true,
+        /** Aura: vehicles within `range` tiles of the footprint. */
+        repair: {
+          range: 2,
+          slots: 4,
+          /** Full 0→max HP takes buildTime * this many seconds. */
+          healBuildTimeFactor: 1 / 3,
+        },
+      },
       gunTurret: {
         name: 'Gun Turret',
         cost: 125,

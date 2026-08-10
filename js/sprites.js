@@ -319,6 +319,29 @@
     }
   }
 
+  function drawRepairYard(ctx, x, y, w, h, col) {
+    const b = basePad(ctx, x, y, w, h, col, {});
+    metal(ctx, b.bx + b.bw * 0.06, b.by + b.bh * 0.22, b.bw * 0.88, b.bh * 0.62);
+    // service bays
+    ctx.fillStyle = '#151515';
+    ctx.fillRect(b.bx + b.bw * 0.1, b.by + b.bh * 0.4, b.bw * 0.36, b.bh * 0.38);
+    ctx.fillRect(b.bx + b.bw * 0.54, b.by + b.bh * 0.4, b.bw * 0.36, b.bh * 0.38);
+    // lift arms
+    ctx.fillStyle = '#e0c040';
+    ctx.fillRect(b.bx + b.bw * 0.12, b.by + b.bh * 0.52, b.bw * 0.32, b.bh * 0.06);
+    ctx.fillRect(b.bx + b.bw * 0.56, b.by + b.bh * 0.52, b.bw * 0.32, b.bh * 0.06);
+    // plus / wrench mark
+    ctx.fillStyle = shade(col, 0.35);
+    const cx = b.bx + b.bw * 0.5;
+    const cy = b.by + b.bh * 0.22;
+    const arm = b.m * 0.12;
+    ctx.fillRect(cx - arm * 0.28, cy - arm, arm * 0.56, arm * 2);
+    ctx.fillRect(cx - arm, cy - arm * 0.28, arm * 2, arm * 0.56);
+    // roof bar
+    ctx.fillStyle = '#2a2a2a';
+    ctx.fillRect(b.bx + b.bw * 0.08, b.by + b.bh * 0.06, b.bw * 0.84, b.bh * 0.1);
+  }
+
   function drawGunTurret(ctx, x, y, w, h, col, opts) {
     const b = basePad(ctx, x, y, w, h, col, { pad: 0.08 });
     const cx = b.bx + b.bw / 2;
@@ -737,6 +760,7 @@
     barracks: drawBarracks,
     lightFactory: drawLightFactory,
     heavyFactory: drawHeavyFactory,
+    repairYard: drawRepairYard,
     gunTurret: drawGunTurret,
     longRangeTower: drawLongRangeTower,
     wall: drawWall,
