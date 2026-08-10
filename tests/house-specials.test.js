@@ -38,6 +38,7 @@ describe('house special units', () => {
     assert.equal(Dune2.config.buildings.longRangeTower.hp, 240);
     assert.equal(Dune2.config.buildings.longRangeTower.maxCount, 20);
     assert.equal(Dune2.config.buildings.gunTurret.hp, 225);
+    assert.equal(Dune2.config.buildings.gunTurret.maxCount, 30);
     assert.ok(lrt.minRange > 0, 'LRT has close-range dead zone');
     assert.ok(lrt.minRange < lrt.range);
     assert.ok(lrt.cooldown > gun.cooldown * 2);
@@ -157,7 +158,7 @@ describe('house special units', () => {
     assert.equal(Dune2.Economy.canBuildType(game, 'player', 'longRangeTower'), true);
   });
 
-  it('caps siege tanks at 12 and LRTs at 20', () => {
+  it('caps siege tanks at 12, LRTs at 20, gun turrets at 30', () => {
     const game = Dune2.Game.create();
     Dune2.Game.startSkirmish(game, Dune2.MAPS.skirmish_large, {
       owners: ['player', 'enemy'],
@@ -201,5 +202,21 @@ describe('house special units', () => {
     assert.equal(br.ok, false);
     assert.equal(br.reason, 'type_cap');
     assert.equal(br.cap, 20);
+
+    for (let i = 0; i < 30; i++) {
+      Dune2.Entities.createBuilding(
+        game,
+        'gunTurret',
+        'player',
+        10 + (i % 15),
+        10 + Math.floor(i / 15),
+        { complete: true }
+      );
+    }
+    assert.equal(Dune2.Economy.countBuildingsOfType(game, 'player', 'gunTurret'), 30);
+    const gr = Dune2.Economy.beginStructure(game, 'player', 'gunTurret', 30, 10);
+    assert.equal(gr.ok, false);
+    assert.equal(gr.reason, 'type_cap');
+    assert.equal(gr.cap, 30);
   });
 });

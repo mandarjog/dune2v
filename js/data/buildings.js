@@ -137,6 +137,7 @@
         sight: 6, // range + 1 (was 4 < range 5 — FOW blocked the extra tile)
         requires: 'windtrap',
         buildable: true,
+        maxCount: 30,
         weapon: {
           kind: 'shell',
           damage: 15,
