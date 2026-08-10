@@ -130,7 +130,7 @@
         name: 'Gun Turret',
         cost: 125,
         power: -20,
-        hp: 200,
+        hp: 225,
         buildTime: 25,
         tileW: 1,
         tileH: 1,
@@ -158,7 +158,7 @@
         name: 'Long Range Tower',
         cost: 400,
         power: -40,
-        hp: 220,
+        hp: 240,
         buildTime: 30,
         tileW: 1,
         tileH: 1,
@@ -167,9 +167,10 @@
         buildable: true,
         houses: ['atreides'],
         special: true,
+        maxCount: 20,
         weapon: {
           kind: 'shell',
-          damage: 27,
+          damage: 30,
           range: 8.0, // was 10; −20%
           // Artillery dead zone — useless in melee / under the barrel
           minRange: 3.5,

@@ -363,6 +363,11 @@
                     ? 'Army at cap (' +
                       (r.cap || (D.Economy.armyCap && D.Economy.armyCap()) || 35) +
                       ' units).'
+                    : r.reason === 'type_cap'
+                      ? (r.name || 'Unit') +
+                        ' cap (' +
+                        (r.cap != null ? r.cap : '?') +
+                        ').'
                     : r.reason === 'building'
                       ? 'Factory not ready'
                       : 'Cannot train: ' + (r.reason || '?');
@@ -1419,6 +1424,7 @@
           ],
           ['Build time', (d) => (d.buildTime != null ? d.buildTime + 's' : '—')],
           ['Built at', (d) => buildingName(d.builtAt)],
+          ['Max', (d) => (d.maxCount != null ? d.maxCount : '—')],
         ];
         const body = statRows
           .map((row) => {
@@ -1478,6 +1484,7 @@
           ['Magazine', (d) => magLabel(d.weapon)],
           ['Ammo regen', (d) => ammoRegenLabel(d.weapon)],
           ['Build time', (d) => (d.buildTime != null ? d.buildTime + 's' : '—')],
+          ['Max', (d) => (d.maxCount != null ? d.maxCount : '—')],
         ];
         const body = statRows
           .map((row) => {
@@ -2648,6 +2655,14 @@
             );
             return;
           }
+          const tcap = D.Economy.typeCap && D.Economy.typeCap(def);
+          if (tcap != null) {
+            const have = D.Economy.countBuildingsOfType(game, o, type);
+            if (have >= tcap) {
+              D.Game.pushMessage(game, def.name + ' cap (' + tcap + ').');
+              return;
+            }
+          }
           const n = D.Economy.structureQueueCount(game, o);
           const maxQ = D.Economy.structureQueueMax();
           if (n >= maxQ) {
@@ -2710,17 +2725,24 @@
           );
           const queueFull = qCount >= maxQ;
           const viewOnly = !!(game.replay || game.spectator);
+          const tcap = D.Economy.typeCap && D.Economy.typeCap(def);
+          const atTypeCap =
+            tcap != null &&
+            D.Economy.countBuildingsOfType(game, o, type) >= tcap;
           btn.disabled =
             !tech ||
             !hasCY ||
             queueFull ||
+            atTypeCap ||
             game.phase !== 'playing' ||
             viewOnly;
           btn.classList.toggle(
             'active',
             !!(game.placement && game.placement.type === type && !viewOnly)
           );
-          if (queueFull) {
+          if (atTypeCap) {
+            btn.title = (def.name || type) + ' — cap (' + tcap + ')';
+          } else if (queueFull) {
             btn.title = (def.name || type) + ' — queue full (' + maxQ + ' max)';
           }
         }
@@ -2767,11 +2789,20 @@
       const o = me(game);
       for (const btn of els.unitMenu.querySelectorAll('[data-produce]')) {
         const cost = Number(btn.dataset.cost || 0);
+        const ut = btn.dataset.produce;
+        const udef = ut && D.config.units[ut];
+        const tcap = udef && D.Economy.typeCap ? D.Economy.typeCap(udef) : null;
+        const atCap =
+          tcap != null &&
+          D.Economy.countUnitsOfType(game, o, ut) +
+            D.Economy.countQueuedOfType(game, o, ut) >=
+            tcap;
         btn.disabled =
           game.phase !== 'playing' ||
           !!game.replay ||
           !!game.spectator ||
-          !D.Economy.canAfford(game, o, cost);
+          !D.Economy.canAfford(game, o, cost) ||
+          atCap;
       }
     },
 
@@ -2932,15 +2963,27 @@
             const label = document.createElement('span');
             label.className = 'btn-label';
             const can = D.Economy.canAfford(game, o, udef.cost);
+            const tcap = D.Economy.typeCap ? D.Economy.typeCap(udef) : null;
+            const have =
+              tcap != null && D.Economy.countUnitsOfType
+                ? D.Economy.countUnitsOfType(game, o, ut) +
+                  D.Economy.countQueuedOfType(game, o, ut)
+                : 0;
+            const atCap = tcap != null && have >= tcap;
             const houseTag =
               udef.houses && udef.houses.length
                 ? ' · ' + (D.Seats && D.Seats.house ? D.Seats.house(o).name : 'special')
                 : '';
-            label.innerHTML = `<strong>${udef.name}</strong><span class="meta ${can ? '' : 'cant-afford'}">${udef.cost}¢ · ${udef.buildTime}s${houseTag}${can ? '' : ' — need credits'}</span>`;
+            const capTag = tcap != null ? ' · ' + have + '/' + tcap : '';
+            label.innerHTML = `<strong>${udef.name}</strong><span class="meta ${can && !atCap ? '' : 'cant-afford'}">${udef.cost}¢ · ${udef.buildTime}s${houseTag}${capTag}${atCap ? ' — at cap' : can ? '' : ' — need credits'}</span>`;
             btn.appendChild(icon);
             btn.appendChild(label);
             btn.disabled =
-              game.phase !== 'playing' || !can || !!game.replay || !!game.spectator;
+              game.phase !== 'playing' ||
+              !can ||
+              atCap ||
+              !!game.replay ||
+              !!game.spectator;
             const sticky =
               game.stickyProduce &&
               game.stickyProduce.buildingId === b.id &&
@@ -2950,8 +2993,10 @@
               game.replay || game.spectator
                 ? 'View only'
                 : can
-                  ? `Train ${udef.name} (${udef.cost} credits, ${udef.buildTime}s)` +
-                    (sticky ? ' · selected (Q / click again)' : '')
+                  ? atCap
+                    ? `${udef.name} cap (${tcap})`
+                    : `Train ${udef.name} (${udef.cost} credits, ${udef.buildTime}s)` +
+                      (sticky ? ' · selected (Q / click again)' : '')
                   : `Need ${udef.cost} credits (have ${Math.floor(game.credits[o])}, cap ${game.spiceCap[o]}). Build silos to raise cap.`;
             g.appendChild(btn);
           }

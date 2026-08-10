@@ -161,7 +161,7 @@
         name: 'Siege Tank',
         cost: 900,
         builtAt: 'heavyFactory',
-        hp: 300,
+        hp: 225,
         speed: 0.4,
         armor: 3,
         // Sight = range + 1 so FOW does not clip max-range shots
@@ -170,6 +170,7 @@
         kind: 'vehicle',
         houses: ['harkonnen'],
         special: true,
+        maxCount: 12, // crack force — not a siege blob
         weapon: {
           kind: 'shell',
           damage: 20,

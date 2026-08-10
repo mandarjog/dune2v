@@ -1134,6 +1134,12 @@
           why = 'wrong house';
         } else if (r.reason === 'no-cy') {
           why = 'need a Construction Yard';
+        } else if (r.reason === 'type_cap') {
+          why =
+            (r.name || (def && def.name) || 'building') +
+            ' cap (' +
+            (r.cap != null ? r.cap : '?') +
+            ')';
         } else {
           why = r.reason || 'invalid';
         }

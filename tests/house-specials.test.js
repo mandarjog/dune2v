@@ -34,7 +34,10 @@ describe('house special units', () => {
     // Tuned: −20% from 2× gun range (10 → 8), −60% fire rate (cooldown ↑)
     assert.equal(lrt.range, 8);
     assert.equal(gun.damage, 15);
-    assert.equal(lrt.damage, 27);
+    assert.equal(lrt.damage, 30);
+    assert.equal(Dune2.config.buildings.longRangeTower.hp, 240);
+    assert.equal(Dune2.config.buildings.longRangeTower.maxCount, 20);
+    assert.equal(Dune2.config.buildings.gunTurret.hp, 225);
     assert.ok(lrt.minRange > 0, 'LRT has close-range dead zone');
     assert.ok(lrt.minRange < lrt.range);
     assert.ok(lrt.cooldown > gun.cooldown * 2);
@@ -42,7 +45,8 @@ describe('house special units', () => {
     const tank = Dune2.config.units.combatTank;
     const siege = Dune2.config.units.siegeTank;
     assert.equal(siege.speed, 0.4);
-    assert.equal(siege.hp, 300);
+    assert.equal(siege.hp, 225);
+    assert.equal(siege.maxCount, 12);
     assert.equal(siege.weapon.damage, 20);
     assert.equal(siege.weapon.cooldown, tank.weapon.cooldown * 2);
     assert.equal(siege.weapon.range, tank.weapon.range * 1.5);
@@ -151,5 +155,51 @@ describe('house special units', () => {
     // tech + afford — may still be false without windtrap complete path
     // player has starter WT
     assert.equal(Dune2.Economy.canBuildType(game, 'player', 'longRangeTower'), true);
+  });
+
+  it('caps siege tanks at 12 and LRTs at 20', () => {
+    const game = Dune2.Game.create();
+    Dune2.Game.startSkirmish(game, Dune2.MAPS.skirmish_large, {
+      owners: ['player', 'enemy'],
+      startMode: 'mcv',
+    });
+    Dune2.config.features.fog = false;
+    game.units = [];
+    game.buildings = [];
+    game.credits.enemy = 99999;
+    game.credits.player = 99999;
+    const hf = Dune2.Entities.createBuilding(game, 'heavyFactory', 'enemy', 20, 20, {
+      complete: true,
+    });
+    for (let i = 0; i < 12; i++) {
+      Dune2.Entities.createUnit(game, 'siegeTank', 'enemy', 22 + (i % 6) * 0.4, 22);
+    }
+    const r = Dune2.Economy.enqueueUnit(game, hf.id, 'siegeTank');
+    assert.equal(r.ok, false);
+    assert.equal(r.reason, 'type_cap');
+    assert.equal(r.cap, 12);
+
+    Dune2.Entities.createBuilding(game, 'constructionYard', 'player', 40, 40, {
+      complete: true,
+    });
+    Dune2.Entities.createBuilding(game, 'windtrap', 'player', 43, 40, {
+      complete: true,
+    });
+    for (let i = 0; i < 20; i++) {
+      Dune2.Entities.createBuilding(
+        game,
+        'longRangeTower',
+        'player',
+        50 + (i % 10),
+        50 + Math.floor(i / 10),
+        { complete: true }
+      );
+    }
+    assert.equal(Dune2.Economy.countBuildingsOfType(game, 'player', 'longRangeTower'), 20);
+    assert.equal(Dune2.Economy.canBuildType(game, 'player', 'longRangeTower'), false);
+    const br = Dune2.Economy.beginStructure(game, 'player', 'longRangeTower', 60, 50);
+    assert.equal(br.ok, false);
+    assert.equal(br.reason, 'type_cap');
+    assert.equal(br.cap, 20);
   });
 });

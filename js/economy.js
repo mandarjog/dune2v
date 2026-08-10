@@ -28,6 +28,42 @@
       return D.Economy.armyCount(game, owner) < D.Economy.armyCap();
     },
 
+    countUnitsOfType(game, owner, type) {
+      if (!game || !game.units) return 0;
+      let n = 0;
+      for (const u of game.units) {
+        if (u.owner === owner && u.type === type && u.hp > 0) n++;
+      }
+      return n;
+    },
+
+    countQueuedOfType(game, owner, type) {
+      if (!game || !game.buildings) return 0;
+      let n = 0;
+      for (const fac of game.buildings) {
+        if (fac.owner !== owner || !fac.buildQueue) continue;
+        for (const item of fac.buildQueue) {
+          if (item.type === type) n++;
+        }
+      }
+      return n;
+    },
+
+    countBuildingsOfType(game, owner, type) {
+      if (!game || !game.buildings) return 0;
+      let n = 0;
+      for (const b of game.buildings) {
+        if (b.owner === owner && b.type === type && b.hp > 0) n++;
+      }
+      return n;
+    },
+
+    typeCap(def) {
+      if (!def || def.maxCount == null) return null;
+      const n = def.maxCount | 0;
+      return n > 0 ? n : null;
+    },
+
     charge(game, owner, cost) {
       if (!D.Economy.canAfford(game, owner, cost)) return false;
       game.credits[owner] -= cost;
@@ -81,6 +117,13 @@
       if (!def || !def.buildable) return false;
       if (D.Seats && D.Seats.allows && !D.Seats.allows(owner, def)) return false;
       if (!D.Economy.hasTech(game, owner, def.requires)) return false;
+      const tcap = D.Economy.typeCap(def);
+      if (
+        tcap != null &&
+        D.Economy.countBuildingsOfType(game, owner, type) >= tcap
+      ) {
+        return false;
+      }
       return D.Economy.canAfford(game, owner, def.cost);
     },
 
@@ -120,6 +163,18 @@
       }
       if (!D.Economy.hasTech(game, owner, def.requires)) {
         return { ok: false, reason: 'tech' };
+      }
+      const tcap = D.Economy.typeCap(def);
+      if (tcap != null) {
+        const have = D.Economy.countBuildingsOfType(game, owner, type);
+        if (have >= tcap) {
+          return {
+            ok: false,
+            reason: 'type_cap',
+            cap: tcap,
+            name: def.name,
+          };
+        }
       }
       // Up to N concurrent constructions per side
       const maxQ = D.Economy.structureQueueMax();
@@ -184,6 +239,20 @@
       }
       if (living + queued >= cap) {
         return { ok: false, reason: 'army_cap', cap, living };
+      }
+      const tcap = D.Economy.typeCap(udef);
+      if (tcap != null) {
+        const have =
+          D.Economy.countUnitsOfType(game, b.owner, unitType) +
+          D.Economy.countQueuedOfType(game, b.owner, unitType);
+        if (have >= tcap) {
+          return {
+            ok: false,
+            reason: 'type_cap',
+            cap: tcap,
+            name: udef.name,
+          };
+        }
       }
       if (!D.Economy.charge(game, b.owner, udef.cost)) {
         return { ok: false, reason: 'credits' };
@@ -258,6 +327,14 @@
         if (item.progress >= 1) {
           // Soft re-check army cap at spawn (edge case: multi-factory finish same tick)
           if (!D.Economy.canTrainMore(game, b.owner)) {
+            item.progress = 0.99;
+            continue;
+          }
+          const spawnCap = D.Economy.typeCap(udef);
+          if (
+            spawnCap != null &&
+            D.Economy.countUnitsOfType(game, b.owner, item.type) >= spawnCap
+          ) {
             item.progress = 0.99;
             continue;
           }

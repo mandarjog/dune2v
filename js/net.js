@@ -1059,6 +1059,11 @@
           'Cannot deploy — need a clear 2×2 rock pad under/near the MCV (drive fully onto rock).',
         detonate: 'Detonate failed.',
         army_cap: 'Army at cap (35 units).',
+        type_cap:
+          (msg.name || 'That type') +
+          ' cap' +
+          (msg.cap != null ? ' (' + msg.cap + ')' : '') +
+          '.',
         building: 'Factory not ready.',
         credits: 'Not enough credits.',
         tech: 'Missing required building.',

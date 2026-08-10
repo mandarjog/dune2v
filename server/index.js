@@ -2369,6 +2369,8 @@ function setupWs(server) {
           reason: result.reason || null,
           info: result.info || null,
           op: payload.op || null,
+          cap: result.cap != null ? result.cap : undefined,
+          name: result.name || undefined,
         });
         return;
       }
