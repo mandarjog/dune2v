@@ -153,6 +153,7 @@
           projectile: true,
           recharge: true,
           magazine: 3, // dump then limp; 5 never emptied at this fire rate
+          volley: 2, // fire a pair, then wait until 2 are banked again
         },
       },
       /** Harkonnen special: slow siege armor (0.5× speed, 2× HP, 1.5× dmg, ½ fire rate, 1.5× range). */
@@ -180,6 +181,7 @@
           projectile: true,
           recharge: true,
           magazine: 3,
+          volley: 2, // same pair-then-wait as combat tank
         },
       },
       harvester: {

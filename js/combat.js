@@ -25,7 +25,15 @@
       entity.weapon.ammoMax = max;
       if (entity.weapon.ammo == null) entity.weapon.ammo = max;
     }
+    if (wdef.volley && entity.weapon.volleyLeft == null) {
+      entity.weapon.volleyLeft = 0;
+    }
     return true;
+  }
+
+  function volleySize(wdef) {
+    if (!wdef || wdef.volley == null) return 0;
+    return Math.max(1, wdef.volley | 0);
   }
 
   /** Passive magazine regen (full empty→full in regenSec). */
@@ -44,16 +52,29 @@
     entity.weapon.ammo = Math.min(max, (entity.weapon.ammo || 0) + rate * dt);
   }
 
-  /** Whole shots ready (matches UI floor display). Fractional ammo is only regen progress. */
+  /**
+   * Whole shots ready (matches UI floor display).
+   * Volley weapons (tanks): start a pair only at `volley` ammo; finish the
+   * second shot at 1. Turrets (no volley) still fire whenever floor >= 1.
+   */
   function canExpendShot(entity, wdef) {
     if (!ensureMagazine(entity, wdef)) return true; // no magazine / feature off
-    return Math.floor(entity.weapon.ammo || 0) >= 1;
+    const n = Math.floor(entity.weapon.ammo || 0);
+    const v = volleySize(wdef);
+    if (!v) return n >= 1;
+    if ((entity.weapon.volleyLeft | 0) > 0) return n >= 1;
+    return n >= v;
   }
 
   function expendShot(entity, wdef) {
     if (!ensureMagazine(entity, wdef)) return;
     // Spend one whole shot; keep fractional progress toward the next
     entity.weapon.ammo = Math.max(0, (entity.weapon.ammo || 0) - 1);
+    const v = volleySize(wdef);
+    if (!v) return;
+    let left = entity.weapon.volleyLeft | 0;
+    if (left <= 0) left = v;
+    entity.weapon.volleyLeft = Math.max(0, left - 1);
   }
 
   /** Throttled "we are under attack" for the defender (SP + MP snapshots). */

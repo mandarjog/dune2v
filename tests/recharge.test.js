@@ -41,14 +41,14 @@ describe('recharge magazines', () => {
     const tank = Dune2.Entities.createUnit(game, 'combatTank', 'player', 40, 40);
     const foe = Dune2.Entities.createUnit(game, 'infantry', 'enemy', 41.5, 40);
     tank.weapon.cooldownLeft = 0;
-    tank.weapon.ammo = 1;
+    tank.weapon.ammo = 2;
     tank.order = { type: 'attack', targetId: foe.id };
     tank.orders = [tank.order];
     const hp0 = foe.hp;
 
     // One fire tick — projectile weapons spend ammo on fire (damage may land later)
     Dune2.Combat.tick(game, Dune2.config.DT_SEC);
-    assert.ok(tank.weapon.ammo < 1, 'ammo consumed, got ' + tank.weapon.ammo);
+    assert.ok(tank.weapon.ammo < 2, 'ammo consumed, got ' + tank.weapon.ammo);
     assert.ok(
       (game.projectiles && game.projectiles.length > 0) || foe.hp < hp0,
       'shot fired (projectile or hit)'
@@ -126,6 +126,7 @@ describe('recharge magazines', () => {
     tank.orders = [tank.order];
     // Just under one whole shot — sidebar shows 0/3
     tank.weapon.ammo = 0.99;
+    tank.weapon.volleyLeft = 0;
     tank.weapon.cooldownLeft = 0;
     const n0 = (game.projectiles || []).length;
     Dune2.Combat.tick(game, Dune2.config.DT_SEC);
@@ -135,15 +136,98 @@ describe('recharge magazines', () => {
       'must not fire until a full shot is banked (was 0.99→regen→fire bug)'
     );
     assert.ok(tank.weapon.ammo > 0.99, 'regen still applied after fire check');
-    // Bank a full shot
+    // One banked shot is not enough to start a 2-shot volley
     tank.weapon.ammo = 1.0;
+    tank.weapon.volleyLeft = 0;
+    tank.weapon.cooldownLeft = 0;
+    Dune2.Combat.tick(game, Dune2.config.DT_SEC);
+    assert.equal(
+      (game.projectiles || []).length,
+      n0,
+      'tanks do not open a volley on a single shot'
+    );
+    // Two banked shots start the pair
+    tank.weapon.ammo = 2.0;
+    tank.weapon.volleyLeft = 0;
     tank.weapon.cooldownLeft = 0;
     Dune2.Combat.tick(game, Dune2.config.DT_SEC);
     assert.ok(
       (game.projectiles || []).length > n0,
-      'fires when a whole shot is available'
+      'fires when a volley (2) is banked'
     );
-    assert.ok(tank.weapon.ammo < 1, 'spent the whole shot');
+    assert.ok(tank.weapon.ammo < 2, 'spent the first shot of the pair');
+    assert.equal(tank.weapon.volleyLeft, 1, 'one shot left in the volley');
+  });
+
+  it('tank volley fires a second shot at 1 ammo then waits for 2', () => {
+    const game = Dune2.Game.create();
+    Dune2.Game.startSkirmish(game, Dune2.MAPS.skirmish_large, {
+      owners: ['player', 'enemy'],
+      startMode: 'base',
+    });
+    Dune2.config.features.fog = false;
+    const tank = Dune2.Entities.createUnit(game, 'combatTank', 'player', 40, 40);
+    const foe = Dune2.Entities.createUnit(game, 'infantry', 'enemy', 42, 40);
+    tank.order = { type: 'attack', targetId: foe.id };
+    tank.orders = [tank.order];
+    tank.weapon.ammo = 1.4;
+    tank.weapon.volleyLeft = 1;
+    tank.weapon.cooldownLeft = 0;
+    const n0 = (game.projectiles || []).length;
+    Dune2.Combat.tick(game, Dune2.config.DT_SEC);
+    assert.ok(
+      (game.projectiles || []).length > n0,
+      'second volley shot fires with 1 ammo'
+    );
+    assert.equal(tank.weapon.volleyLeft, 0);
+    assert.ok(tank.weapon.ammo < 1);
+
+    game.projectiles = [];
+    tank.weapon.ammo = 1.0;
+    tank.weapon.volleyLeft = 0;
+    tank.weapon.cooldownLeft = 0;
+    Dune2.Combat.tick(game, Dune2.config.DT_SEC);
+    assert.equal(
+      (game.projectiles || []).length,
+      0,
+      'does not start a new volley until 2 are banked'
+    );
+  });
+
+  it('gun turret still fires on a single ammo (no volley)', () => {
+    const game = Dune2.Game.create();
+    Dune2.Game.startSkirmish(game, Dune2.MAPS.skirmish_large, {
+      owners: ['player', 'enemy'],
+      startMode: 'base',
+    });
+    Dune2.config.features.fog = false;
+    const cy = game.buildings.find(
+      (b) => b.owner === 'player' && b.type === 'constructionYard'
+    );
+    const turret = Dune2.Entities.createBuilding(
+      game,
+      'gunTurret',
+      'player',
+      cy.tileX + 4,
+      cy.tileY,
+      { complete: true }
+    );
+    const foe = Dune2.Entities.createUnit(
+      game,
+      'infantry',
+      'enemy',
+      turret.tileX + 1.5,
+      turret.tileY + 0.5
+    );
+    turret.weapon.ammo = 1.0;
+    turret.weapon.cooldownLeft = 0;
+    const n0 = (game.projectiles || []).length;
+    Dune2.Combat.tick(game, Dune2.config.DT_SEC);
+    assert.ok(
+      (game.projectiles || []).length > n0,
+      'turret fires at 1/5, got ammo ' + turret.weapon.ammo
+    );
+    void foe;
   });
 
   it('attack-ground spends ammo without a unit target', () => {

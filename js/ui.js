@@ -1401,6 +1401,11 @@
           ],
           ['Magazine', (d) => magLabel(d.weapon)],
           [
+            'Volley',
+            (d) =>
+              d.weapon && d.weapon.volley ? String(d.weapon.volley) : '—',
+          ],
+          [
             'Ammo regen',
             (d) => {
               let r = ammoRegenLabel(d.weapon);

@@ -41,6 +41,7 @@
             : (D.config.recharge && D.config.recharge.magazine) || 5;
         st.ammo = max;
         st.ammoMax = max;
+        if (wdef.volley) st.volleyLeft = 0;
       }
       return st;
     },
