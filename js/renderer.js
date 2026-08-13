@@ -178,6 +178,22 @@
         D.Renderer.drawBuilding(game, b);
       }
 
+      // Sandworms under units — opaque body used to fully hide survivors so it
+      // looked like a swallow, then they "came back" when the worm dived.
+      const local = me(game);
+      if (game.worms && game.worms.length) {
+        for (const w of game.worms) {
+          if (
+            D.Map.fogVisible(game) &&
+            !D.Map.isVisible(game, local, Math.floor(w.x), Math.floor(w.y)) &&
+            !D.Map.isExplored(game, local, Math.floor(w.x), Math.floor(w.y))
+          ) {
+            continue;
+          }
+          D.Renderer.drawWorm(game, w);
+        }
+      }
+
       // units (player always; enemy only if currently visible)
       const sortedUnits = game.units.slice().sort((a, b) => a.id - b.id);
       for (const u of sortedUnits) {
@@ -186,7 +202,6 @@
       }
 
       // projectiles — show if shell tile or path endpoint is visible to local player
-      const local = me(game);
       for (const p of game.projectiles || []) {
         if (D.Map.fogVisible(game) && p.owner !== local) {
           const visHere = D.Map.isVisible(game, local, Math.floor(p.x), Math.floor(p.y));
@@ -221,20 +236,6 @@
         ctx.lineWidth = heavy ? 1.5 : 1;
         ctx.stroke();
         ctx.globalAlpha = 1;
-      }
-
-      // Sandworms (under FOW if not visible)
-      if (game.worms && game.worms.length) {
-        for (const w of game.worms) {
-          if (
-            D.Map.fogVisible(game) &&
-            !D.Map.isVisible(game, local, Math.floor(w.x), Math.floor(w.y)) &&
-            !D.Map.isExplored(game, local, Math.floor(w.x), Math.floor(w.y))
-          ) {
-            continue;
-          }
-          D.Renderer.drawWorm(game, w);
-        }
       }
 
       // fx
@@ -518,7 +519,8 @@
         ctx.beginPath();
         ctx.arc(s.x, s.y, rad, 0, Math.PI * 2);
         ctx.stroke();
-        ctx.fillStyle = `rgba(90,55,15,${0.12 + pulse * 0.1})`;
+        // Light fill only — heavy fill hid units without eating them
+        ctx.fillStyle = `rgba(90,55,15,${0.08 + pulse * 0.06})`;
         ctx.beginPath();
         ctx.arc(s.x, s.y, rad * 0.7, 0, Math.PI * 2);
         ctx.fill();
@@ -541,27 +543,29 @@
       if (w.phase === 'surface' || w.phase === 'dive') {
         const dive = w.phase === 'dive' ? Math.max(0.2, 1 - (w.phaseT || 0)) : 1;
         const rad = 1.15 * t * dive;
-        // Body ring
-        ctx.fillStyle = `rgba(55,35,12,${0.75 * dive})`;
+        // Ring + maw only (no solid disk) so living units stay readable on top
+        ctx.strokeStyle = `rgba(180,120,40,${0.95 * dive})`;
+        ctx.lineWidth = 4;
         ctx.beginPath();
         ctx.arc(s.x, s.y, rad, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.strokeStyle = `rgba(180,120,40,${0.9 * dive})`;
-        ctx.lineWidth = 3;
         ctx.stroke();
-        // Maw
-        ctx.fillStyle = `rgba(20,10,5,${0.9 * dive})`;
+        ctx.fillStyle = `rgba(55,35,12,${0.35 * dive})`;
         ctx.beginPath();
-        ctx.arc(s.x, s.y, rad * 0.45, 0, Math.PI * 2);
+        ctx.arc(s.x, s.y, rad * 0.92, 0, Math.PI * 2);
+        ctx.fill();
+        // Maw
+        ctx.fillStyle = `rgba(20,10,5,${0.85 * dive})`;
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, rad * 0.4, 0, Math.PI * 2);
         ctx.fill();
         // Teeth hints
-        ctx.strokeStyle = `rgba(230,200,140,${0.7 * dive})`;
+        ctx.strokeStyle = `rgba(230,200,140,${0.75 * dive})`;
         ctx.lineWidth = 1.5;
         for (let i = 0; i < 6; i++) {
           const a = (i / 6) * Math.PI * 2 + (game.tick || 0) * 0.05;
           ctx.beginPath();
-          ctx.moveTo(s.x + Math.cos(a) * rad * 0.5, s.y + Math.sin(a) * rad * 0.5);
-          ctx.lineTo(s.x + Math.cos(a) * rad * 0.85, s.y + Math.sin(a) * rad * 0.85);
+          ctx.moveTo(s.x + Math.cos(a) * rad * 0.45, s.y + Math.sin(a) * rad * 0.45);
+          ctx.lineTo(s.x + Math.cos(a) * rad * 0.88, s.y + Math.sin(a) * rad * 0.88);
           ctx.stroke();
         }
       }

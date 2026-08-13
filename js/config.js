@@ -243,8 +243,10 @@
       rumbleSec: 2.0,
       surfaceSec: 5,
       moveSpeed: 2.4,
-      swallowRadiusTiles: 1.35,
-      emergeRadiusTiles: 2,
+      /** Must cover the on-screen maw (~1.15 tiles) with a little slack. */
+      swallowRadiusTiles: 1.6,
+      /** Instant gulp radius on breach (rumble → surface). */
+      emergeRadiusTiles: 2.2,
       cooldownSec: 75,
       equalOpportunity: true,
     },

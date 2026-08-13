@@ -123,6 +123,31 @@ describe('sandworms', () => {
     assert.ok(worm.swallows >= 1);
   });
 
+  it('gulps edible units on the rumble→surface breach, not only after chase', () => {
+    const game = Dune2.Game.create();
+    Dune2.Game.startSkirmish(game, sandMap(), {
+      owners: ['player', 'enemy'],
+      startMode: 'mcv',
+      generateMap: false,
+    });
+    game.units = [];
+    game.buildings = [];
+    const tank = Dune2.Entities.createUnit(game, 'combatTank', 'player', 8.5, 8.5);
+    const tankId = tank.id;
+    const worm = Dune2.Worms.forceEmerge(game, 8.5, 8.5);
+    worm.warned = true;
+    // One frame before breach
+    worm.phase = 'rumble';
+    worm.phaseT = (Dune2.config.worms.rumbleSec || 2) - 0.001;
+    Dune2.Worms.tick(game, Dune2.config.DT_SEC);
+    assert.equal(worm.phase, 'surface');
+    assert.ok(
+      !game.units.find((u) => u.id === tankId),
+      'tank swallowed on breach gulp'
+    );
+    assert.ok(worm.swallows >= 1);
+  });
+
   it('does not eat units on rock', () => {
     const game = Dune2.Game.create();
     Dune2.Game.startSkirmish(game, sandMap(), {

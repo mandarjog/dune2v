@@ -158,10 +158,22 @@
     },
 
     removeUnit(game, u) {
+      if (!u) return;
+      u.hp = 0;
       const i = game.units.indexOf(u);
       if (i >= 0) game.units.splice(i, 1);
-      const si = game.selection.ids.indexOf(u.id);
-      if (si >= 0) game.selection.ids.splice(si, 1);
+      if (game.selection && game.selection.ids) {
+        const si = game.selection.ids.indexOf(u.id);
+        if (si >= 0) game.selection.ids.splice(si, 1);
+      }
+      // Drop from control groups so recall cannot "revive" a ghost
+      if (game.controlGroups) {
+        for (const k of Object.keys(game.controlGroups)) {
+          const g = game.controlGroups[k];
+          if (!g || !g.length) continue;
+          game.controlGroups[k] = g.filter((id) => id !== u.id);
+        }
+      }
     },
 
     removeBuilding(game, b) {

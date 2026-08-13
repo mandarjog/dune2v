@@ -233,8 +233,16 @@
     return best;
   }
 
-  function swallowNear(game, worm) {
-    const r = cfg().swallowRadiusTiles != null ? cfg().swallowRadiusTiles : 1.25;
+  function swallowRadius(emerge) {
+    const c = cfg();
+    const base = c.swallowRadiusTiles != null ? c.swallowRadiusTiles : 1.35;
+    const emergeR = c.emergeRadiusTiles != null ? c.emergeRadiusTiles : 2;
+    return emerge ? Math.max(base, emergeR) : base;
+  }
+
+  function swallowNear(game, worm, opts) {
+    opts = opts || {};
+    const r = swallowRadius(!!opts.emerge);
     const r2 = r * r;
     const victims = [];
     for (const u of game.units) {
@@ -245,14 +253,17 @@
     for (const u of victims) {
       const owner = u.owner;
       const type = u.type;
+      const ux = u.x;
+      const uy = u.y;
+      // Kill first so hp<=0 and nothing can re-select a "ghost"
+      u.hp = 0;
       D.Entities.removeUnit(game, u);
       worm.swallows++;
-      // FX
       if (!game.fx) game.fx = [];
       game.fx.push({
         type: 'explode',
-        x: u.x,
-        y: u.y,
+        x: ux,
+        y: uy,
         r: 0.9,
         life: 0.45,
         color: '#c2a05a',
@@ -305,6 +316,9 @@
         worm.phase = 'surface';
         worm.phaseT = 0;
         D.Game.pushMessage(game, 'A sandworm breaches!');
+        // Instant gulp on breach — was only hunting after move, so units under
+        // the emerge FX looked "gone" then reappeared when the worm dived.
+        swallowNear(game, worm, { emerge: true });
       }
       return;
     }
