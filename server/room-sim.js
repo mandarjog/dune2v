@@ -44,9 +44,10 @@ class RoomSim {
     const D = this.D;
     D.config.features.ai = false;
     D.config.features.debugCheats = false;
-    // Shared-1-CPU: worms + full-map pathing starve the sim under army moves
-    D.config.features.sandworms = false;
-    if (D.config.worms) D.config.worms.enabled = false;
+    // Worms on for MP (was disabled on shared-1-CPU; performance-1x can handle it).
+    // Keep live + cmd-stream replay consistent — both must run the same flag.
+    D.config.features.sandworms = true;
+    if (D.config.worms) D.config.worms.enabled = true;
     if (D.config.path) {
       // Prefer A* for small squads; bounded flow for 5+ (see pathfinding.js)
       D.config.path.flowMinGroup = Math.max(5, D.config.path.flowMinGroup || 5);
@@ -99,6 +100,8 @@ class RoomSim {
       owners: owners.slice(),
       baseDt: BASE_DT,
       seed: seed,
+      // So Watch replay uses the same worm setting as the live match
+      sandworms: !!(D.config.features && D.config.features.sandworms),
     });
     // One full init snapshot (map + starting units) — not per-frame dumps
     const initState = this._serializeInit();

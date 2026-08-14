@@ -65,6 +65,8 @@ function begin(meta) {
     format: 'cmd-v1',
     // idStable: entity ids are sequential without snapshot burns (post nextId fix)
     idStable: true,
+    /** Match-time feature flags so Watch re-sim matches live */
+    sandworms: meta.sandworms !== false,
     events: 0,
     cmds: 0,
     _fd: null,
@@ -97,6 +99,7 @@ function writeMeta(rec) {
     seed: rec.seed,
     format: rec.format || 'cmd-v1',
     idStable: rec.idStable !== false,
+    sandworms: rec.sandworms !== false,
     events: rec.events,
     cmds: rec.cmds || 0,
   };

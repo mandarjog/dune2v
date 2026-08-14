@@ -130,6 +130,13 @@
       game.phase = 'playing';
       game.winner = null;
       game.playerNames = recording.names || null;
+      // Match live match flag. New recordings always set meta.sandworms.
+      // Legacy cmd-v1 MP (no field) had worms forced off on the server.
+      const wormsOn = Object.prototype.hasOwnProperty.call(recording, 'sandworms')
+        ? !!recording.sandworms
+        : false;
+      if (D.config.features) D.config.features.sandworms = wormsOn;
+      if (D.config.worms) D.config.worms.enabled = wormsOn;
       // Prefer the seat the viewer actually played; else neutral spectator framing
       if (viewSeat) {
         game.localOwner = viewSeat;
