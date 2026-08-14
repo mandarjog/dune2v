@@ -56,17 +56,18 @@
   }
 
   function showBuildRev(extra) {
-    const el = document.getElementById('build-rev');
-    if (!el) return;
+    const els = [
+      document.getElementById('build-rev'),
+      document.getElementById('menu-build-rev'),
+    ].filter(Boolean);
+    if (!els.length) return;
     const rev = (D.buildRev && D.buildRev()) || (D.BUILD && D.BUILD.rev) || '?';
     const server = extra && extra.serverRev;
     let text = 'rev ' + rev;
     if (server) {
       text += server === rev ? ' · server ok' : ' · server ' + server + ' ⚠';
-      el.classList.toggle('mismatch', server !== rev);
     }
-    el.textContent = text;
-    el.title =
+    const title =
       'Client: ' +
       rev +
       (D.BUILD && D.BUILD.time ? '\nBuilt: ' + D.BUILD.time : '') +
@@ -74,6 +75,12 @@
       '\nFOW: ' +
       (D.config.features.fog ? 'ON' : 'OFF') +
       '\n?fog=0 disables fog of war';
+    const mismatch = !!(server && server !== rev);
+    for (const el of els) {
+      el.textContent = text;
+      el.title = title;
+      el.classList.toggle('mismatch', mismatch);
+    }
   }
 
   function boot() {
