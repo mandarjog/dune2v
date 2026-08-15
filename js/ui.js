@@ -440,16 +440,30 @@
             ? D.Seats.skirmishPair(D.UI.selectedHouse())
             : { localOwner: 'player', owners: ['player', 'enemy'] };
         game.localOwner = pair.localOwner;
+        // Apply menu options (recharge / worms) before start
+        const wormsCb = $('opt-worms');
+        if (wormsCb) {
+          D.config.features.sandworms = !!wormsCb.checked;
+          if (D.config.worms) D.config.worms.enabled = !!wormsCb.checked;
+        }
+        const rechCb = $('opt-recharge');
+        if (rechCb) D.config.features.recharge = !!rechCb.checked;
         if (kind === 'mass' && D.Scenario) {
           const opts = D.Scenario.parseOpts
             ? D.Scenario.parseOpts(params)
             : { perSide: 80, fog: false };
+          if (wormsCb) opts.sandworms = !!wormsCb.checked;
           // Mass scenario still uses classic seats unless extended later
           game.localOwner = 'player';
           D.Scenario.startMassArmies(game, opts);
         } else {
           // Re-apply ?fog=0 before start so startSkirmish vision is correct
           if (D.applyUrlFeatures) D.applyUrlFeatures(params);
+          // Menu worms wins over URL unless URL set worms= explicitly
+          if (wormsCb && !params.get('worms') && !params.get('sandworms')) {
+            D.config.features.sandworms = !!wormsCb.checked;
+            if (D.config.worms) D.config.worms.enabled = !!wormsCb.checked;
+          }
           D.Game.startSkirmish(game, D.MAPS.skirmish_large || D.MAPS.skirmish1, {
             startMode: D.UI.selectedStartMode(),
             owners: pair.owners,
@@ -790,6 +804,38 @@
           D.config.features.recharge = true;
         } else if (cb) {
           cb.checked = !!(D.config.features && D.config.features.recharge);
+        }
+      } catch (e) {
+        /* ignore */
+      }
+
+      // Sandworms — SP skirmish + mass armies (MP uses server flag)
+      const syncWorms = () => {
+        const cb = $('opt-worms');
+        if (!cb) return;
+        const on = !!cb.checked;
+        D.config.features.sandworms = on;
+        if (D.config.worms) D.config.worms.enabled = on;
+        try {
+          localStorage.setItem('dune2_worms', on ? '1' : '0');
+        } catch (e) {
+          /* ignore */
+        }
+      };
+      $('opt-worms')?.addEventListener('change', syncWorms);
+      try {
+        const saved = localStorage.getItem('dune2_worms');
+        const cb = $('opt-worms');
+        if (cb && saved === '0') {
+          cb.checked = false;
+          D.config.features.sandworms = false;
+          if (D.config.worms) D.config.worms.enabled = false;
+        } else if (cb && saved === '1') {
+          cb.checked = true;
+          D.config.features.sandworms = true;
+          if (D.config.worms) D.config.worms.enabled = true;
+        } else if (cb) {
+          cb.checked = !!(D.config.features && D.config.features.sandworms);
         }
       } catch (e) {
         /* ignore */

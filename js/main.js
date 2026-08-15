@@ -38,6 +38,19 @@
       const cb = document.getElementById('opt-mcv-start');
       if (cb) cb.checked = true;
     }
+    // worms=0/false → off; worms=1/true → on (skirmish + mass armies)
+    const worms = params.get('worms') || params.get('sandworms');
+    if (worms === '0' || worms === 'false') {
+      D.config.features.sandworms = false;
+      if (D.config.worms) D.config.worms.enabled = false;
+      const cb = document.getElementById('opt-worms');
+      if (cb) cb.checked = false;
+    } else if (worms === '1' || worms === 'true') {
+      D.config.features.sandworms = true;
+      if (D.config.worms) D.config.worms.enabled = true;
+      const cb = document.getElementById('opt-worms');
+      if (cb) cb.checked = true;
+    }
   }
 
   /** After toggling features.fog, refresh fog buffers so the view matches. */

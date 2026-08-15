@@ -268,9 +268,13 @@
       // Override with ?fog=1 to play with fog.
       if (opts.fog === true) D.config.features.fog = true;
       else D.config.features.fog = false;
-      // Path stress: no worms eating the army mid-test
-      D.config.features.sandworms = false;
-      if (D.config.worms) D.config.worms.enabled = false;
+      // Worms: menu / opts.sandworms (default off for mass path stress unless checked)
+      const wormsOn =
+        opts.sandworms != null
+          ? !!opts.sandworms
+          : !!(D.config.features && D.config.features.sandworms);
+      D.config.features.sandworms = wormsOn;
+      if (D.config.worms) D.config.worms.enabled = wormsOn;
       // Cap must fit pre-spawned armies (default 35 would only block *new* trains,
       // but UI/telemetry looked like "stuck at 35" — lift for this scenario)
       if (!D.config.build) D.config.build = {};
@@ -336,7 +340,9 @@
           (D.config.features.fog ? 'ON' : 'OFF') +
           ' · army cap ' +
           (D.config.build && D.config.build.maxArmySize) +
-          ' · worms off. You = Atreides.'
+          ' · worms ' +
+          (D.config.features.sandworms ? 'ON' : 'OFF') +
+          '. You = Atreides.'
       );
       if (game.stats) {
         game.stats.scenario = 'mass';
@@ -363,10 +369,16 @@
       if (params.get('fog') === '1' || params.get('fog') === 'true') fog = true;
       else if (params.get('fog') === '0' || params.get('fog') === 'false') fog = false;
       else fog = false; // mass default
+      let sandworms;
+      const w = params.get('worms') || params.get('sandworms');
+      if (w === '1' || w === 'true') sandworms = true;
+      else if (w === '0' || w === 'false') sandworms = false;
+      // else undefined → menu / config default
       return {
         perSide: clamp(perSide, 10, 250),
         fog,
         ai: params.get('ai') === '0' ? false : true,
+        sandworms,
       };
     },
   };
